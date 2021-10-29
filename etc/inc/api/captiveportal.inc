@@ -2171,6 +2171,7 @@ function getVolume($ip) {
 		if ($reverse) {
 			$volume['output_pkts'] = $ipfw['packets'];
 			$volume['output_bytes'] = $ipfw['bytes'];
+
 		} else {
 			$volume['input_pkts'] = $ipfw['packets'];
 			$volume['input_bytes'] = $ipfw['bytes'];
@@ -2191,7 +2192,6 @@ function getVolume($ip) {
 			$volume['output_bytes'] = $ipfw['bytes'];
 		}
 	}
-
 	return $volume;
 }
 
@@ -2296,7 +2296,7 @@ function portal_reply_page($redirurl, $type = null, $message = null, $clientmac 
 			$portalbtnmessage="You are not logged in. back home..."; 
 		}
 		else {
-			$currentquota=getcurquota($sessionid);
+			$currentquota=getcurquota($sessionid, $clientip);
 			$maxquota=getmaxquota($sessionid);
 			$portalbtnmessage="Click here to log out"; 
 		}
@@ -3075,28 +3075,30 @@ global $cpzone;
 
 }
 
-function getcurquota($sessionid){
+function getcurquota($sessionid, $clientip){
 	$username=getusername($sessionid);
-	//echo($username);
+
+	$basedata=0;
 	if ($username != "") {
 		$use_file = fopen("/var/log/radacct/datacounter/monthly/used-octets-$username", "r");
 		$usagenum = fgets($use_file);
 		fclose($use_file);
-		$quota= number_format(abs($usagenum)/1048576, 2, '.',',');
-		return $quota;
-	} else {
-		return 0.00;
+		$basedata = number_format(abs($usagenum)/1048576, 2, '.',',');
 	}
+	
+	return $basedata + number_format(((getVolume($clientip)['input_bytes']+getVolume($clientip)['output_bytes'])/1048576), 2);
 
 }
 function getmaxquota($sessionid){
+	global $config;
 	$username=getusername($sessionid);
 	if ($username != "") {
-		$use_file = fopen("/var/log/radacct/datacounter/monthly/max-octets-$username", "r");
-		$usagenum = fgets($use_file);
-		fclose($use_file);
-		$quota= number_format(abs($usagenum)/1048576, 2, '.',',');
-		return $quota ;
+	foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
+	    if($value['varusersusername']==$username){
+		return $value['varusersmaxtotaloctets'];
+	    }
+	}
+
 	} else {
 		return 0.00;
 	}
