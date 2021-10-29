@@ -1675,8 +1675,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
 	/* Unable to find the any authentication server config - shouldn't happen! - bail out */
 	if (count($auth_servers) === 0) {
 		log_error("Zone: {$cpzone} - No valid server could be used for authentication.");
-		//$login_msg = gettext("Internal Error");
-		$login_msg = gettext("The FX/VSAT Connection is offline. try later.");
+		$login_msg = gettext("Firewall server offline, trying to restart system.");
 	} else {
 		foreach ($auth_servers as $authcfg) {
 			if ($authlevel < 3) {
@@ -1743,6 +1742,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
 					}
 				}
 				// We determine a flag
+					
 				if ($result === true) {
 					$val = 3;
 				} elseif ($result === false && !empty($attributes['reply_message'])) {
@@ -1753,17 +1753,8 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
 					if($login==="" || $password===""){
 						$msg = "ID or password is empty.\nPlease check and try again";
 					}
-					else if($attributes['ms_chap_error']){  //if login failed
+					else if(!$attributes['ms_chap_success']){  //if login failed
 						$msg="ID or Password was not valid.\nCheck ID and password try again";
-					}
-					else if ($attributes['maxbytes']){  // Login Success but quota exceed.
-						//$use_file = fopen("/var/log/radacct/datacounter/monthly/used-octets-$login", "r");
-						//$usagenum = fgets($use_file);
-						//fclose($use_file);
-						//$diff = number_format(($usagenum-$attributes['maxbytes'])/1048576, 2, '.',',');
-						//$max_usage = number_format(abs($attributes['maxbytes'])/1048576, 2, '.',',');
-						
-						$msg = "Exceeded allowed data usage.\nContact captain or admin";
 					}
 					else{
 						$msg="Contacted server, but unknown error to login";
@@ -2916,7 +2907,6 @@ function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $use
 
 	$cpcfg = $config['captiveportal'][$cpzone];
 	$acctcfg = auth_get_authserver($cpcfg['radacct_server']);
-
 	if (!isset($cpcfg['radacct_enable']) || empty($acctcfg) ||
 	    captiveportal_ha_is_node_in_backup_mode($cpzone)) {
 		return null;
@@ -3076,33 +3066,49 @@ global $cpzone;
 }
 
 function getcurquota($sessionid, $clientip){
+	global $config;
 	$username=getusername($sessionid);
-
-	$basedata=0;
 	if ($username != "") {
-		$use_file = fopen("/var/log/radacct/datacounter/monthly/used-octets-$username", "r");
+		foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
+		    if($value['varusersusername']==$username){
+		    	$userindex = $item;
+		    	$timerange = $value['varusersmaxtotaloctetstimerange'];
+		    }
+		}
+		$use_file = fopen("/var/log/radacct/datacounter/$timerange/used-octets-$username", "r");
 		$usagenum = fgets($use_file);
 		fclose($use_file);
 		$basedata = number_format(abs($usagenum)/1048576, 2, '.',',');
+		$rcv = getVolume($clientip)['input_bytes'];
+		$sent = getVolume($clientip)['output_bytes'];
+		$config['installedpackages']['freeradius']['config'][$userindex]['varuserslastreceivedata']=$rcv;
+		$config['installedpackages']['freeradius']['config'][$userindex]['varuserslastsentdata']=$sent;
+		
 	}
-	
-	return $basedata + number_format(((getVolume($clientip)['input_bytes']+getVolume($clientip)['output_bytes'])/1048576), 2);
+	return $basedata + number_format((($sent+$receive)/1048576), 2);
 
 }
 function getmaxquota($sessionid){
 	global $config;
 	$username=getusername($sessionid);
 	if ($username != "") {
-	foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
-	    if($value['varusersusername']==$username){
-		return $value['varusersmaxtotaloctets'];
-	    }
-	}
-
+		foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
+		    if($value['varusersusername']==$username){
+		    	$userindex = $item;
+			if(!is_numeric($value['varusersmaxtotaloctets'])){
+			    $result = 0;		    
+			}
+			else {
+			    $result = $value['varusersmaxtotaloctets'];
+			}
+		    }
+		}
 	} else {
-		return 0.00;
+		$result = 0;
 	}
-
+	$config['installedpackages']['freeradius']['config'][$userindex]['varuserslastbasedata']=$result;
+	write_config();
+	return $result;
 }
 
 ?>
