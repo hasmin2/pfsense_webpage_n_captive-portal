@@ -22,14 +22,14 @@
 <div id="content">
 	<div class="login-card">
 		<img src="captiveportal-logo.svg"/><br>
- 		<h1>Login Failed</h1>
+ 		<h1>$PORTAL_TITLE_MESSAGE$</h1>
 
 
 
       <div class="login-help">
         <ul class="list">
           <li class="list__item">
-			<!--input type="text" name="message" placeholder=$PORTAL_MESSAGE$ id="portal_message"-->
+			<!--input type="text" name="message" placeholder=$PORTAL_DETAIL_MESSAGE$ id="portal_message"-->
 			<textarea>$PORTAL_MESSAGE$</textarea>
           </li>
         </ul>
@@ -37,7 +37,7 @@
  	  <form name="login_form" method="post" action="$PORTAL_ACTION$">
 		<input type="submit" name="log_back" class="login login-submit" value="Back to portal" id="login">
 	  </form>
-	  		<p class="error" id="error">Login failed.</p>
+	  		<p class="error" id="error">$PORTAL_ERR_BTN_MESSAGE".</p>
 	</div>
 </div>
 </body>
