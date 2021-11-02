@@ -32,6 +32,7 @@ require_once("Auth/RADIUS.php"); // required for radius accounting
 require_once("config.inc");
 require_once("functions.inc");
 require_once("filter.inc");
+require_once("freeradius.inc");
 require_once("voucher.inc");
 require_once("xmlrpc_client.inc");
 
@@ -1753,10 +1754,14 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
 					if($login==="" || $password===""){
 						$msg = "ID or password is empty.\nPlease check and try again";
 					}
-					else if(!$attributes['ms_chap_success']){  //if login failed
-						$msg="ID or Password was not valid.\nCheck ID and password try again";
+					else if($attributes['ms_chap_error']){  //if login failed
+						$msg="Password is incorrect.\nPlease try again.";
+					} else if($attributes['ms_chap2_success']){  //if login success but octets not valid
+						$result=true;
+					} else if (!$attributes['ms_chap_error']&&!$attributes['ms_chap2_success']){
+						$msg="User doesn't exist.\nContact system Admin.";
 					}
-					else{
+					else {
 						$msg="Contacted server, but unknown error to login";
 					}
 				} elseif ($result === null) {
@@ -2265,9 +2270,25 @@ function portal_hostname_from_client_ip($cliip) {
 
 /* functions move from index.php */
 
-function portal_reply_page($redirurl, $type = null, $message = null, $clientmac = null, $clientip = null, $username = null, $password = null, $voucher = null) {
+function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = null, $clientip = null, $username = null, $password = null, $voucher = null) {
 	global $g, $config, $cpzone;
+////////////////////////////////////////////////////////////////////////////////////////////////////
+	if($clientip){
+		$sessionid = captiveportal_isip_logged($clientip)[5];
+		$username = getusername($sessionid);
+	}
+	if ($username){
+		foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
+			if($username==$value['varusersusername']){
+				$userindex=$item;
+			}
+		}
 
+		if($config['installedpackages']['freeradius']['config'][$userindex]['varusersapplychanges']){
+			$type = "config_change";
+		}
+	}
+////////////////////////////////////////////////////////////////////
 	$cpcfg = $config['captiveportal'][$cpzone];
 	$ourhostname = portal_hostname_from_client_ip($clientip);
 	$protocol = (isset($cpcfg['httpslogin'])) ? 'https://' : 'http://';
@@ -2285,17 +2306,56 @@ function portal_reply_page($redirurl, $type = null, $message = null, $clientmac 
 			$currentquota=0;
 			$maxquota=0;
 			$portalbtnmessage="You are not logged in. back home..."; 
+			$htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
 		}
 		else {
 			$currentquota=getcurquota($sessionid, $clientip);
 			$maxquota=getmaxquota($sessionid);
-			$portalbtnmessage="Click here to log out"; 
+			if($currentquota<$maxquota){
+				$title = "You are Online!";
+				$portalbtnmessage="Click here to log out"; 
+				$htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
+			} else {
+				$title = "Login Failed!";
+				$message="You reached allocated data amount.\nContact system admin";
+				$portalbtnmessage="Click here to back home"; 
+				$portalerrbtnmessage=$maxquota."MB limit reached.";
+				captiveportal_disconnect_client($sessionid, "Usage-Exceed");
+				$htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
+			}
+
 		}
-		
+		$portalinfobtnmessage = "The page refresh every 30secs.";
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	} else if ($type == "config_change") {
+		captiveportal_disconnect_client($sessionid);
+		$title="Apply changes..";
+		$portalbtnmessage= "Settings have changed, Tap to home..."; 
+		$portalinfobtnmessage = "Please login to apply changes";
 		$htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
+
 	} else if ($type == "login") {
 		$htmltext = get_include_contents("{$g['varetc_path']}/captiveportal_{$cpzone}.html");
-	} else {
+	} else if ($type == "check_quota") {
+		if(isset($userindex)){
+		$rcv = $config['installedpackages']['freeradius']['config'][$userindex]['varuserslastreceivedata']/1048576;
+		$snt = $config['installedpackages']['freeradius']['config'][$userindex]['varuserslastsentdata']/1048576;
+		$base = $config['installedpackages']['freeradius']['config'][$userindex]['varuserslastbasedata'];
+		$allocated = $config['installedpackages']['freeradius']['config'][$userindex]['varusersmaxtotaloctets'];
+		$curoctets=number_format($rcv+$snt+$base, 2);
+		$ratio = $curoctets/$allocated*100;
+		$message=number_format($curoctets, 2)."MB used. Allocated {$allocated}MB.";
+		$portalbtnmessage= "Tap here to back home..."; 
+		$portalerrbtnmessage= number_format($ratio, 2)."% used.";
+		} else {
+			$message = "ID/PW could not found.";
+			$portalerrbtnmessage="N/A";
+		}
+		$htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
+	}  else {
+		$message = $title;
+		$portalerrbtnmessage = "Login Failed";
+		$title = "Login failed.";
 		$htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
 	}
 
@@ -2311,13 +2371,17 @@ function portal_reply_page($redirurl, $type = null, $message = null, $clientmac 
 
 	$htmltext = str_replace("\$PORTAL_ZONE\$", htmlspecialchars($cpzone), $htmltext);
 	$htmltext = str_replace("\$PORTAL_REDIRURL\$", htmlspecialchars($redirurl), $htmltext);
-	$htmltext = str_replace("\$PORTAL_MESSAGE\$", htmlspecialchars($message), $htmltext);
+	$htmltext = str_replace("\$PORTAL_DETAIL_MESSAGE\$", htmlspecialchars($message), $htmltext);
 	$htmltext = str_replace("\$PORTAL_BTN_MESSAGE\$", htmlspecialchars($portalbtnmessage), $htmltext);
+	$htmltext = str_replace("\$PORTAL_ERR_BTN_MESSAGE\$", htmlspecialchars($portalerrbtnmessage), $htmltext);
+	$htmltext = str_replace("\$PORTAL_INFO_BTN_MESSAGE\$", htmlspecialchars($portalinfobtnmessage), $htmltext);
+
 	$htmltext = str_replace("\$CLIENT_MAC\$", htmlspecialchars($clientmac), $htmltext);
 	$htmltext = str_replace("\$CLIENT_IP\$", htmlspecialchars($clientip), $htmltext);
 	$htmltext = str_replace("\$CURRENT_QUOTA\$", htmlspecialchars($currentquota), $htmltext);
 	$htmltext = str_replace("\$MAX_QUOTA\$", htmlspecialchars($maxquota), $htmltext);
 	$htmltext = str_replace("\$SESSION_ID\$", htmlspecialchars($sessionid), $htmltext);
+	$htmltext = str_replace("\$PORTAL_TITLE_MESSAGE\$", htmlspecialchars($title), $htmltext);
 
 	// Special handling case for captive portal master page so that it can be ran
 	// through the PHP interpreter using the include method above.  We convert the
@@ -2326,7 +2390,11 @@ function portal_reply_page($redirurl, $type = null, $message = null, $clientmac 
 	$htmltext = str_replace("#MAX_QUOTA#", htmlspecialchars($maxquota), $htmltext);
 	$htmltext = str_replace("#PORTAL_ZONE#", htmlspecialchars($cpzone), $htmltext);
 	$htmltext = str_replace("#PORTAL_REDIRURL#", htmlspecialchars($redirurl), $htmltext);
-	$htmltext = str_replace("#PORTAL_MESSAGE#", htmlspecialchars($message), $htmltext);
+	$htmltext = str_replace("#PORTAL_DETAIL_MESSAGE#", htmlspecialchars($message), $htmltext);
+	$htmltext = str_replace("#PORTAL_TITLE_MESSAGE#", htmlspecialchars($title), $htmltext);
+	$htmltext = str_replace("#PORTAL_ERR_BTN_MESSAGE#", htmlspecialchars($portalerrbtnmessage), $htmltext);
+	$htmltext = str_replace("#PORTAL_INFO_BTN_MESSAGE#", htmlspecialchars($portalinfobtnmessage), $htmltext);
+
 	$htmltext = str_replace("#CLIENT_MAC#", htmlspecialchars($clientmac), $htmltext);
 	$htmltext = str_replace("#CLIENT_IP#", htmlspecialchars($clientip), $htmltext);
 	$htmltext = str_replace("#USERNAME#", htmlspecialchars($username), $htmltext);
@@ -2379,7 +2447,26 @@ function captiveportal_update_entry($sessionid, $new_value, $field_to_update) {
 function portal_allow($clientip, $clientmac, $username, $password = null, $redirurl = null,
     $attributes = null, $pipeno = null, $authmethod = null, $context = 'first', $existing_sessionid = null) {
 	global $g, $config, $cpzone;
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	if($username){
+	foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
+		if($username==$value['varusersusername']){
+			$userindex=$item;
+		}
+	}
+	if($config['installedpackages']['freeradius']['config'][$userindex]['varusersapplychanges']){
+		$config['installedpackages']['freeradius']['config'][$userindex]['varusersapplychanges']=false;
+		if($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']){
+			$config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota'] = false;
+			$timerange=strtolower($config['installedpackages']['freeradius']['config'][$userindex]['varuserspointoftime']);
+			unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$username}*");
 
+		}
+		write_config("FreeRADIUS user change applied");
+		freeradius_users_resync(false);
+	}
+	}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Ensure we create an array if we are missing attributes
 	if (!is_array($attributes)) {
 		$attributes = array();
@@ -2706,7 +2793,6 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
 
 	if (isset($config['captiveportal'][$cpzone]['logoutwin_enable']) && !isset($config['captiveportal'][$cpzone]['passthrumacadd'])) {
 		$ourhostname = portal_hostname_from_client_ip($clientip);
-			echo("AAAAAAAAAAAAAA");
 		$protocol = (isset($config['captiveportal'][$cpzone]['httpslogin'])) ? 'https://' : 'http://';
 		$logouturl = "{$protocol}{$ourhostname}/";
 
@@ -3107,7 +3193,7 @@ function getmaxquota($sessionid){
 		$result = 0;
 	}
 	$config['installedpackages']['freeradius']['config'][$userindex]['varuserslastbasedata']=$result;
-	write_config();
+	write_config("FreeRADIUS user last datausage has been update");
 	return $result;
 }
 
