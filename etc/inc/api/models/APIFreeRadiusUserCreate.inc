@@ -25,53 +25,42 @@ class APIFreeRADIUSUserCreate extends APIModel {
     }
 
     public function action() {
-        # Increase the system's next UID by one and add our user to the configuration
-        //$this->config["system"]["nextuid"] = strval(intval($this->validated_data["uid"]) + 1);
-        //$this->config['system']['user'][] = $this->validated_data;
-
         # Write the user to configuration and set the user on the backend. Return response with created user object.
         $this->write_config();
-        local_user_set($this->validated_data);
         return APIResponse\get(0, $this->validated_data);
     }
 
     private function __validate_username() {
         # Check for our required `username` payload value
-        if (isset($this->initial_data['username'])) {
-            # Ensure a user with this username does not already exist
-            if (!array_key_exists($this->initial_data['username'], index_users())) {
-                # Ensure the username does not contain invalid characters
-                if (!preg_match("/[^a-zA-Z0-9\.\-_]/", $this->initial_data['username'])) {
-                    # Ensure username is not reserved by the system
-                    if (!$this->is_username_reserved($this->initial_data["username"])) {
-                        # Ensure username is not longer that 32 characters
-                        if (strlen($this->initial_data["username"]) <= 32) {
-                            $this->validated_data["name"] = $this->initial_data['username'];
-                        } else {
-                            $this->errors[] = APIResponse\get(5038);
-                        }
-                    } else {
-                        $this->errors[] = APIResponse\get(5037);
-                    }
-                } else {
-                    $this->errors[] = APIResponse\get(5036);
-                }
-            } else {
-                $this->errors[] = APIResponse\get(5002);
-            }
-        } else {
-            $this->errors[] = APIResponse\get(5000);
-        }
-    }
 
-    private function __validate_password() {
-        # Check for our required `password` payload value
-        if (isset($this->initial_data['password'])) {
-            # Generate the password hash and add it to our validated data
-            local_user_set_password($this->validated_data, $this->initial_data['password']);
-        } else {
-            $this->errors[] = APIResponse\get(5003);
-        }
+        if (isset($this->initial_data['freeradius_username'])) {
+			foreach($this->config["installedpackages"]["freeradius"]["config"] as $item => $value){
+				if($this->initial_data['freeradius_username'] === $value["varusersusername"]){
+		            $this->errors[] = APIResponse\get(5002);
+					break;
+				}
+				else { $this->id = $item++; }
+			}
+		}
+		else { $this->errors[] = APIResponse\get(5000); }
+		if (!preg_match("/[^a-zA-Z0-9\.\-_]/", $this->initial_data['freeradius_username'])) {
+		# Ensure username is not reserved by the system
+			if (!$this->is_username_reserved($this->initial_data["freeradius_username"])) {
+			# Ensure username is not longer that 32 characters
+				if (strlen($this->initial_data["freeradius_username"]) <= 32) {
+					if (isset($this->initial_data['freeradius_password'])) {
+						$this->create_userinfo();
+					} else {
+			            $this->errors[] = APIResponse\get(5003);
+			        }
+				}
+				else { $this->errors[] = APIResponse\get(5038); }
+			}
+			else { $this->errors[] = APIResponse\get(5037);	}
+		}
+		else { $this->errors[] = APIResponse\get(5036); }
+
+
     }
 
     private function __validate_priv() {
@@ -98,65 +87,11 @@ class APIFreeRADIUSUserCreate extends APIModel {
         }
     }
 
-    private function __validate_disabled() {
-        # Check for our optional `disabled` payload value
-        if ($this->initial_data["disabled"] === true) {
-            $this->validated_data["disabled"] = "";
-        }
-    }
-
-    private function __validate_descr() {
-        # Check for our optional `descr` payload value
-        if (isset($this->initial_data['descr'])) {
-            $this->validated_data["descr"] = $this->initial_data['descr'];
-        }
-    }
-
-    private function __validate_expires() {
-        # Check for our optional `expires` payload value
-        if (isset($this->initial_data['expires'])) {
-            # Try to format the date string, return an error if the format is invalid
-            try {
-                $this->validated_data["expires"] = (new DateTime($this->initial_data['expires']))->format("m/d/Y");
-            } catch (Exception $e) {
-                $this->errors[] = APIResponse\get(5040);
-            }
-        }
-    }
-
-    private function __validate_authorizedkeys() {
-        # Check for our optional `authorizedkeys` payload value
-        if (isset($this->initial_data['authorizedkeys'])) {
-            $this->validated_data["authorizedkeys"] = base64_encode($this->initial_data['authorizedkeys']);
-        }
-    }
-
-    private function __validate_ipsecpsk() {
-        # Check for our optional `ipsecpsk` payload value
-        if (isset($this->initial_data['ipsecpsk'])) {
-            # Ensure the PSK does not contain invalid characters
-            if (preg_match('/^[[:ascii:]]*$/', $_POST['ipsecpsk'])) {
-                $this->validated_data["ipsecpsk"] = $this->initial_data['ipsecpsk'];
-            } else {
-                $this->errors[] = APIResponse\get(5039);
-            }
-        }
-    }
-
     public function validate_payload() {
-        # Set static object values
-        $this->validated_data["uid"] = $this->config["system"]["nextuid"];
-        $this->validated_data["scope"] = "user";
-
         # Run each validation method
         $this->__validate_username();
-        $this->__validate_password();
         $this->__validate_priv();
-        $this->__validate_descr();
-        $this->__validate_disabled();
-        $this->__validate_expires();
-        $this->__validate_authorizedkeys();
-        $this->__validate_ipsecpsk();
+
     }
 
     public function is_username_reserved($user) {
@@ -172,40 +107,63 @@ class APIFreeRADIUSUserCreate extends APIModel {
         }
         return false;
     }
+	public function create_userinfo(){
+        # Check for our required `password` payload value
+		$userinfoentry = array(
+			"sortable"=>"",
+			"varusersusername"=>"",
+			"varuserspassword"=>"",
+			"varuserspasswordencryption"=>"Cleartext-Password",
+			"varusersmotpenable"=>"",
+			"varusersauthmethod"=>"motp",
+			"varusersmotpinitsecret"=>"",
+			"varusersmotppin"=>"",
+			"varusersmotpoffset"=>"",
+			"qrcodetext"=>"",
+			"varuserswisprredirectionurl"=>"",
+			"varuserssimultaneousconnect"=>"",
+			"description"=>"",
+			"varusersframedipaddress"=>"",
+			"varusersframedipnetmask"=>"",
+			"varusersframedroute"=>"",
+			"varusersframedip6address"=>"",
+			"varusersframedip6route"=>"",
+			"varusersvlanid"=>"",
+			"varusersexpiration"=>"",
+			"varuserssessiontimeout"=>"",
+			"varuserslogintime"=>"",
+			"varusersamountoftime"=>"",
+			"varuserspointoftime"=>"Monthly",
+			"varusersmaxtotaloctets"=>"1",
+			"varusersmaxtotaloctetstimerange"=>"monthly",
+			"varusersmaxbandwidthdown"=>"",
+			"varusersmaxbandwidthup"=>"",
+			"varusersacctinteriminterval"=>"600",
+			"varuserstopadditionaloptions"=>"",
+			"varuserscheckitemsadditionaloptions"=>"",
+			"varusersreplyitemsadditionaloptions"=>"",
+			"varuserslastreceivedata"=>0,
+			"varuserslastsentdata"=>0,
+			"varuserslastbasedata"=>0,
+		);
+		foreach($userinfoentry as $item => $value){
+			if($this->startsWith($item, "varusers") == 1){ $postfix = substr($item, 8); } 
+			else { $postfix = $item; }
+			if(isset($this->initial_data["freeradius_".$postfix])){
+				//if(!isset($this->id)){ $this->id = 0;}
+				$this->config["installedpackages"]["freeradius"]["config"]=array();
+				$this->config["installedpackages"]["freeradius"]["config"][0]=array();//[$item => $this->initial_data["freeradius_".$postfix]];
+				//$this->config["installedpackages"]["freeradius"]["config"][0]["username"]="hasmin";
+				echo($this->initial_data["freeradius_".$postfix]);
+				$this->validated_data["freeradius_".$postfix] = $this->initial_data["freeradius_".$postfix];
+			} else{
+				//echo($item);
+			}
+		}
+	}
+	private function startsWith($haystack, $needle) {
+		// search backwards starting from haystack length characters from the end
+		return $needle === "" || strrpos($haystack, $needle, -strlen($haystack)) !== false;
+	}
 }
 
-
-			/*<config>
-				<sortable></sortable>
-				<varusersusername><![CDATA[hasmin]]></varusersusername>
-				<varuserspassword><![CDATA[1]]></varuserspassword>
-				<varuserspasswordencryption><![CDATA[Cleartext-Password]]></varuserspasswordencryption>
-				<varusersmotpenable></varusersmotpenable>
-				<varusersauthmethod>motp</varusersauthmethod>
-				<varusersmotpinitsecret></varusersmotpinitsecret>
-				<varusersmotppin></varusersmotppin>
-				<varusersmotpoffset></varusersmotpoffset>
-				<qrcodetext></qrcodetext>
-				<varuserswisprredirectionurl></varuserswisprredirectionurl>
-				<varuserssimultaneousconnect></varuserssimultaneousconnect>
-				<description></description>
-				<varusersframedipaddress></varusersframedipaddress>
-				<varusersframedipnetmask></varusersframedipnetmask>
-				<varusersframedroute></varusersframedroute>
-				<varusersframedip6address></varusersframedip6address>
-				<varusersframedip6route></varusersframedip6route>
-				<varusersvlanid></varusersvlanid>
-				<varusersexpiration></varusersexpiration>
-				<varuserssessiontimeout>90</varuserssessiontimeout>
-				<varuserslogintime></varuserslogintime>
-				<varusersamountoftime></varusersamountoftime>
-				<varuserspointoftime>Monthly</varuserspointoftime>
-				<varusersmaxtotaloctets>10</varusersmaxtotaloctets>
-				<varusersmaxtotaloctetstimerange>monthly</varusersmaxtotaloctetstimerange>
-				<varusersmaxbandwidthdown>1000</varusersmaxbandwidthdown>
-				<varusersmaxbandwidthup>1000</varusersmaxbandwidthup>
-				<varusersacctinteriminterval>600</varusersacctinteriminterval>
-				<varuserstopadditionaloptions></varuserstopadditionaloptions>
-				<varuserscheckitemsadditionaloptions></varuserscheckitemsadditionaloptions>
-				<varusersreplyitemsadditionaloptions></varusersreplyitemsadditionaloptions>
-			</config>*/
