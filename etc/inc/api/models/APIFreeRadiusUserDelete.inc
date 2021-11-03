@@ -37,7 +37,7 @@ class APIFreeRADIUSUserDelete extends APIModel {
             foreach ($this->config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
 				if ($this->initial_data["freeradius_username"] === $userentry['varusersusername']) {
 					$this->validated_data["freeradius_username"] = $userentry['varusersusername'];
-					$this->config["installedpackages"]["freeradius"]["config"][$item] = false;
+					unset($this->config["installedpackages"]["freeradius"]["config"][$item]);
 				}
             }
             # Set an error if no user was found

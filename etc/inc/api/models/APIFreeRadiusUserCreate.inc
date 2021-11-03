@@ -18,6 +18,7 @@ require_once("api/framework/APIResponse.inc");
 
 class APIFreeRADIUSUserCreate extends APIModel {
     # Create our method constructor
+
     public function __construct() {
         parent::__construct();
         $this->privileges = ["page-all", "page-services-freeradius"];
@@ -31,6 +32,7 @@ class APIFreeRADIUSUserCreate extends APIModel {
     }
 
     private function __validate_username() {
+
         # Check for our required `username` payload value
 
         if (isset($this->initial_data['freeradius_username'])) {
@@ -39,7 +41,7 @@ class APIFreeRADIUSUserCreate extends APIModel {
 		            $this->errors[] = APIResponse\get(5002);
 					break;
 				}
-				else { $this->id = $item++; }
+				else { $this->id = $item+1; }
 			}
 		}
 		else { $this->errors[] = APIResponse\get(5000); }
@@ -49,7 +51,11 @@ class APIFreeRADIUSUserCreate extends APIModel {
 			# Ensure username is not longer that 32 characters
 				if (strlen($this->initial_data["freeradius_username"]) <= 32) {
 					if (isset($this->initial_data['freeradius_password'])) {
-						$this->create_userinfo();
+					    if(!isset($this->id)){
+					        $this->id = 0;
+                            $this->config["installedpackages"]["freeradius"]=["config"=>[$this->id]];
+                        }
+                        $this->config["installedpackages"]["freeradius"]["config"][$this->id]=$this->create_userinfo($this->id);
 					} else {
 			            $this->errors[] = APIResponse\get(5003);
 			        }
@@ -107,59 +113,58 @@ class APIFreeRADIUSUserCreate extends APIModel {
         }
         return false;
     }
-	public function create_userinfo(){
+	private function create_userinfo($id){
         # Check for our required `password` payload value
-		$userinfoentry = array(
-			"sortable"=>"",
-			"varusersusername"=>"",
-			"varuserspassword"=>"",
-			"varuserspasswordencryption"=>"Cleartext-Password",
-			"varusersmotpenable"=>"",
-			"varusersauthmethod"=>"motp",
-			"varusersmotpinitsecret"=>"",
-			"varusersmotppin"=>"",
-			"varusersmotpoffset"=>"",
-			"qrcodetext"=>"",
-			"varuserswisprredirectionurl"=>"",
-			"varuserssimultaneousconnect"=>"",
-			"description"=>"",
-			"varusersframedipaddress"=>"",
-			"varusersframedipnetmask"=>"",
-			"varusersframedroute"=>"",
-			"varusersframedip6address"=>"",
-			"varusersframedip6route"=>"",
-			"varusersvlanid"=>"",
-			"varusersexpiration"=>"",
-			"varuserssessiontimeout"=>"",
-			"varuserslogintime"=>"",
-			"varusersamountoftime"=>"",
-			"varuserspointoftime"=>"Monthly",
-			"varusersmaxtotaloctets"=>"1",
-			"varusersmaxtotaloctetstimerange"=>"monthly",
-			"varusersmaxbandwidthdown"=>"",
-			"varusersmaxbandwidthup"=>"",
-			"varusersacctinteriminterval"=>"600",
-			"varuserstopadditionaloptions"=>"",
-			"varuserscheckitemsadditionaloptions"=>"",
-			"varusersreplyitemsadditionaloptions"=>"",
-			"varuserslastreceivedata"=>0,
-			"varuserslastsentdata"=>0,
-			"varuserslastbasedata"=>0,
-		);
+        $userinfoentry = array(
+            "sortable"=>"",
+            "varusersusername"=>"",
+            "varuserspassword"=>"",
+            "varuserspasswordencryption"=>"Cleartext-Password",
+            "varusersmotpenable"=>"",
+            "varusersauthmethod"=>"motp",
+            "varusersmotpinitsecret"=>"",
+            "varusersmotppin"=>"",
+            "varusersmotpoffset"=>"",
+            "qrcodetext"=>"",
+            "varuserswisprredirectionurl"=>"",
+            "varuserssimultaneousconnect"=>"",
+            "description"=>"",
+            "varusersframedipaddress"=>"",
+            "varusersframedipnetmask"=>"",
+            "varusersframedroute"=>"",
+            "varusersframedip6address"=>"",
+            "varusersframedip6route"=>"",
+            "varusersvlanid"=>"",
+            "varusersexpiration"=>"",
+            "varuserssessiontimeout"=>"",
+            "varuserslogintime"=>"",
+            "varusersamountoftime"=>"",
+            "varuserspointoftime"=>"Monthly",
+            "varusersmaxtotaloctets"=>"1",
+            "varusersmaxtotaloctetstimerange"=>"monthly",
+            "varusersmaxbandwidthdown"=>"",
+            "varusersmaxbandwidthup"=>"",
+            "varusersacctinteriminterval"=>"600",
+            "varuserstopadditionaloptions"=>"",
+            "varuserscheckitemsadditionaloptions"=>"",
+            "varusersreplyitemsadditionaloptions"=>"",
+            "varuserslastreceivedata"=>0,
+            "varuserslastsentdata"=>0,
+            "varuserslastbasedata"=>0,
+        );
+        $result=array();
 		foreach($userinfoentry as $item => $value){
-			if($this->startsWith($item, "varusers") == 1){ $postfix = substr($item, 8); } 
+			if($this->startsWith($item, "varusers") == 1){ $postfix = substr($item, 8); }
 			else { $postfix = $item; }
 			if(isset($this->initial_data["freeradius_".$postfix])){
-				//if(!isset($this->id)){ $this->id = 0;}
-				$this->config["installedpackages"]["freeradius"]["config"]=array();
-				$this->config["installedpackages"]["freeradius"]["config"][0]=array();//[$item => $this->initial_data["freeradius_".$postfix]];
-				//$this->config["installedpackages"]["freeradius"]["config"][0]["username"]="hasmin";
-				echo($this->initial_data["freeradius_".$postfix]);
+                $result[$item] = $this->initial_data["freeradius_".$postfix];
 				$this->validated_data["freeradius_".$postfix] = $this->initial_data["freeradius_".$postfix];
 			} else{
-				//echo($item);
+				$result[$item] = $value;
 			}
 		}
+		//print_r($result);
+		return $result;
 	}
 	private function startsWith($haystack, $needle) {
 		// search backwards starting from haystack length characters from the end

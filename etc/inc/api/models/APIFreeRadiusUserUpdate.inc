@@ -124,7 +124,6 @@ class APIFreeRADIUSUserUpdate extends APIModel {
 		foreach($userinfoentry as $item => $value){
 			if($this->startsWith($item, "varusers") == 1){ $postfix = substr($item, 8); } 
 			else { $postfix = $item; }
-
 			if(isset($this->initial_data["freeradius_".$postfix])){
 				$this->config["installedpackages"]["freeradius"]["config"][$this->id][$item] = $this->initial_data["freeradius_".$postfix];
 				$this->validated_data["freeradius_".$postfix] = $this->initial_data["freeradius_".$postfix];
