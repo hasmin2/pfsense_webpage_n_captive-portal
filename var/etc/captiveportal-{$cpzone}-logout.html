@@ -37,8 +37,15 @@
       <form name="logout_form" method="post" action="$PORTAL_ACTION$"/>
 			<input name='logout_id' type='hidden' value="$SESSION_ID$">
 			<input type="submit" name="logout" class="login login-submit" value="$PORTAL_BTN_MESSAGE$" id="login" />
-			</form>
+		</form>
+
 			<input type="button" name="Refresh"class="error" value="$PORTAL_INFO_BTN_MESSAGE$" id="refresh" />
+		<p>
+	   <form name="change_pw_form" method="post" action="$PORTAL_ACTION$"/>
+			<input name='change_pw' type='hidden' value="$USERNAME$">
+			<input type="submit" name="logout" class="login login-submit" value="Change password" id="change_pw" />
+		</form>
+		</p>
 
 	</div>
 </div>

@@ -20,28 +20,18 @@
 		<img src="captiveportal-logo.svg"/><br>
  		<h1>#PORTAL_TITLE_MESSAGE#</h1>
 	  <form name="login_form" method="post" action="#PORTAL_ACTION#">
-		<input type="text" name="auth_user" placeholder="User" id="auth_user">
-		<input type="password" name="auth_pass" placeholder="Password" id="auth_pass">
-		  <div class="login-help">
-			<ul class="list">
-				<li class="list__item">
-				  <label class="label--checkbox">
-					  <input type="checkbox" class="checkbox" onchange="document.getElementById('login').disabled = !this.checked;">
-					  <span>I agree with the <a target="_blank" rel="noopener" href="http://192.168.208.1:8002/example.pdf">terms & licences</a></span>
-				  </label>
-				</li>
-			</ul>
-		  </div>
+		 <label for="password">New Password</label>
+			 <input type="password" id="password" placeholder="New Password">
+			 <label for="cnfrm-password">Confirm Password</label>
+			  <input type="password" id="cnfrm-password" placeholder="Confirm password">
+
 		<input name="redirurl" type="hidden" value="#PORTAL_REDIRURL#">
-		<input type="submit" name="accept" class="login login-submit" value="Login" id="login" disabled>
+		<input type="submit" name="accept" class="login login-submit" value="Tap to submit" id="change_pw" disabled>
 	  </form>
 	  <form name="quota_form" method="post" action="#PORTAL_ACTION#">
-			Check Quota
-		<input type="text" name="auth_user" placeholder="" id="auth_user">
-		<input name="check_quota" type="hidden" value=true>
-		<input name="redirurl" type="hidden" value="#PORTAL_REDIRURL#">
-		<input type="submit" name="accept" class="login login-submit" value="Check data usage" id="check_quota">
+			
 	  </form>
+
 	</div>
 
 </div>

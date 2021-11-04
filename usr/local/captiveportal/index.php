@@ -93,8 +93,9 @@ if ($_POST['logout_id']) {//When User click logout button from './logout.php'
 	captiveportal_disconnect_client($safe_logout_id);
 	portal_reply_page($redirurl, "login","Logged out!!!", $clientmac, $clientip);
 } elseif ($_POST['check_quota']){
-	echo( $_POST['auth_name']);
-	portal_reply_page($loginurl, "check_quota", "Quota details", null, null, $_POST['auth_user']); 
+	portal_reply_page($loginurl, "check_quota", "Quota details", null, null, $_POST['auth_user']);
+} elseif ($_POST['change_pw']){
+    portal_reply_page($loginurl, "change_pw", "Reset PW", $clientmac, $clientip);
 } elseif (($_POST['accept'] || $cpcfg['auth_method'] === 'radmac' || !empty($cpcfg['blockedmacsurl'])) && $macfilter && $clientmac &&  captiveportal_blocked_mac($clientmac)) {
 	captiveportal_logportalauth($clientmac, $clientmac, $clientip, "Blocked MAC address");
 	if (!empty($cpcfg['blockedmacsurl'])) {

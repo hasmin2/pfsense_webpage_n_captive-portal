@@ -39,6 +39,7 @@ class APIFreeRADIUSUserUpdate extends APIModel {
 					$this->validated_data["freeradius_username"] = $userentry['varusersusername'];
 					$this->id = $item;
 					$this->update_userinfo();
+                    $this->config["installedpackages"]["freeradius"]["config"][$this->id]["varusersapplychanges"]="true";
 				}
             }
             # Set an error if no user was found
@@ -120,6 +121,7 @@ class APIFreeRADIUSUserUpdate extends APIModel {
 			"varuserslastreceivedata"=>0,
 			"varuserslastsentdata"=>0,
 			"varuserslastbasedata"=>0,
+			"varusersresetquota"=>false,
 		);
 		foreach($userinfoentry as $item => $value){
 			if($this->startsWith($item, "varusers") == 1){ $postfix = substr($item, 8); } 

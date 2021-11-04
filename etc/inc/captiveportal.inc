@@ -2272,6 +2272,14 @@ function portal_hostname_from_client_ip($cliip) {
 
 function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = null, $clientip = null, $username = null, $password = null, $voucher = null) {
 	global $g, $config, $cpzone;
+	foreach($config['installedpackages']['freeradiussettings']['config'][0]['varusersuserlist'] as $item => $value){
+	    echo ("{$item}:::{$value}\n");
+	}
+    if($config['installedpackages']['freeradiussettings']['config'][0]['varusersapplychanges']){
+        $config['installedpackages']['freeradiussettings']['config'][0]['varusersapplychanges']=false;
+        write_config("FreeRADIUS user add/delete applied");
+        freeradius_users_resync(false);
+    }
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 	if($clientip){
 		$sessionid = captiveportal_isip_logged($clientip)[5];
@@ -2299,6 +2307,11 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
 		$redirurl = is_URL($redirurl) ? $redirurl : $portal_url;
 		header("Location: {$redirurl}");
 		return;
+	} else if ($type == "change_pw") {
+	    $config['installedpackages']['freeradius']['config'][$userindex]['varuserspassword'] = $password;
+        write_config("{$username} change password applied");
+        $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-resetpw.html");
+
 	} else if ($type == "connected") {
 		$sessioncfg = captiveportal_isip_logged($clientip);
 		$sessionid = $sessioncfg[5];
@@ -2449,22 +2462,21 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
 	global $g, $config, $cpzone;
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	if($username){
-	foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
-		if($username==$value['varusersusername']){
-			$userindex=$item;
-		}
-	}
-	if($config['installedpackages']['freeradius']['config'][$userindex]['varusersapplychanges']){
-		$config['installedpackages']['freeradius']['config'][$userindex]['varusersapplychanges']=false;
-		if($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']){
-			$config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota'] = false;
-			$timerange=strtolower($config['installedpackages']['freeradius']['config'][$userindex]['varuserspointoftime']);
-			unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$username}*");
+        foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
+            if($username==$value['varusersusername']){
+                $userindex=$item;
+            }
+        }
+        if($config['installedpackages']['freeradiussettings']['config'][$userindex]['varusersapplychanges']){
+            $config['installedpackages']['freeradius']['config'][$userindex]['varusersapplychanges']=false;
+            if($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']){
+                $config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota'] = false;
+                $timerange=strtolower($config['installedpackages']['freeradius']['config'][$userindex]['varuserspointoftime']);
+                unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$username}*");
 
-		}
-		write_config("FreeRADIUS user change applied");
-		freeradius_users_resync(false);
-	}
+            }
+            write_config("FreeRADIUS user change applied");
+        }
 	}
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Ensure we create an array if we are missing attributes

@@ -56,6 +56,8 @@ class APIFreeRADIUSUserCreate extends APIModel {
                             $this->config["installedpackages"]["freeradius"]=["config"=>[$this->id]];
                         }
                         $this->config["installedpackages"]["freeradius"]["config"][$this->id]=$this->create_userinfo($this->id);
+                        $this->config["installedpackages"]["freeradiussettings"]["config"][0]["varusersapplychanges"]="true";
+
 					} else {
 			            $this->errors[] = APIResponse\get(5003);
 			        }
@@ -151,6 +153,7 @@ class APIFreeRADIUSUserCreate extends APIModel {
             "varuserslastreceivedata"=>0,
             "varuserslastsentdata"=>0,
             "varuserslastbasedata"=>0,
+            "varusersresetquota"=>false,
         );
         $result=array();
 		foreach($userinfoentry as $item => $value){
@@ -163,7 +166,6 @@ class APIFreeRADIUSUserCreate extends APIModel {
 				$result[$item] = $value;
 			}
 		}
-		//print_r($result);
 		return $result;
 	}
 	private function startsWith($haystack, $needle) {
