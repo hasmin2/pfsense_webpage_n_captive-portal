@@ -37,8 +37,8 @@ class APIFreeRADIUSUserDelete extends APIModel {
             foreach ($this->config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
 				if ($this->initial_data["freeradius_username"] === $userentry['varusersusername']) {
 					$this->validated_data["freeradius_username"] = $userentry['varusersusername'];
-				    //unset($this->config["installedpackages"]["freeradius"]["config"][$item]);  // flag for remove DB for when anyone who is in site is open webpage.
-                    $this->config["installedpackages"]["freeradius"]["config"][$item]["varusersmodified"]="delete";  // flag for remove DB for when anyone who is in site is open webpage.
+				    unset($this->config["installedpackages"]["freeradius"]["config"][$item]);  // flag for remove DB for when anyone who is in site is open webpage.
+                    //$this->config["installedpackages"]["freeradius"]["config"][$item]["varusersmodified"]="delete";  // flag for remove DB for when anyone who is in site is open webpage.
 				}
             }
             # Set an error if no user was found
