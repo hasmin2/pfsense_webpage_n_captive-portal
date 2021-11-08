@@ -39,7 +39,7 @@ class APIFreeRADIUSUserUpdate extends APIModel {
 					$this->validated_data["freeradius_username"] = $userentry['varusersusername'];
 					$this->id = $item;
 					$this->update_userinfo();
-                    $this->config["installedpackages"]["freeradius"]["config"][$this->id]["varusersapplychanges"]="true";
+                    $this->config["installedpackages"]["freeradius"]["config"][$this->id]["varusersmodified"]="update";
 				}
             }
             # Set an error if no user was found

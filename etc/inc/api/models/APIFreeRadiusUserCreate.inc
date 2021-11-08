@@ -56,7 +56,8 @@ class APIFreeRADIUSUserCreate extends APIModel {
                             $this->config["installedpackages"]["freeradius"]=["config"=>[$this->id]];
                         }
                         $this->config["installedpackages"]["freeradius"]["config"][$this->id]=$this->create_userinfo($this->id);
-                        $this->config["installedpackages"]["freeradiussettings"]["config"][0]["varusersapplychanges"]="true";
+                        $this->config["installedpackages"]["freeradius"]["config"][$this->id]["varusersmodified"]="create";
+                        $this->write_config();
 
 					} else {
 			            $this->errors[] = APIResponse\get(5003);
@@ -153,7 +154,7 @@ class APIFreeRADIUSUserCreate extends APIModel {
             "varuserslastreceivedata"=>0,
             "varuserslastsentdata"=>0,
             "varuserslastbasedata"=>0,
-            "varusersresetquota"=>false,
+            "varusersresetquota"=>"true",
         );
         $result=array();
 		foreach($userinfoentry as $item => $value){

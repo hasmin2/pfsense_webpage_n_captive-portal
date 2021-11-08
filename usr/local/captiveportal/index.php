@@ -55,7 +55,7 @@ $redirurl="{$protocol}{$serverip}";
 $loginurl="{$protocol}{$serverip}/index.php?zone=crew";
 
 if (empty($cpcfg)) {
-	portal_reply_page($loginurl, "redir"); 
+	portal_reply_page($loginurl, "redir");
 	ob_flush();
 	return;
 }
@@ -175,36 +175,25 @@ if ($_POST['logout_id']) {//When User click logout button from './logout.php'
 		
 	}
 
-	
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	$auth_result = captiveportal_authenticate_user($user, $passwd, $clientmac, $clientip, $pipeno, $context);
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	if ($auth_result['result']) {
 		captiveportal_logportalauth($user, $clientmac, $clientip, $auth_result['login_status']);
 		portal_allow($clientip, $clientmac, $user, $passwd, $redirurl, $auth_result['attributes'], $pipeno, $auth_result['auth_method'], $context);
-
+        portal_reply_page($loginurl, "connected", "You are Online!", $clientmac, $clientip);
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	} else {
 		captiveportal_free_dn_ruleno($pipeno);
 		$type = "error";
-		if ($auth_result['login_message']) {
-			$replymsg = $auth_result['login_message'];
-		} else {
-			$replymsg = "Portal returns no error message with unsuccessful login. contact admin";
-		}
-	
+        $replymsg = $auth_result['login_message'];
 		captiveportal_logportalauth($user, $clientmac, $clientip, $auth_result['login_status'], $replymsg);
-		// Radius MAC authentication.
-		if ($context === 'radmac' && $type !== 'redir' && !isset($cpcfg['radmac_fallback'])) {
-		} else {
-			portal_reply_page($redirurl, $type, $replymsg, $clientmac, $clientip);
-
-		}
+        portal_reply_page($rediurl, $type, $replymsg, $clientmac, $clientip);
 	}
 } else { //anything else 
 	/* display captive portal page */
 	$isDisconnected = already_connected($clientip, $clientmac);
 	if($isDisconnected===false){//isDisconnected
-		portal_reply_page($loginurl, "login", "Welcome!", $clientmac, $clientip);
+		portal_reply_page($redirurl, "login", "Welcome!", $clientmac, $clientip);
 	}
 	else {//is still connected
 		portal_reply_page($redirurl, "connected", "You are Online!", $clientmac, $clientip);
@@ -212,8 +201,4 @@ if ($_POST['logout_id']) {//When User click logout button from './logout.php'
 }
 
 ob_flush();
-
-
 ?>
-
-
