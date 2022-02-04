@@ -15,7 +15,7 @@
 
 require_once("api/framework/APIEndpoint.inc");
 
-class APIUser extends APIEndpoint {
+class APIFreeRadiusUser extends APIEndpoint {
     public function __construct() {
         $this->url = "/api/v1/freeradiususer";
     }
