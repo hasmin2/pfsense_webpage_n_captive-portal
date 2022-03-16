@@ -32,11 +32,28 @@ class APISystemSendPing extends APIModel {
 	if(!$this->initial_data['destination']){
 	    return APIResponse\get(4005,"destination missing");
 	}
-	if(!$this->initial_data['beginaddr']){
+	if(!$this->initial_data['interface']){
 	    return APIResponse\get(3010,"begin address missing");
 	}
-	$output = mwexec('ping -c1 -t '.$this->initial_data['timeoutinsec'].' -S '.$this->initial_data['beginaddr'].' '.$this->initial_data['destination']);
+	else{
+	    foreach(return_gateways_status(true) as $key => $value){
+		if($value['name']==$this->initial_data['interface']){
+		    if(substr($value['loss'], 0, 3)){
+			$output["network"]='1';
+	    	        $output["internet"] = mwexec('ping -c1 -t '.$this->initial_data['timeoutinsec'].' -S '.$value['srcip'].' '.$this->initial_data['destination']);
+		    }
+		    else{
+			$output["network"]='0';
+			$output["internet"]='2';
+
+		    }
+		}
+	    }
+	}
+
         return APIResponse\get(0,$output);
+//return APIResponse\get(0,return_gateways_status(true));
+
 
     }
 
