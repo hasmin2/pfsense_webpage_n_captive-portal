@@ -26,15 +26,19 @@ class APISystemSendPing extends APIModel {
     }
 
     public function action() {
-        # Write our console settings
-
 	$beginAddr=get_interface_info($this->initial_data['interface']);
-	$output = mwexec('ping -c1 -t2 -S '.$beginAddr['ipaddr'].' '.$this->initial_data['destination']);
+	if(!$this->initial_data['timeoutinsec']){
+	    return APIResponse\get(3017,"timeoutinsec missing");
+	}
+	if(!$this->initial_data['destination']){
+	    return APIResponse\get(4005,"destination missing");
+	}
+	if(!$this->initial_data['interface']){
+	    return APIResponse\get(3010,"interface missing");
+	}
+
+	$output = mwexec('ping -c1 -t '.$this->initial_data['timeoutinsec'].' -S '.$beginAddr['ipaddr'].' '.$this->initial_data['destination']);
         return APIResponse\get(0,$output);
     }
-
-    public function validate_payload() {
-    }
-
 
 }
