@@ -26,4 +26,11 @@ class APIStatusInterface extends APIEndpoint {
     protected function post(){
 	return (new APIStatusInterfaceRenew())->call();
     }
+    protected function put(){
+	return (new APIStatusInterfaceUp())->call();
+    }
+    protected function delete(){
+	return (new APIStatusInterfaceDown())->call();
+    }
+
 }
