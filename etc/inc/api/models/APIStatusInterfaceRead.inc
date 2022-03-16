@@ -15,9 +15,9 @@
 
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
-require_once("interfaces.inc");
 
-class APIStatusInterfaceRenew extends APIModel {
+
+class APIStatusInterfaceRead extends APIModel {
     # Create our method constructor
     public function __construct() {
         parent::__construct();
@@ -25,28 +25,18 @@ class APIStatusInterfaceRenew extends APIModel {
     }
 
     public function action() {
-         # Update our new user in the config and set the user on the backend
         return APIResponse\get(0, $this->__get_metrics());
     }
-    public function validate_payload() {
-        # Run each validation method
-        $this->__run_renew();
-    }
-    private function __run_renew(){
-	interface_bring_down($this->initial_data["interface"]);
-	sleep(3);
-	interface_configure($this->initial_data["interface"]);
-    }
+
     private function __get_metrics() {
         $if_descrs = get_configured_interface_with_descr(true);
         $if_info = [];
+
         foreach ($if_descrs as $if_descr => $if_name) {
-	    if($this->initial_data["interface"]==$if_descr){
-		$if = ["name" => $if_descr, "descr" => $if_name];
-		$if = $if + get_interface_info($if_descr);
-		$if_info[] = $if;
-	    }
-	}
+            $if = ["name" => $if_descr, "descr" => $if_name];
+            $if = $if + get_interface_info($if_descr);
+            $if_info[] = $if;
+        }
         return $if_info;
     }
 }
