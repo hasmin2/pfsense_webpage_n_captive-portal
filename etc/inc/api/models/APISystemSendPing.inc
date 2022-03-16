@@ -26,19 +26,18 @@ class APISystemSendPing extends APIModel {
     }
 
     public function action() {
-	$beginAddr=get_interface_info($this->initial_data['interface']);
 	if(!$this->initial_data['timeoutinsec']){
 	    return APIResponse\get(3017,"timeoutinsec missing");
 	}
 	if(!$this->initial_data['destination']){
 	    return APIResponse\get(4005,"destination missing");
 	}
-	if(!$this->initial_data['interface']){
-	    return APIResponse\get(3010,"interface missing");
+	if(!$this->initial_data['beginaddr']){
+	    return APIResponse\get(3010,"begin address missing");
 	}
-
-	$output = mwexec('ping -c1 -t '.$this->initial_data['timeoutinsec'].' -S '.$beginAddr['ipaddr'].' '.$this->initial_data['destination']);
+	$output = mwexec('ping -c1 -t '.$this->initial_data['timeoutinsec'].' -S '.$this->initial_data['beginaddr'].' '.$this->initial_data['destination']);
         return APIResponse\get(0,$output);
+
     }
 
 }
