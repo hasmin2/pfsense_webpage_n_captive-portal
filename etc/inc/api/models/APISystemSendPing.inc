@@ -39,12 +39,12 @@ class APISystemSendPing extends APIModel {
 	    foreach(return_gateways_status(true) as $key => $value){
 		if($value['name']==$this->initial_data['interface']){
 		    if(substr($value['loss'], 0, 3)){
-			$output["network"]='1';
+			$output["network"]=1;
 	    	        $output["internet"] = mwexec('ping -c1 -t '.$this->initial_data['timeoutinsec'].' -S '.$value['srcip'].' '.$this->initial_data['destination']);
 		    }
 		    else{
-			$output["network"]='0';
-			$output["internet"]='2';
+			$output["network"]=0;
+			$output["internet"]=2;
 
 		    }
 		}
