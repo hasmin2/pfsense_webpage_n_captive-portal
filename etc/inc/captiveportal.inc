@@ -2298,10 +2298,22 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
 		header("Location: {$redirurl}");
 		return;
 	} else if ($type == "change_pw") {
-	    $config['installedpackages']['freeradius']['config'][$userindex]['varuserspassword'] = $password;
-        write_config("{$username} change password applied");
-        $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-resetpw.html");
-
+	    $sessionid = already_connected($clientip, $clientmac)[5];
+        	    $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-resetpw.html");
+	} else if ($type=="commit_change_pw"){
+	    $sessionid = already_connected($clientip, $clientmac)[5];
+	    $username = getusername($sessionid);
+	    foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
+	        if($username==$value['varusersusername']){
+	            $userindex = $item;
+	            break;
+	        }
+	    }
+	    $config['installedpackages']['freeradius']['config'][$userindex][varuserspassword]=$password;
+   	    write_config("{$username} change password applied");
+        freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
+       	captiveportal_disconnect_client($sessionid);
+	    portal_reply_page($redirurl, "login","PW Reset", $clientmac, $clientip);
 	} else if ($type == "connected") {
 	    $sessionid = already_connected($clientip, $clientmac)[5];
 	    $username = getusername($sessionid);
@@ -2311,8 +2323,8 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
 	            break;
 	        }
 	    }
-	    if (isset($userindex)){//사용자가 있을 때
-	        if ($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified']=="update"){
+	if (isset($userindex)){//사용자가 있을 때
+	  if ($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified']=="update"){
                $title="Updating..";
                $portalbtnmessage= "Update received. Tap to re-login";
                $portalinfobtnmessage = "Please login to apply changes";

@@ -92,6 +92,10 @@ if ($_POST['logout_id']) {//When User click logout button from './logout.php'
 	$safe_logout_id = SQLite3::escapeString($_POST['logout_id']);
 	captiveportal_disconnect_client($safe_logout_id);
 	portal_reply_page($redirurl, "login","Logged out!!!", $clientmac, $clientip);
+} elseif ($_POST['new_password']){
+	//$safe_logout_id = SQLite3::escapeString($_POST['logout_id']);
+	portal_reply_page($redirurl, "commit_change_pw","Changed PW", $clientmac, $clientip, null, $_POST['new_password']);
+
 } elseif ($_POST['check_quota']){
 	portal_reply_page($loginurl, "check_quota", "Quota details", null, null, $_POST['auth_user']);
 } elseif ($_POST['change_pw']){
