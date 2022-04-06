@@ -1,5 +1,5 @@
 <?php
-//   Copyright 2021 Jared Hendrickson
+//   Copyright 2022 Jared Hendrickson
 //
 //   Licensed under the Apache License, Version 2.0 (the "License");
 //   you may not use this file except in compliance with the License.
@@ -15,24 +15,22 @@
 
 require_once("api/framework/APIEndpoint.inc");
 
-class APIFreeRadiusUser extends APIEndpoint {
+class APIStatusInterface extends APIEndpoint {
     public function __construct() {
-        $this->url = "/api/v1/freeradiususer";
+        $this->url = "/api/v1/status/interface";
     }
 
     protected function get() {
-        return (new APIFreeRADIUSUserRead())->call();
+        return (new APIStatusInterfaceRead())->call();
+    }
+    protected function post(){
+	return (new APIStatusInterfaceRenew())->call();
+    }
+    protected function put(){
+	return (new APIStatusInterfaceUp())->call();
+    }
+    protected function delete(){
+	return (new APIStatusInterfaceDown())->call();
     }
 
-    protected function put() {
-        return (new APIFreeRADIUSUserCreate())->call();
-    }
-
-    protected function post() {
-        return (new APIFreeRADIUSUserUpdate())->call();
-    }
-
-    protected function delete() {
-        return (new APIFreeRADIUSUserDelete())->call();
-    }
 }
