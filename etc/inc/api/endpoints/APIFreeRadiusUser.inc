@@ -24,11 +24,11 @@ class APIFreeRadiusUser extends APIEndpoint {
         return (new APIFreeRADIUSUserRead())->call();
     }
 
-    protected function post() {
+    protected function put() {
         return (new APIFreeRADIUSUserCreate())->call();
     }
 
-    protected function put() {
+    protected function post() {
         return (new APIFreeRADIUSUserUpdate())->call();
     }
 
