@@ -32,7 +32,7 @@ require_once("Auth/RADIUS.php"); // required for radius accounting
 require_once("config.inc");
 require_once("functions.inc");
 require_once("filter.inc");
-include("freeradius.inc");
+include_once("freeradius.inc");
 require_once("voucher.inc");
 require_once("xmlrpc_client.inc");
 
