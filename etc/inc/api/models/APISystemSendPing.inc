@@ -26,35 +26,34 @@ class APISystemSendPing extends APIModel {
     }
 
     public function action() {
+	$result=array();
 	if(!$this->initial_data['timeoutinsec']){
 	    return APIResponse\get(3017,"timeoutinsec missing");
 	}
 	if(!$this->initial_data['destination']){
 	    return APIResponse\get(4005,"destination missing");
 	}
-	if(!$this->initial_data['interface']){
-	    return APIResponse\get(3010,"begin address missing");
-	}
 	else{
-	    foreach(return_gateways_status(true) as $key => $value){
-		if($value['name']==$this->initial_data['interface']){
-		    if(substr($value['loss'], 0, 3)=='0.0'){
-			$output["network"]=0;
-	    	        $output["internet"] = mwexec('ping -c1 -t '.$this->initial_data['timeoutinsec'].' -S '.$value['srcip'].' '.$this->initial_data['destination']);
-		    }
-		    else{
-			$output["network"]=2;
-			$output["internet"]=2;
+        $gw_metrics_raw = return_gateways_status(true);
+        $gw_metrics = [];
 
-		    }
+        # Loop through each gateway's metrics, format time data as floats, and update statuses
+        foreach ($gw_metrics_raw as $gw) {
+	    if(!isset($gw["monitor_disable"]) && !isset($this->initial_data['interface']) || $this->initial_data['interface']==$gw['name']){
+                $gw["delay"] = floatval(str_replace(["%", "ms"], "", $gw["delay"]));
+                $gw["stddev"] = floatval(str_replace(["%", "ms"], "", $gw["stddev"]));
+                $gw["loss"] = floatval(str_replace(["%", "ms"], "", $gw["loss"]));
+                $gw["status"] = ($gw["status"] === "none") ? "up" : $gw["status"];
+		if($gw["status"] === "online"){
+		    $gw["pingresult"] = mwexec('ping -c1 -t '.$this->initial_data['timeoutinsec'].' -S '.$gw['srcip'].' '.$this->initial_data['destination'])==0 ? "online": "offline";
 		}
+		else{
+			$gw["pingresult"]="offline";
+		}
+                $gw_metrics[] = $gw;
 	    }
-	}
-
-        return APIResponse\get(0,$output);
-//return APIResponse\get(0,return_gateways_status(true));
-
-
+        }
+        return APIResponse\get(0,$gw_metrics);
     }
-
+}
 }
