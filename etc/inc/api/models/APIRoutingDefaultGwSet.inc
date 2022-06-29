@@ -25,10 +25,22 @@ class APIRoutingDefaultGwSet extends APIModel {
 
     public function action() {
        $this->config["gateways"]["defaultgw4"] = $this->initial_data["defaultgw4"];
+	if(isset($this->initial_data['manualrouteduration'])){
+	    $this->config['gateways'] ['manualrouteduration']=$this->initial_data['manualrouteduration'];
+	    $date = new DateTime();
+	       $this->config['gateways']['manualroutetimestamp']= round($date->getTimestamp()/60,0);
+	}
+
         $this->write_config();
         $this->apply();
+	$output = [];
+	foreach ($this->config['gateways']['gateway_item'] as $gateway){
+	    if($gateway['name'] === $this->initial_data['defaultgw4']){
+		$output = $gateway;
+	    }
 
-        return APIResponse\get(0, $this->validated_data);
+	}
+        return APIResponse\get(0, $output);
     }
    public function apply() {
         # Mark the routing subsystem as changed, clear if applied

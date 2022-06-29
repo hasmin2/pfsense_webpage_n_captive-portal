@@ -25,11 +25,19 @@ class APIRoutingDefaultGwRead extends APIModel {
 
     public function action() {
         # Local variables
-        $gateways = [];
+       $gateways = [];
+
         # Populate our gateways array if it exists
         if (isset($this->config["gateways"]["defaultgw4"])) {
-           $gateways = $this->config["gateways"]["defaultgw4"];
+           $gateways['defaultgw4'] = $this->config["gateways"]["defaultgw4"];
+	   if(isset($this->config['gateways']['manualrouteduration']) && isset($this->config['gateways']['manualroutetimestamp'])){
+		$gateways['manualrouteactive']=true;
+	    }
+	    else{$gateways['manualrouteactive']=false;}
+
         }
         return APIResponse\get(0, $gateways);
     }
 }
+
+?>

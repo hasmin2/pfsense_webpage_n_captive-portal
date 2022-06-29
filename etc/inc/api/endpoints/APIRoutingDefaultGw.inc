@@ -19,7 +19,7 @@ class APIRoutingDefaultGw extends APIEndpoint {
     public function __construct() {
         $this->url = "/api/v1/routing/defaultgw";
     }
-    protected function get() {
+    protected function post() {
         return (new APIRoutingDefaultGwRead())->call();
     }
 
