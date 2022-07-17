@@ -2289,7 +2289,8 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
 	$cpcfg = $config['captiveportal'][$cpzone];
 	$ourhostname = portal_hostname_from_client_ip($clientip);
 	$protocol = (isset($cpcfg['httpslogin'])) ? 'https://' : 'http://';
-	$portal_url = "{$protocol}{$ourhostname}/index.php?zone={$cpzone}";
+	$portal_url=$redirurl;
+
 	//////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////
 
 	/* Get captive portal layout */
@@ -3191,9 +3192,12 @@ function check_quota($username){
 		    	$timerange = $value['varusersmaxtotaloctetstimerange'];
 		    }
 		}
-		$use_file = fopen("/var/log/radacct/datacounter/$timerange/used-octets-$username", "r");
-		$usagenum = fgets($use_file);
-		fclose($use_file);
+		if(file_exists("/var/log/radacct/datacounter/$timerange/used-octets-$username")){
+		    $use_file = fopen("/var/log/radacct/datacounter/$timerange/used-octets-$username", "r");
+		    $usagenum = fgets($use_file);
+		    fclose($use_file);
+		}
+		else { $usagenum = 0; }
 		$basedata = number_format(abs($usagenum)/1048576, 2, '.',',');
 	}
 	return $basedata;

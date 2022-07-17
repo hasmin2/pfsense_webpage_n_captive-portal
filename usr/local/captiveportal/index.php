@@ -49,10 +49,8 @@ $protocol = (isset($config['captiveportal'][$cpzone]['httpslogin'])) ? 'https://
 
 
 $cpzoneid = $cpcfg['zoneid'];
-$serverip = portal_hostname_from_client_ip($clientip);
 $clientip = $_SERVER['REMOTE_ADDR'];
-$redirurl="{$protocol}{$serverip}";
-$loginurl="{$protocol}{$serverip}/index.php?zone=crew";
+
 
 if (empty($cpcfg)) {
 	portal_reply_page($loginurl, "redir");
@@ -72,6 +70,8 @@ if (!$clientip) {
 $cpsession = captiveportal_isip_logged($clientip);
 $ourhostname = portal_hostname_from_client_ip($clientip);
 $macfilter = !isset($cpcfg['nomacfilter']);
+$redirurl="{$protocol}{$ourhostname}";
+$loginurl="{$protocol}{$ourhostname}/index.php?zone=crew";
 
 /* find MAC address for client */
 if ($macfilter || isset($cpcfg['passthrumacadd'])) {
@@ -87,7 +87,6 @@ if ($macfilter || isset($cpcfg['passthrumacadd'])) {
 	$clientmac = $tmpres['macaddr'];
 	unset($tmpres);
 }
-
 if ($_POST['logout_id']) {//When User click logout button from './logout.php'
 	$safe_logout_id = SQLite3::escapeString($_POST['logout_id']);
 	captiveportal_disconnect_client($safe_logout_id);

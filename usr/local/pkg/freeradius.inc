@@ -1098,7 +1098,6 @@ EOD;
 function freeradius_clients_resync($restart_svc = true) {
 	global $config;
 	$conf = '';
-
 	if (is_array($config['installedpackages']['freeradiusclients']['config'])) {
 		$arrclients = $config['installedpackages']['freeradiusclients']['config'];
 	} else {
@@ -3744,27 +3743,24 @@ if [ ! -e "/var/log/radacct/datacounter/\$TIMERANGE/max-octets-\$USERNAME" ]; th
 	exit 0
 else
 	### If no used-octets file exist then we assume that it was deleted by cron job and we need to create a new file starting from zero
-	if [ ! -e "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME" ]; then
+    if [ ! -e "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME" ]; then
 		echo 0 > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"
 	fi
-
-	USEDOCTETS=\$((\$ACCTINPUTOCTETS+\$ACCTOUTPUTOCTETS))
-
-	# If this is an interim update, track it in a separate session file
-	# since the incoming data is a gauge not a counter.
-	if [ \$UPDATETYPE = "Interim-Update" ]; then
-		echo \$USEDOCTETS > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-\$SESSIONID"
-	else
-		USEDOCTETS=\$((\$USEDOCTETS+`cat "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"`))
-
-		# If there was a session file for this session (from interim updates) clear it since the equivalent
-		# value was just added to the total.
-		if [ -e "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-\$SESSIONID" ]; then
-			rm "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-\$SESSIONID"
-		fi
-		echo "\$USEDOCTETS" > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"
-	fi
-	exit 0
+    USEDOCTETS=\$((\$ACCTINPUTOCTETS+\$ACCTOUTPUTOCTETS))
+    # If this is an interim update, track it in a separate session file
+    # since the incoming data is a gauge not a counter.
+    if [ \$UPDATETYPE = "Interim-Update" ]; then
+        echo \$USEDOCTETS > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-\$SESSIONID"
+    else
+        USEDOCTETS=\$((\$USEDOCTETS+`cat "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"`))
+        # If there was a session file for this session (from interim updates) clear it since the equivalent
+        # value was just added to the total.
+        if [ -e "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-\$SESSIONID" ]; then
+            rm "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-\$SESSIONID"
+        fi
+        echo "\$USEDOCTETS" > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"
+    fi
+    exit 0
 fi
 
 EOD;
