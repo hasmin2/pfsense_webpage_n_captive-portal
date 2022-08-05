@@ -15,7 +15,7 @@
 
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
-
+require_once("captiveportal.inc");
 class APIServicesUpdatePortal extends APIModel {
     # Create our method constructor
     public function __construct() {
@@ -35,13 +35,15 @@ class APIServicesUpdatePortal extends APIModel {
 	        }
 	        else{
 	            if($this->initial_data['portalactive']){
-	    	        unset($this->config["captiveportal"][$this->initial_data['zone']]['enable']);
+			$this->config["captiveportal"][$this->initial_data['zone']]['enable']="";
 	    	    }
 	    	    else{
-	    	        $this->config["captiveportal"][$this->initial_data['zone']]['enable']="";
+			unset($this->config["captiveportal"][$this->initial_data['zone']]['enable']);
 	    	    }
             }
             write_config("CaptivePortal Toggle by landline Active");
+		captiveportal_configure();
+	      filter_configure();
         }
         return APIResponse\get(0, $this->config["captiveportal"][$this->initial_data['zone']]);
     }

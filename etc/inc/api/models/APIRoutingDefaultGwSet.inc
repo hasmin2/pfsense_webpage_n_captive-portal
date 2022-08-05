@@ -38,7 +38,7 @@ class APIRoutingDefaultGwSet extends APIModel {
 	    if($gateway['name'] === $this->initial_data['defaultgw4']){
 		$output = $gateway;
 	    }
-
+		
 	}
         return APIResponse\get(0, $output);
     }

@@ -24,8 +24,9 @@ class APISystemSendPing extends APIModel {
         $this->change_note = "Modified system console settings";
         $this->validated_data = $this->config["system"];
     }
-
+	
     public function action() {
+	global $config;
 	$result=array();
 	if(!$this->initial_data['timeoutinsec']){
 	    return APIResponse\get(3017,"timeoutinsec missing");
@@ -36,7 +37,7 @@ class APISystemSendPing extends APIModel {
 	else{
         $gw_metrics_raw = return_gateways_status(true);
         $gw_metrics = [];
-
+	unset($config['gatewaystatus']);
         # Loop through each gateway's metrics, format time data as floats, and update statuses
         foreach ($gw_metrics_raw as $gw) {
 	    if(!isset($gw["monitor_disable"]) && !isset($this->initial_data['interface']) || $this->initial_data['interface']==$gw['name']){
@@ -52,7 +53,9 @@ class APISystemSendPing extends APIModel {
 		}
                 $gw_metrics[] = $gw;
 	    }
+		$config['gatewaystatus'][$gw['name']]['pingresult']=$gw['pingresult'];
         }
+	write_config("Write ping result");
         return APIResponse\get(0,$gw_metrics);
     }
 }
