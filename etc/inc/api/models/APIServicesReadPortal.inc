@@ -13,17 +13,24 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-require_once("api/framework/APIEndpoint.inc");
-
-class APIServicesPortal extends APIEndpoint {
+require_once("api/framework/APIModel.inc");
+require_once("api/framework/APIResponse.inc");
+require_once("captiveportal.inc");
+class APIServicesReadPortal extends APIModel {
+    # Create our method constructor
     public function __construct() {
-        $this->url = "/api/v1/services/portal";
+        parent::__construct();
+        $this->privileges = ["page-all", "page-system-gateways"];
     }
 
-    protected function get() {
-        return (new APIServicesReadPortal())->call();
-    }
-    protected function post() {
-        return (new APIServicesUpdatePortal())->call();
+    public function action() {
+        # Local variables
+        if(!isset($this->initial_data['zone'])){
+		$result=$this->config["captiveportal"];
+        }
+
+        return APIResponse\get(0, $result);
     }
 }
+
+?>

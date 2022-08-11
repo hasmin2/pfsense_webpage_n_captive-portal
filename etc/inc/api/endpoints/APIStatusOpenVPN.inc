@@ -15,15 +15,15 @@
 
 require_once("api/framework/APIEndpoint.inc");
 
-class APIServicesPortal extends APIEndpoint {
+class APIStatusOpenVPN extends APIEndpoint {
     public function __construct() {
-        $this->url = "/api/v1/services/portal";
+        $this->url = "/api/v1/status/openvpn";
     }
 
     protected function get() {
-        return (new APIServicesReadPortal())->call();
+        return (new APIStatusOpenVPNRead())->call();
     }
     protected function post() {
-        return (new APIServicesUpdatePortal())->call();
+        return (new APIStatusOpenVPNRestart())->call();
     }
 }

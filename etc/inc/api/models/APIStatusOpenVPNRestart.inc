@@ -13,17 +13,25 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-require_once("api/framework/APIEndpoint.inc");
+require_once("api/framework/APIModel.inc");
+require_once("api/framework/APIResponse.inc");
 
-class APIServicesPortal extends APIEndpoint {
+
+class APIStatusOpenVPNRestart extends APIModel {
+    # Create our method constructor
     public function __construct() {
-        $this->url = "/api/v1/services/portal";
+        parent::__construct();
+        $this->privileges = ["page-all", "page-status-openvpn"];
     }
 
-    protected function get() {
-        return (new APIServicesReadPortal())->call();
-    }
-    protected function post() {
-        return (new APIServicesUpdatePortal())->call();
+    public function action() {
+	$result=[];
+        $clients = openvpn_get_active_clients();
+	    foreach($clients as $client){
+		    openvpn_restart_by_vpnid('client', $client['vpnid']);
+		    $result=$client;
+	    }
+
+        return APIResponse\get(0, $result);
     }
 }

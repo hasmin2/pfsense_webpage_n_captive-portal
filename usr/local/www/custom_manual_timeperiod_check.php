@@ -7,12 +7,12 @@ if(isset($config['gateways']['manualroutetimestamp']) && isset($config['gateways
 		unset($config['gateways']['manualroutetimestamp']);
 		unset($config['gateways']['manualrouteduration']);
 		write_config("Modified gateway via API");
-		echo('back to auto routing due to duration is expire');
+		//echo('back to auto routing due to duration is expire');
 	}
 	else {echo('still manual routing activated');}
 }
 else if (!isset($config['gateways']['manualroutetimestamp']) && !isset($config['gateways']['manualrouteduration'])){
-	echo('auto routing enabled, no action performed.');
+	//echo('auto routing enabled, no action performed.');
 }
 else {
 	if(isset($config['gateways']['manualroutetimestamp']) && !isset($config['gateways']['manualrouteduration'])){
@@ -25,8 +25,7 @@ else {
 		write_config("Modified gateway via API");
 
 	}
-	echo('uncecessary setting for time duration, recovering back to auto-routing');
+	//echo('uncecessary setting for time duration, recovering back to auto-routing');
 
 }
-
 ?>

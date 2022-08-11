@@ -29,6 +29,7 @@
 require_once("guiconfig.inc");
 require_once("pfsense-utils.inc");
 require_once("functions.inc");
+require_once("openvpn.inc");
 require_once("/usr/local/www/widgets/include/manual_routing.inc");
 
 if (!function_exists('compose_manual_routing_contents')) {
@@ -36,7 +37,7 @@ if (!function_exists('compose_manual_routing_contents')) {
 		global $user_settings;
 		global $config;
 		$rtnstr = '';
-		
+
 		$a_gateways = return_gateways_array();
 		$gateways_status = array();
 		$gateways_status = return_gateways_status(true);
@@ -245,16 +246,23 @@ if ($_POST['widgetkey']) {//변경할때이므로
 	   	 	$date = new DateTime();
 	    		$config['gateways']['manualroutetimestamp']= round($date->getTimestamp()/60,0);
 		}
-	 write_config("manual routing");
-               system_routing_configure();
-               system_resolvconf_generate();
-               filter_configure();
-               setup_gateways_monitor();
-               send_event("service reload dyndnsall");
-               clear_subsystem_dirty("staticroutes");
+
+	 	write_config("manual routing");
+	             system_routing_configure();
+             		system_resolvconf_generate();
+             		filter_configure();
+	             setup_gateways_monitor();
+             		send_event("service reload dyndnsall");
+		clear_subsystem_dirty("staticroutes");
+		if($_POST['routing_radiobutton']!="Automatic"){
+		$clients = openvpn_get_active_clients();
+		    foreach($clients as $client){
+			    openvpn_restart_by_vpnid('client', $client['vpnid']);
+		    }
+		}
 	}
 
-
+	
 	if (!is_array($user_settings["widgets"][$_POST['widgetkey']])) {
 		$user_settings["widgets"][$_POST['widgetkey']] = array();
 	}
@@ -324,7 +332,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 				<label><input name="routing_radiobutton" type="radio" value=<?echo($gname);?> <?//echo($config['gateways']['defaultgw4']==$gname) ? 'checked':'';?>><?echo($gname);?></label>
 			</div>
 <?php
-
+				
 		endif;
 		endforeach;
 ?>

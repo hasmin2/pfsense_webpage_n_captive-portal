@@ -1,3 +1,4 @@
+
 <?php
 //   Copyright 2022 Jared Hendrickson
 //
@@ -15,15 +16,13 @@
 
 require_once("api/framework/APIEndpoint.inc");
 
-class APIServicesPortal extends APIEndpoint {
+class APIStatusGetall extends APIEndpoint {
     public function __construct() {
-        $this->url = "/api/v1/services/portal";
+        $this->url = "/api/v1/status/getall";
     }
 
     protected function get() {
-        return (new APIServicesReadPortal())->call();
+        return (new APIStatusGetConfig())->call();
     }
-    protected function post() {
-        return (new APIServicesUpdatePortal())->call();
-    }
+
 }

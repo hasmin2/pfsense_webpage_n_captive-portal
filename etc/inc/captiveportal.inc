@@ -229,7 +229,6 @@ function captiveportal_configure_zone($cpcfg) {
 	$captiveportallck = lock("captiveportal{$cpzone}", LOCK_EX);
 
 	if (isset($cpcfg['enable'])) {
-
 		if (platform_booting()) {
 			echo "Starting captive portal({$cpcfg['zone']})... ";
 		} else {
@@ -1765,7 +1764,15 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
 
 				if ($result === true) {
 					$val = 3;
-				} elseif ($result === false && !empty($attributes['reply_message'])) {
+					if (isset($config['captiveportal'][$cpzone]['terminate_duration'])){
+						$result = false;
+						$date = new DateTime();
+						$timeduration = $config['captiveportal'][$cpzone]['terminate_timestamp']+ $config['captiveportal'][$cpzone]['terminate_duration']- round($date->getTimestamp()/60,0);
+						$msg = "Portal has shutdown by ADMIN, wait for ". $timeduration." minutes.";
+					}
+				}
+
+				elseif ($result === false && !empty($attributes['reply_message'])) {
 					$val = 2;
 					$msg = $attributes['reply_message'];
 				} elseif ($result === false) {
@@ -2290,7 +2297,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
 	$ourhostname = portal_hostname_from_client_ip($clientip);
 	$protocol = (isset($cpcfg['httpslogin'])) ? 'https://' : 'http://';
 	$portal_url=$redirurl;
-
+	
 	//////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////
 
 	/* Get captive portal layout */
