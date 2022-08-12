@@ -26,12 +26,9 @@ class APIStatusOpenVPNRestart extends APIModel {
 
     public function action() {
 	$result=[];
-        $clients = openvpn_get_active_clients();
-	    foreach($clients as $client){
-		    openvpn_restart_by_vpnid('client', $client['vpnid']);
-		    $result=$client;
-	    }
+	$this->config['openvpn']['openvpnrestart']="";
+	write_config("openvpn_restart");
 
-        return APIResponse\get(0, $result);
+        return APIResponse\get(0, $this->config['openvpn']['openvpnrestart']=="" ? "success": "failure");
     }
 }

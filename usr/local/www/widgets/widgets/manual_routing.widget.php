@@ -256,13 +256,19 @@ if ($_POST['widgetkey']) {//변경할때이므로
 		clear_subsystem_dirty("staticroutes");
 		if($_POST['routing_radiobutton']!="Automatic"){
 		$clients = openvpn_get_active_clients();
+		if(isset($config['openvpn']['openvpnrestart'])){
+			unset($config['openvpn']['openvpnrestart']);
+		}
 		    foreach($clients as $client){
 			    openvpn_restart_by_vpnid('client', $client['vpnid']);
 		    }
 		}
+		else{
+			$config['openvpn']['openvpnrestart']='';
+		}
 	}
 
-	
+
 	if (!is_array($user_settings["widgets"][$_POST['widgetkey']])) {
 		$user_settings["widgets"][$_POST['widgetkey']] = array();
 	}
@@ -315,7 +321,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 <!-- close the body we're wrapped in and add a configuration-panel -->
 </div><div id="<?=$widget_panel_footer_id?>" class="panel-footer collapse">
 <form action="/widgets/widgets/manual_routing.widget.php" method="post" class="form-horizontal">
-	<//?=gen_customwidgettitle_div($widgetconfig['title']);?>
+	<?//=gen_customwidgettitle_div($widgetconfig['title']);?>
 	<div class="form-group">
 		<label class="col-sm-4 control-label"><?=gettext('Manual Override')?></label>
 		<div class="col-sm-6">
@@ -332,7 +338,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 				<label><input name="routing_radiobutton" type="radio" value=<?echo($gname);?> <?//echo($config['gateways']['defaultgw4']==$gname) ? 'checked':'';?>><?echo($gname);?></label>
 			</div>
 <?php
-				
+
 		endif;
 		endforeach;
 ?>
@@ -367,7 +373,7 @@ events.push(function(){
 	function manual_routing_callback(s) {
 		$(<?= json_encode('#' . $widgetkey . '-gwtblbody')?>).html(s);
 	}
-	
+
 	// POST data to send via AJAX
 	var postdata = {
 		ajax: "ajax",
@@ -379,7 +385,7 @@ events.push(function(){
 	manual_routingObject.url = "/widgets/widgets/manual_routing.widget.php";
 	manual_routingObject.callback = manual_routing_callback;
 	manual_routingObject.parms = postdata;
-	manual_routingObject.freq = 1;
+	manual_routingObject.freq = 10;
 
 	// Register the AJAX object
 	register_ajax(manual_routingObject);

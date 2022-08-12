@@ -55,6 +55,7 @@ class APISystemSendPing extends APIModel {
 	    }
 		$config['gatewaystatus'][$gw['name']]['pingresult']=$gw['pingresult'];
         }
+	$config['gatewaystatus']['pingdestination']=$this->initial_data['destination'];
 	write_config("Write ping result");
         return APIResponse\get(0,$gw_metrics);
     }
