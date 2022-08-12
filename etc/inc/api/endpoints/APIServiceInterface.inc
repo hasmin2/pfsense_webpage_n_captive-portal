@@ -15,9 +15,9 @@
 
 require_once("api/framework/APIEndpoint.inc");
 
-class APIStatusInterface extends APIEndpoint {
+class APIServiceInterface extends APIEndpoint {
     public function __construct() {
-        $this->url = "/api/v1/status/interface";
+        $this->url = "/api/v1/service/interface";
     }
 
     protected function get() {

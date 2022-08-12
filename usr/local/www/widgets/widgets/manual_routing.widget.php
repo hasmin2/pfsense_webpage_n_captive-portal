@@ -371,7 +371,7 @@ events.push(function(){
 
 	// Callback function called by refresh system when data is retrieved
 	function manual_routing_callback(s) {
-		$(<?= json_encode('#' . $widgetkey . '-gwtblbody')?>).html(s);
+		$(<?= json_encode('#' . $widgetkey . '-manual_routing')?>).html(s);
 	}
 
 	// POST data to send via AJAX

@@ -46,7 +46,10 @@ class APISystemSendPing extends APIModel {
                 $gw["loss"] = floatval(str_replace(["%", "ms"], "", $gw["loss"]));
                 $gw["status"] = ($gw["status"] === "none") ? "up" : $gw["status"];
 		if($gw["status"] === "online"){
+		    mwexec('route add -host '.$this->initial_data['destination'].' '.$gw['monitorip']);
+		    sleep(1);
 		    $gw["pingresult"] = mwexec('ping -c1 -t '.$this->initial_data['timeoutinsec'].' -S '.$gw['srcip'].' '.$this->initial_data['destination'])==0 ? "online": "offline";
+		    mwexec('route del -host '.$this->initial_data['destination'].' '.$gw['monitorip']);
 		}
 		else{
 			$gw["pingresult"]="offline";

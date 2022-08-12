@@ -12,7 +12,7 @@ if(isset($config['captiveportal'][$cpzone]['terminate_duration']) && isset($conf
 		write_config("Modified Captive portal via API");
 		echo('Turn on Captive portal due to duration is expire');
 	}
-	else {echo('still trun off ');}
+	else {echo('still Terminated due to in timeduration ');}
 }
 else if (!isset($config['captiveportal'][$cpzone]['terminate_timestamp']) && !isset($config['captiveportal'][$cpzone]['terminate_duration'])){
 	echo('Terminate captive portal is disabled, no action performed.');

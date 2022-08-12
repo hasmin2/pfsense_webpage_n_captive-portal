@@ -17,7 +17,7 @@ require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 require_once("interfaces.inc");
 
-class APIStatusInterfaceUp extends APIModel {
+class APIServiceInterfaceRenew extends APIModel {
     # Create our method constructor
     public function __construct() {
         parent::__construct();
@@ -30,11 +30,12 @@ class APIStatusInterfaceUp extends APIModel {
     }
     public function validate_payload() {
         # Run each validation method
-        $this->__run_up();
+        $this->__run_renew();
     }
-    private function __run_up(){
-	interface_configure($this->initial_data["interface"]);
+    private function __run_renew(){
+	interface_bring_down($this->initial_data["interface"]);
 	sleep(3);
+	interface_configure($this->initial_data["interface"]);
     }
     private function __get_metrics() {
         $if_descrs = get_configured_interface_with_descr(true);
