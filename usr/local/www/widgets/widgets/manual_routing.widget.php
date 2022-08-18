@@ -171,7 +171,7 @@ if (!function_exists('compose_manual_routing_contents')) {
 					$bgcolor = "info";  // lightgray
 				}
 			} else {
-				$online = gettext("Unknown");
+				$online = gettext("No Connection");
 				$bgcolor = "info";  // lightblue
 			}
 			if ($gateways_status[$gname]) {
@@ -180,12 +180,15 @@ if (!function_exists('compose_manual_routing_contents')) {
 					$pingresult = "Online";
 					$pingcolor = "success";
 				}
+
 				else{
-					$pingcolor = "danger";
-					$pingresult = "Offline";
-
+                    $pingcolor = "danger";
+                    $pingresult = "Offline";
 				}
-
+			}
+			else {
+			    $pingcolor="warning";
+            	$pingresult="Not Available";
 			}
 
 			$date = new DateTime();

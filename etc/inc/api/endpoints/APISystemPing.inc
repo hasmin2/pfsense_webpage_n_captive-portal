@@ -13,14 +13,55 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-require_once("api/framework/APIEndpoint.inc");
+require_once("api/framework/APIModel.inc");
+require_once("api/framework/APIResponse.inc");
 
-class APISystemPing extends APIEndpoint {
+class APISystemSendPing extends APIModel {
+    # Create our method constructor
     public function __construct() {
-        $this->url = "/api/v1/system/ping";
+        parent::__construct();
+        $this->privileges = ["page-all", "page-system-advanced-admin"];
+        $this->change_note = "Modified system console settings";
+        $this->validated_data = $this->config["system"];
     }
 
-    protected function post() {
-        return (new APISystemSendPing())->call();
+    public function action() {
+	global $config;
+	$result=array();
+	if(!$this->initial_data['timeoutinsec']){
+	    return APIResponse\get(3017,"timeoutinsec missing");
+	}
+	if(!$this->initial_data['destination']){
+	    return APIResponse\get(4005,"destination missing");
+	}
+	else{
+        $gw_metrics_raw = return_gateways_status(true, true);
+        $gw_metrics = [];
+	unset($config['gatewaystatus']);
+        # Loop through each gateway's metrics, format time data as floats, and update statuses
+        foreach ($gw_metrics_raw as $gw) {
+	    if(!isset($gw["monitor_disable"]) && !isset($this->initial_data['interface']) || $this->initial_data['interface']==$gw['name']){
+                $gw["delay"] = floatval(str_replace(["%", "ms"], "", $gw["delay"]));
+                $gw["stddev"] = floatval(str_replace(["%", "ms"], "", $gw["stddev"]));
+                $gw["loss"] = floatval(str_replace(["%", "ms"], "", $gw["loss"]));
+                $gw["status"] = ($gw["status"] === "none") ? "up" : $gw["status"];
+		if($gw["status"] === "online"){
+		    mwexec('route add -host '.$this->initial_data['destination'].' '.$gw['monitorip']);
+		    sleep(1);
+		    $gw["pingresult"] = mwexec('ping -c1 -t '.$this->initial_data['timeoutinsec'].' -S '.$gw['srcip'].' '.$this->initial_data['destination'])==0 ? "online": "offline";
+		    mwexec('route del -host '.$this->initial_data['destination'].' '.$gw['monitorip']);
+		}
+		else{
+			$gw["pingresult"]="offline";
+		}
+                $gw_metrics[] = $gw;
+	    }
+		$config['gatewaystatus'][$gw['name']]['pingresult']=$gw['pingresult'];
+        }
+	$config['gatewaystatus']['pingdestination']=$this->initial_data['destination'];
+	setup_gateways_monitor();
+	write_config("Write ping result");
+        return APIResponse\get(0,$gw_metrics);
     }
+}
 }

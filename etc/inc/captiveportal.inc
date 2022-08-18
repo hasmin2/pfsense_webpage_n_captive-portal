@@ -1626,11 +1626,13 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
         //먼저 사용자 업데이트 상황이 있는지 확인
         if($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified']){
             //첫번째로 사용량 리셋 있는지? 이건 다른것과 달리 파일을 지워야해서 따로 뺌
-            if(!empty($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota'])){
+            unset($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified']);
+            if($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']){
                 unset($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']);
                 $timerange=strtolower($config['installedpackages']['freeradius']['config'][$userindex]['varuserspointoftime']);
                 unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$username}*");
             }
+            write_config("freeradius user update");
             //다음으로 수정사항이 있으면 유저 리싱크 함.
            	freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
         }
@@ -2336,10 +2338,8 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
                $title="Updating..";
                $portalbtnmessage= "Update received. Tap to re-login";
                $portalinfobtnmessage = "Please login to apply changes";
-               unset($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified']);
                $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
                captiveportal_disconnect_client($sessionid);
-               write_config("FreeRADIUS user change applied");
             } else {//사용량 확인함.
                 $currentquota=getcurquota($sessionid, $clientip);
                 $maxquota=getmaxquota($sessionid);
