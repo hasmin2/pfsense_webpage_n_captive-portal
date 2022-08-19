@@ -37,7 +37,7 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
 	function compose_manage_freeradiususer_contents($widgetkey) {
 		$rtnstr = '';
 		global $config;
-		if(isset(&$config['installedpackages']['freeradius']['config'])){
+		if(isset($config['installedpackages']['freeradius']['config'])){
 		    $radiususers = &$config['installedpackages']['freeradius']['config'];
 		    foreach ($radiususers as $eachuser) {
                 $rtnstr .= "<tr>";
@@ -81,7 +81,7 @@ if ($_POST['widgetkey']) {//변경할때이므로
 
 			}
 		}
-	write_config("Reset freeradius user");
+		write_config("Reset freeradius user");
 	}
 	if($_POST['createusername'] && $_POST['createuserpassword'] && $_POST['createuserquota']){
         $userinfoentry = array(
@@ -128,8 +128,13 @@ if ($_POST['widgetkey']) {//변경할때이므로
 		$userinfoentry['varusersmaxtotaloctetstimerange']=$_POST['createsuerquotaperiod'];
 		$userinfoentry['varuserspointoftime']=$_POST['createsuerquotaperiod'];
 		$userinfoentry['varusersmodified']='create';
-
-	array_push($config["installedpackages"]["freeradius"]["config"], $userinfoentry);
+	if(!isset($config['installedpackages']['freeradius']['config'])){
+		$config["installedpackages"]["freeradius"]=["config"=>[""]];
+		array_push($config["installedpackages"]["freeradius"]["config"][0]=$userinfoentry);
+	}
+	else{
+		array_push($config["installedpackages"]["freeradius"]["config"], $userinfoentry);
+	}
 	write_config("Added freeradius user");
 	}
 	header("Location: /");
