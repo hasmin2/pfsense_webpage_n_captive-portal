@@ -26,11 +26,18 @@
  * limitations under the License.
  */
 
+function startsWith($haystack, $needle) {
+    // search backwards starting from haystack length characters from the end
+    return $needle === "" || strrpos($haystack, $needle, -strlen($haystack)) !== false;
+}
 require_once("guiconfig.inc");
 require_once("pfsense-utils.inc");
 require_once("functions.inc");
 require_once("openvpn.inc");
 require_once("/usr/local/www/widgets/include/manual_routing.inc");
+//require_once('/etc/inc/TelnetClient.php');
+//use TelnetClient\TelnetClient;
+
 
 if (!function_exists('compose_manual_routing_contents')) {
 	function compose_manual_routing_contents($widgetkey) {
@@ -55,24 +62,9 @@ if (!function_exists('compose_manual_routing_contents')) {
 			if ($gateway['monitor_disable']) {
 				continue;
 			}
-			if (isset($gateway['inactive'])) {
-				$title = gettext("Gateway inactive, interface is missing");
-				$icon = 'fa-times-circle-o';
-			} elseif (isset($gateway['disabled'])) {
-				$icon = 'fa-ban';
-				$title = gettext("Gateway disabled");
-			} else {
-				$icon = 'fa-check-circle-o';
-				$title = gettext("Gateway enabled");
-			}
-			if (isset($gateway['isdefaultgw'])) {
-				//$gtitle = gettext("Default gateway");
-			}
-
 			$gw_displayed = true;
 			$rtnstr .= "<tr>\n";
-			$rtnstr .= 	"<td title='{$title}'><i class='fa {$icon}'></i></td>\n";
-			$rtnstr .= 	"<td title='{$gtitle}'>\n";
+			$rtnstr .= 	"<td class='text-center' title='{$gtitle}'>\n";
 			$rtnstr .= htmlspecialchars($gateway['name']);
 			if (isset($gateway['isdefaultgw'])) {
 				$rtnstr .= ' <i class="fa fa-globe"></i>';
@@ -90,6 +82,7 @@ if (!function_exists('compose_manual_routing_contents')) {
 					$monitor_address_disp = $monitor_address;
 				}
 			}
+
 			global $config;
 			$if_gw = '';
 			// If the user asked to display Gateway IP or both IPs, or asked for just monitor IP but the monitor IP is blank
@@ -170,6 +163,54 @@ if (!function_exists('compose_manual_routing_contents')) {
 					$online = gettext("Pending");
 					$bgcolor = "info";  // lightgray
 				}
+				/////////Get FBB/VSAT Signal
+			/*if($gateway['terminal_type'] === 'satlinkfbb'){
+
+				$telnet = new TelnetClient($gateway['monitor'], 9998);
+				$telnet->connect();
+				$telnet->setPrompt("XXXXX");
+				$telnet->sendCommand("AT_ISIG=1");
+				do{
+					$line = $telnet->getLine($matchesPrompt);
+					if(startsWith($line, "_ISIG")){
+						break;
+					}
+				}while(true);
+				$telnet->disconnect();
+				unset($telnet);
+			}
+			else if($gateway['terminal_type'] === 'jrcfbb'){
+
+				$telnet = new TelnetClient($gateway['monitor'], 1829);
+				$telnet->connect();
+				$telnet->setPrompt("XXXXX");
+				$telnet->sendCommand("AT_ISIG=1");
+				do{
+					$line = $telnet->getLine($matchesPrompt);
+					if(startsWith($line, "_ISIG")){
+						break;
+					}
+				}while(true);
+				$telnet->disconnect();
+				unset($telnet);
+			}
+			else if($gateway['terminal_type'] === 'furunofbb'){
+
+				$telnet = new TelnetClient($gateway['monitor'], 2533);
+				$telnet->connect();
+				$telnet->setPrompt("XXXXX");
+				$telnet->sendCommand("AT_ISIG=1");
+				do{
+					$line = $telnet->getLine($matchesPrompt);
+					if(startsWith($line, "_ISIG")){
+						break;
+					}
+				}while(true);
+				$telnet->disconnect();
+				unset($telnet);
+			}
+			$str = preg_replace('/[^0-9,.]*/s', '', $line);*/
+
 			} else {
 				$online = gettext("No Connection");
 				$bgcolor = "info";  // lightblue
@@ -182,8 +223,8 @@ if (!function_exists('compose_manual_routing_contents')) {
 				}
 
 				else{
-                    $pingcolor = "danger";
-                    $pingresult = "Offline";
+                    			$pingcolor = "danger";
+                    			$pingresult = "Offline";
 				}
 			}
 			else {
@@ -206,7 +247,11 @@ if (!function_exists('compose_manual_routing_contents')) {
 
 				}
 			}
-			$rtnstr .= 	"<td>" . ($config['gateways']['defaultgw4']==$gateways_status[$gname]['name'] ? $timeRemain:"") . "</td>\n";
+//////////////////////////////////////
+
+			$rtnstr .= 	"<td  class='text-center'></td>\n";
+///////////////////////////////////////
+			$rtnstr .= 	"<td class='text-center'>" . ($config['gateways']['defaultgw4']==$gateways_status[$gname]['name'] ? $timeRemain:"") . "</td>\n";
 			$rtnstr .= '<td class="bg-' . $bgcolor . '">' . $online . "</td>\n";
 			$rtnstr .= '<td class="bg-' . $pingcolor . '">' . $pingresult . "</td>\n";
 
@@ -307,11 +352,11 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 	<table class="table table-striped table-hover table-condensed">
 		<thead>
 			<tr>
-				<th></th>
-				<th><?=gettext("Name")?></th>
-				<th>GW</th>
-				<th>NET</th>
-				<th>INT</th>
+				<th class="text-center"><?=gettext("Name")?></th>
+				<th class="text-center">Signal</th>
+				<th class="text-center">GW</th>
+				<th class="text-center">Net</th>
+				<th class="text-center">Ext-Net</th>
 			</tr>
 		</thead>
 		<tbody id="<?=htmlspecialchars($widgetkey)?>-gwtblbody">
@@ -374,7 +419,7 @@ events.push(function(){
 
 	// Callback function called by refresh system when data is retrieved
 	function manual_routing_callback(s) {
-		$(<?= json_encode('#' . $widgetkey . '-manual_routing')?>).html(s);
+		$(<?= json_encode('#' . $widgetkey . '-gwtblbody')?>).html(s);
 	}
 
 	// POST data to send via AJAX

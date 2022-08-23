@@ -77,13 +77,19 @@ if ($_POST['widgetkey']) {//변경할때이므로
 		 foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
 			if ($_POST['resetuser'] === $userentry['varusersusername']) {
 				$config['installedpackages']['freeradius']['config'][$item]['varusersresetquota']="true";
-				$config['installedpackages']['freeradius']['config'][$item]['varusersmodified']=update;
+				$config['installedpackages']['freeradius']['config'][$item]['varusersmodified']="update";
 
 			}
 		}
 		write_config("Reset freeradius user");
 	}
 	if($_POST['createusername'] && $_POST['createuserpassword'] && $_POST['createuserquota']){
+	    foreach($config['installedpackages']['freeradius']['config'] as $item){
+	        if($_POST['createusername'] === $item['varusersusername']){
+	            header("Location: /");
+                exit(0);
+	        }
+	    }
         $userinfoentry = array(
             "sortable"=>"",
             "varusersusername"=>"",
@@ -124,7 +130,12 @@ if ($_POST['widgetkey']) {//변경할때이므로
         );
 		$userinfoentry['varusersusername']=$_POST['createusername'];
 		$userinfoentry['varuserspassword']=$_POST['createuserpassword'];
-		$userinfoentry['varusersmaxtotaloctets']=$_POST['createuserquota'];
+		if(is_numeric($_POST['createuserquota'])){
+		    $userinfoentry['varusersmaxtotaloctets']=$_POST['createuserquota'];
+		}
+		else{
+		    $userinfoentry['varusersmaxtotaloctets']=0;
+		}
 		$userinfoentry['varusersmaxtotaloctetstimerange']=$_POST['createsuerquotaperiod'];
 		$userinfoentry['varuserspointoftime']=$_POST['createsuerquotaperiod'];
 		$userinfoentry['varusersmodified']='create';
@@ -166,8 +177,19 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
   box-shadow: none;
   text-shadow: none;
 }
-
 </style>
+<script>
+function checkForm(){
+    if(registeruser.createusername.value==""|| registeruser.createuserpassword.value==""){
+        alert("ID or password is blank");
+        return false;
+    }
+    if(isNaN(registeruser.createuserquota.value)){
+        alert("Wrong datacount, input Number only");
+        return false;
+    }
+}
+</script>
 <div class="table-responsive">
 	<table class="table table-striped table-hover table-condensed">
 		<thead>
@@ -191,7 +213,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 </div>
 <!-- close the body we're wrapped in and add a configuration-panel -->
 </div><div id="<?=$widget_panel_footer_id?>" class="panel-footer collapse">
-<form action="/widgets/widgets/manage_freeradiususer.widget.php" method="post" class="form-horizontal">
+<form name=registeruser action="/widgets/widgets/manage_freeradiususer.widget.php" method="post" class="form-horizontal" onSubmit="return checkForm()">
 	<?//=gen_customwidgettitle_div($widgetconfig['title']);?>
 	<div class="form-group">
 		<label class="col-sm-4 control-label"><?=gettext('Input User Information')?></label>
@@ -232,7 +254,7 @@ events.push(function(){
 
 	// Callback function called by refresh system when data is retrieved
 	function manage_freeradiususer_callback(s) {
-		$(<?= json_encode('#' . $widgetkey . '-man-freeradiususer')?>).html(s);
+		$(<?= json_encode('#' . $widgetkey . '-manual-freeradius')?>).html(s);
 	}
 	
 	// POST data to send via AJAX
