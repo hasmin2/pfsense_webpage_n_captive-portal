@@ -34,39 +34,42 @@ class APISystemSendPing extends APIModel {
 		unset($config['gatewaystatus']);
         # Loop through each gateway's metrics, format time data as floats, and update statuses
         foreach ($gw_metrics_raw as $gw) {
-	    if(!isset($gw["monitor_disable"]) && !isset($this->initial_data['interface']) || $this->initial_data['interface']==$gw['name']){
+	    	if(!isset($gw["monitor_disable"])){
                 $gw["delay"] = floatval(str_replace(["%", "ms"], "", $gw["delay"]));
                 $gw["stddev"] = floatval(str_replace(["%", "ms"], "", $gw["stddev"]));
                 $gw["loss"] = floatval(str_replace(["%", "ms"], "", $gw["loss"]));
                 $gw["status"] = ($gw["status"] === "none") ? "up" : $gw["status"];
-		if($gw["status"] === "online"){
-		    if($gw["check_method"]=== "ping"){
-		    	$gwList = explode(";", $gw["destinationip"]);
-		        $randgw = $gwList[rand(0, count($gwList) - 1)];
-				mwexec('route add -host '.$randgw.' '.$gw['monitorip']);
-				sleep(1);
-				$gw["pingresult"] = mwexec('ping -c1 -t '.$gw['check_timeout'].' -S '.$gw['srcip'].' '.$randgw)==0 ? "online": "offline";
-				mwexec('route del -host '.$randgw.' '.$gw['monitorip']);
-		    }
-		    else if ($gw["check_method"]=== "nmap"){
-		    //TODO
-		    }
-		    else if ($gw["check_method"]=== 'none'){
-		    	$gw["pingresult"] = "online";
-		    }
-		    else {
-		    //TODO
-		    	$gw["pingresult"] = "unknown";
-		    }
-		}
-		else{
-			$gw["pingresult"]="offline";
-		}
-                $gw_metrics[] = $gw;
-	    }
-		$config['gatewaystatus'][$gw['name']]['pingresult']=$gw['pingresult'];
+				if($gw["status"] === "online"){
+		    		if($gw["check_method"]=== "ping"){
+		    			$gwList = explode(";", $gw["destinationip"]);
+						$randgw = $gwList[rand(0, count($gwList) - 1)];
+						mwexec('route add -host '.$randgw.' '.$gw['monitorip']);
+						sleep(1);
+						$gw['choosed_destination']=$randgw;
+						$gw["pingresult"] = mwexec('ping -c1 -t '.$gw['check_timeout'].' -S '.$gw['srcip'].' '.$randgw)==0 ? "online": "offline";
+						mwexec('route del -host '.$randgw.' '.$gw['monitorip']);
+					}
+					else if ($gw["check_method"]=== "nmap"){
+					//TODO
+					}
+					else if ($gw["check_method"]=== 'none'){
+						$gw["pingresult"] = "online";
+					}
+					else {
+					//TODO
+						$gw["pingresult"] = "unknown";
+					}
+				}
+				else{
+					$gw["pingresult"]="offline";
+				}
+				$gw_metrics[] = $gw;
+			}
+			else{
+				$gw["pingresult"]="online";
+			}
+			$config['gatewaystatus'][$gw['name']]['pingresult']=$gw['pingresult'];
         }
-		$config['gatewaystatus']['pingdestination']=$this->initial_data['destination'];
 		setup_gateways_monitor();
 		write_config("Write ping result");
         return APIResponse\get(0,$gw_metrics);
