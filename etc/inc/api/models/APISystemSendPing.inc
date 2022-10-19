@@ -45,8 +45,8 @@ class APISystemSendPing extends APIModel {
 		        $randgw = $gwList[rand(0, count($gwList) - 1)];
 				mwexec('route add -host '.$randgw.' '.$gw['monitorip']);
 				sleep(1);
-				$gw["pingresult"] = mwexec('ping -c1 -t '.$gw['check_timeout'].' -S '.$gw['srcip'].' '.randgw)==0 ? "online": "offline";
-				mwexec('route del -host '.randgw.' '.$gw['monitorip']);
+				$gw["pingresult"] = mwexec('ping -c1 -t '.$gw['check_timeout'].' -S '.$gw['srcip'].' '.$randgw)==0 ? "online": "offline";
+				mwexec('route del -host '.$randgw.' '.$gw['monitorip']);
 		    }
 		    else if ($gw["check_method"]=== "nmap"){
 		    //TODO
