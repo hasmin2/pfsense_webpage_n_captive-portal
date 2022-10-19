@@ -21,5 +21,6 @@
  * limitations under the License.
  */
 
-$toggle_captive_portal_title = gettext("Crew Internet Control Panel");
+$captive_portal_status_title = gettext("Crew Connect Status");
+$captive_portal_status_title_link = "status_captiveportal.php";
 ?>

@@ -486,16 +486,29 @@ function return_gateways_status($byname = false, $gways = false) {
 		$status[$target]['substatus'] = $dpinger_status['substatus'];
 		foreach($config['gateways']['gateway_item'] as $item){
 		    if($item['name'] === $gwname){
-			if($item['terminal_type']){
+				if($item['terminal_type']){
 		        	$status[$target]['terminal_type']=$item['terminal_type'];
-			}
-			else{
-				$status[$target]['terminal_type']='tcp';
-			}
+				}
+				else{
+					$status[$target]['terminal_type']='tcp';
+				}
+				if($item['check_method']){
+					$status[$target]['check_method']=$item['check_method'];
+				}
+				else{
+					$status[$target]['check_method']='none';
+				}
+				if($item['destinationip']){
+					$status[$target]['destinationip']=$item['destinationip'];
+				}
+				if($item['check_timeout']){
+					$status[$target]['check_timeout']=$item['check_timeout'];
+				}
 		    }
 		}
+		$gateway['descr'] = $gateway_settings['descr'];
 
-	}
+}
 
 	/* tack on any gateways that have monitoring disabled
 	 * or are down, which could cause gateway groups to fail */
@@ -540,15 +553,26 @@ function return_gateways_status($byname = false, $gways = false) {
 		}
 		foreach($config['gateways']['gateway_item'] as $item){
 		    if($item['name'] === $gwname){
-			if($item['terminal_type']){
+				if($item['terminal_type']){
 		        	$status[$target]['terminal_type']=$item['terminal_type'];
-			}
-			else{
-				$status[$target]['terminal_type']='tcp';
-			}
+				}
+				else{
+					$status[$target]['terminal_type']='tcp';
+				}
+				if($item['check_method']){
+					$status[$target]['check_method']=$item['check_method'];
+				}
+				else{
+					$status[$target]['check_method']='none';
+				}
+				if($item['destinationip']){
+					$status[$target]['destinationip']=$item['destinationip'];
+				}
+				if($item['check_timeout']){
+					$status[$target]['check_timeout']=$item['check_timeout'];
+				}
 		    }
 		}
-
 
 		$status[$target]['monitor_disable'] = true;
 	}
@@ -2073,6 +2097,10 @@ function save_gateway($gateway_settings, $realid = "") {
 		$gateway['alert_interval'] = $gateway_settings['alert_interval'];
 	}
 	$gateway['terminal_type'] = $gateway_settings['terminal_type'];
+	$gateway['check_method'] = $gateway_settings['check_method'];
+	$gateway['destinationip'] = $gateway_settings['destinationip'];
+	$gateway['check_timeout'] = $gateway_settings['check_timeout'];
+
 	$gateway['descr'] = $gateway_settings['descr'];
 	if ($gateway_settings['monitor_disable'] == "yes") {
 		$gateway['monitor_disable'] = true;

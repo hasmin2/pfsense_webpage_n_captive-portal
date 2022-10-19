@@ -41,27 +41,25 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
 		    $radiususers = &$config['installedpackages']['freeradius']['config'];
 		    foreach ($radiususers as $eachuser) {
                 $rtnstr .= "<tr>";
-                $rtnstr .= "<td>${eachuser['varusersusername']}</td>";
-                $rtnstr .= "<td>${eachuser['varuserspassword']}</td>";
-                $rtnstr .="<td>${eachuser['varusersmaxtotaloctetstimerange']}</td>";
-                $rtnstr .="<td>${eachuser['varusersmaxtotaloctets']}&nbsp;MBytes</td>";
+                $rtnstr .= "<td><center>{$eachuser['varusersusername']}</center></td>";
+                $rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctetstimerange']}</center></td>";
+                $rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctets']}&nbsp;MBytes</center></td>";
                 $used_quota=check_quota($eachuser['varusersusername']);
-                $rtnstr .="<td>$used_quota MBytes</td>";
-                $rtnstr .="<td><a> <form action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal'> <input type='hidden' value=$widgetkey name=widgetkey>";
-                $rtnstr .="<input type='hidden' name=resetuser value = ${eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=reset title='Reset User data usage'></form></a></td>";
-                $rtnstr .="<td><a> <form action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal'> <input type='hidden' value=$widgetkey name=widgetkey>";
-                $rtnstr .="<input type='hidden' name=delusername value = ${eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Delete title='delete'></form></a></td>";
+		if($eachuser['varusersmodified']=="update"){$rtnstr .= "<td><center>Wait for logon</center></td>";}
+                else{$rtnstr .="<td><center>$used_quota MBytes</center></td>";}
+		$widgetkey_html = htmlspecialchars($widgetkey);
+                $rtnstr .= "<td><a> <form id=resetpw action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal'  onSubmit='return confirm_resetPw(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
+                $rtnstr .="<input type='hidden' name=resetpw value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Reset title='Reset Password'></form></a></td>";
+                $rtnstr .="<td><a> <form action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_resetData(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
+                $rtnstr .="<input type='hidden' name=resetuser value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Reset title='Reset User data usage'></form></a></td>";
+                $rtnstr .="<td><a> <form action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_delUser(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
+                $rtnstr .="<input type='hidden' name=delusername value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Delete title='delete'></form></a></td>";
             }
 		}
 		return($rtnstr);
 	}
 }
 
-// Compose the table contents and pass it back to the ajax caller
-if ($_REQUEST && $_REQUEST['ajax']) {
-	print(compose_manage_freeradiususer_contents($_REQUEST['widgetkey']));
-	exit;
-}
 if ($_POST['widgetkey']) {//변경할때이므로
 	global $config;
 	if($_POST['delusername']){
@@ -70,10 +68,15 @@ if ($_POST['widgetkey']) {//변경할때이므로
 				unset($config["installedpackages"]["freeradius"]["config"][$item]);  // flag for remove DB for when anyone who is in site is open webpage.
 			}
 		}
-	write_config("Freeradius user update");
 	}
-
-	if($_POST['resetuser']){
+	else if($_POST['resetpw']){
+		 foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
+			if ($_POST['resetpw'] === $userentry['varusersusername']) {
+				$config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword']="1111";
+			}
+		}
+	}
+	else if($_POST['resetuser']){
 		 foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
 			if ($_POST['resetuser'] === $userentry['varusersusername']) {
 				$config['installedpackages']['freeradius']['config'][$item]['varusersresetquota']="true";
@@ -81,9 +84,8 @@ if ($_POST['widgetkey']) {//변경할때이므로
 
 			}
 		}
-		write_config("Reset freeradius user");
 	}
-	if($_POST['createusername'] && $_POST['createuserpassword'] && $_POST['createuserquota']){
+	else if($_POST['createusername'] && $_POST['createuserpassword'] && $_POST['createuserquota']){
 	    foreach($config['installedpackages']['freeradius']['config'] as $item){
 	        if($_POST['createusername'] === $item['varusersusername']){
 	            header("Location: /");
@@ -139,15 +141,15 @@ if ($_POST['widgetkey']) {//변경할때이므로
 		$userinfoentry['varusersmaxtotaloctetstimerange']=$_POST['createsuerquotaperiod'];
 		$userinfoentry['varuserspointoftime']=$_POST['createsuerquotaperiod'];
 		$userinfoentry['varusersmodified']='create';
-	if(!isset($config['installedpackages']['freeradius']['config'])){
-		$config["installedpackages"]["freeradius"]=["config"=>[""]];
-		array_push($config["installedpackages"]["freeradius"]["config"][0]=$userinfoentry);
+		if(!isset($config['installedpackages']['freeradius']['config'])){
+			$config["installedpackages"]["freeradius"]=["config"=>[""]];
+			array_push($config["installedpackages"]["freeradius"]["config"][0]=$userinfoentry);
+		}
+		else{
+			array_push($config["installedpackages"]["freeradius"]["config"], $userinfoentry);
+		}
 	}
-	else{
-		array_push($config["installedpackages"]["freeradius"]["config"], $userinfoentry);
-	}
-	write_config("Added freeradius user");
-	}
+	write_config("Modifed freeradius user");
 	header("Location: /");
 	exit(0);
 }
@@ -189,22 +191,32 @@ function checkForm(){
         return false;
     }
 }
+
+function confirm_resetPw(username){
+   return window.confirm(`${username} password will be reset  '1111' for this user. Ok to continue`);
+}
+function confirm_resetData(username){
+   return window.confirm(`${username} data usage will be reset, OK to continue.`);
+}
+function confirm_delUser(username){
+   return window.confirm(`ID ${username} will be deleted, OK to continue.`);
+}
 </script>
 <div class="table-responsive">
 	<table class="table table-striped table-hover table-condensed">
 		<thead>
 		<tr>
-			<th><?=gettext("ID");?></th>
-			<th><?=gettext("Password");?></th>
-			<th><?=gettext("Update Period");?></th>
-			<th><?=gettext("# MB Allowed");?></th>
-			<th><?=gettext("# MB Used");?></th>
-			<th><?=gettext("Data");?></th>
-			<th><?=gettext("UserDel");?></th>
+			<th center><center><?=gettext("ID");?></center></th>
+			<th><center><?=gettext("Update Period");?></center></th>
+			<th><center><?=gettext("# MB Allowed");?></center></th>
+			<th><center><?=gettext("# MB Used");?></center></th>
+			<th><center><?=gettext("Password");?></center></th>
+			<th><center><?=gettext("Data");?></center></th>
+			<th><center><?=gettext("Remove");?></center></th>
 
 		</tr>
 		</thead>
-		<tbody id="<?=htmlspecialchars($widgetkey)?>-gwtblbody">
+		<tbody id="<?=htmlspecialchars($widgetkey)?>-manage-freeradius">
 <?php
 		print(compose_manage_freeradiususer_contents($widgetkey));
 ?>
@@ -214,7 +226,6 @@ function checkForm(){
 <!-- close the body we're wrapped in and add a configuration-panel -->
 </div><div id="<?=$widget_panel_footer_id?>" class="panel-footer collapse">
 <form name=registeruser action="/widgets/widgets/manage_freeradiususer.widget.php" method="post" class="form-horizontal" onSubmit="return checkForm()">
-	<?//=gen_customwidgettitle_div($widgetconfig['title']);?>
 	<div class="form-group">
 		<label class="col-sm-4 control-label"><?=gettext('Input User Information')?></label>
 		<div class="col-sm-6">
@@ -246,35 +257,4 @@ function checkForm(){
 		</div>
 	</div>
 </form>
-<script>
-//<![CDATA[
 
-events.push(function(){
-	// --------------------- Centralized widget refresh system ------------------------------
-
-	// Callback function called by refresh system when data is retrieved
-	function manage_freeradiususer_callback(s) {
-		$(<?= json_encode('#' . $widgetkey . '-manual-freeradius')?>).html(s);
-	}
-	
-	// POST data to send via AJAX
-	var postdata = {
-		ajax: "ajax",
-		widgetkey : <?=json_encode($widgetkey)?>
-	 };
-	// Create an object defining the widget refresh AJAX call
-	var manage_freeradiususerObject= new Object();
-	manage_freeradiususerObject.name = "manage_freeradiususer";
-	manage_freeradiususerObject.url = "/widgets/widgets/manage_freeradiususer.widget.php";
-	manage_freeradiususerObject.callback = manage_freeradiususer_callback;
-	manage_freeradiususerObject.parms = postdata;
-	manage_freeradiususerObject.freq = 1;
-
-	// Register the AJAX object
-	register_ajax(manage_freeradiususerObject);
-
-	// ---------------------------------------------------------------------------------------------------
-});
-
-//]]>
-</script>

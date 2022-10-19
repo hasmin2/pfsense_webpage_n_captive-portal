@@ -30,6 +30,12 @@
             document.getElementById('commit_change_pw').disabled=true;
 	}
 }
+function commitpw() {
+  document.getElementById('commit_change_pw').setAttribute('disabled', 'true');
+  document.getElementById('commit_change_pw').value='Syncing new PW...';
+
+}
+
 </script>
 </head>
 
@@ -44,7 +50,7 @@
 		  <input type="password" name="confirm_password" id="cnfrm-password" onchange="isSame()" placeholder="Confirm password" value = "">
 
 		  <input name="redirurl" type="hidden" value="#PORTAL_REDIRURL#">
-		  <input type="submit" name="accept" class="login login-submit" value="Input password to change" id="commit_change_pw" disabled>
+		  <input type="submit" name="accept" class="login login-submit"  onclick="commitpw()" value="Input password to change" id="commit_change_pw" disabled>
 	  </form>
 		<form name="quota_form" method="post" action="#PORTAL_ACTION#">
 		</form>

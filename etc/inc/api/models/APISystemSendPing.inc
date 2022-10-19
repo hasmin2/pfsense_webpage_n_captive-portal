@@ -28,16 +28,10 @@ class APISystemSendPing extends APIModel {
     public function action() {
 	global $config;
 	$result=array();
-	if(!$this->initial_data['timeoutinsec']){
-	    return APIResponse\get(3017,"timeoutinsec missing");
-	}
-	if(!$this->initial_data['destination']){
-	    return APIResponse\get(4005,"destination missing");
-	}
-	else{
+
         $gw_metrics_raw = return_gateways_status(true);
         $gw_metrics = [];
-	unset($config['gatewaystatus']);
+		unset($config['gatewaystatus']);
         # Loop through each gateway's metrics, format time data as floats, and update statuses
         foreach ($gw_metrics_raw as $gw) {
 	    if(!isset($gw["monitor_disable"]) && !isset($this->initial_data['interface']) || $this->initial_data['interface']==$gw['name']){
@@ -46,10 +40,24 @@ class APISystemSendPing extends APIModel {
                 $gw["loss"] = floatval(str_replace(["%", "ms"], "", $gw["loss"]));
                 $gw["status"] = ($gw["status"] === "none") ? "up" : $gw["status"];
 		if($gw["status"] === "online"){
-		    mwexec('route add -host '.$this->initial_data['destination'].' '.$gw['monitorip']);
-		    sleep(1);
-		    $gw["pingresult"] = mwexec('ping -c1 -t '.$this->initial_data['timeoutinsec'].' -S '.$gw['srcip'].' '.$this->initial_data['destination'])==0 ? "online": "offline";
-		    mwexec('route del -host '.$this->initial_data['destination'].' '.$gw['monitorip']);
+		    if($gw["check_method"]=== "ping"){
+		    	$gwList = explode(";", $gw["destinationip"]);
+		        $randgw = $gwList[rand(0, count($gwList) - 1)];
+				mwexec('route add -host '.$randgw.' '.$gw['monitorip']);
+				sleep(1);
+				$gw["pingresult"] = mwexec('ping -c1 -t '.$gw['check_timeout'].' -S '.$gw['srcip'].' '.randgw)==0 ? "online": "offline";
+				mwexec('route del -host '.randgw.' '.$gw['monitorip']);
+		    }
+		    else if ($gw["check_method"]=== "nmap"){
+		    //TODO
+		    }
+		    else if ($gw["check_method"]=== 'none'){
+		    	$gw["pingresult"] = "online";
+		    }
+		    else {
+		    //TODO
+		    	$gw["pingresult"] = "unknown";
+		    }
 		}
 		else{
 			$gw["pingresult"]="offline";
@@ -58,10 +66,10 @@ class APISystemSendPing extends APIModel {
 	    }
 		$config['gatewaystatus'][$gw['name']]['pingresult']=$gw['pingresult'];
         }
-	$config['gatewaystatus']['pingdestination']=$this->initial_data['destination'];
-	setup_gateways_monitor();
-	write_config("Write ping result");
+		$config['gatewaystatus']['pingdestination']=$this->initial_data['destination'];
+		setup_gateways_monitor();
+		write_config("Write ping result");
         return APIResponse\get(0,$gw_metrics);
-    }
-}
+
+	}
 }

@@ -22,7 +22,6 @@
  */
 
 //set variable for custom title
-$manual_routing_title = gettext("Manual Routing Widget");
-$manual_routing_title_link = "manual_routing.php";
+$manual_routing_title = gettext("Manual Switch");
 $manual_routing_allow_multiple_widget_copies = false;
 ?>

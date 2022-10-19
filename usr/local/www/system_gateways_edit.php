@@ -62,6 +62,9 @@ if (isset($id) && $a_gateways[$id]) {
 	$pconfig['interface'] = $a_gateways[$id]['interface'];
 	$pconfig['friendlyiface'] = $a_gateways[$id]['friendlyiface'];
 	$pconfig['terminal_type'] = $a_gateways[$id]['terminal_type'];
+	$pconfig['check_method'] = $a_gateways[$id]['check_method'];
+	$pconfig['destinationip'] = $a_gateways[$id]['destinationip'];
+	$pconfig['check_timeout'] = $a_gateways[$id]['check_timeout'];
 	$pconfig['ipprotocol'] = $a_gateways[$id]['ipprotocol'];
 	if (isset($a_gateways[$id]['dynamic'])) {
 		$pconfig['dynamic'] = true;
@@ -234,7 +237,7 @@ $section->addInput(new Form_Checkbox(
 $group=new Form_Group("Terminal Type");
 $group->add(new Form_Select(
 	'terminal_type',
-	'*Terminal_Type',
+	'*Terminal Type',
 	$pconfig['terminal_type'],
 	 array(
 		"satlinkfbb"=> "SATLink FleetBroadband",
@@ -243,8 +246,41 @@ $group->add(new Form_Select(
 		 "vsat" => "VSAT",
 		 "tcp" => "Internet" 
 	)
-))->setHelp('Choose terminal type');
+))->setHelp('Choose terminal type, ***IMPORTANT *** Note that the Gateway priority is "Internet"-> "VSAT"->"any FBB"->"Iridium"');
 $section->add($group);
+
+$group=new Form_Group("Online Check Method");
+$group->add(new Form_Select(
+	'check_method',
+	'*Check Method',
+	$pconfig['check_method'],
+	 array(
+	 	"none" => "no Monitor (Always Online once terminal is up)",
+		"ping"=> "Ping (Preferred)",
+		 "nmap" => "Specific check port (Port scan) can be banned in certain case"
+	)
+))->setHelp('Choose terminal online check method, **IMPORTANT** NOTE that port scan can be banned by site policy');
+$section->add($group);
+
+$section->addInput(new Form_Input(
+	'destinationip',
+	'*Destionation IP',
+	'text',
+	$pconfig['destinationip']
+))->setHelp('**IMPORTANT** wrong input may unusable the gateway, usage: ping [destination IP], Port Scan : [destination IP]:[port], User can input URL instead of IP address., use semicolon ";" to separate two or more addresses');
+$group=new Form_Group("Check Timeout in seonnds");
+$group->add(new Form_Select(
+	'check_timeout',
+	'*Check Timeout',
+	$pconfig['check_timeout'],
+	 array(
+	 	"3" => "3 (three) seconds (low latency) sutable for VSAT based connection",
+	 	"5" => "5 (five) seconds (low latency) sutable for FBB/Iridium based connection",
+	 	"10" => "10 (ten) seconds (high latency) sutable for slower than FBB connection"
+	 		)
+))->setHelp('Choose terminal online check Timeout');
+$section->add($group);
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 $section->addInput(new Form_Input(
 	'descr',

@@ -163,53 +163,6 @@ if (!function_exists('compose_manual_routing_contents')) {
 					$online = gettext("Pending");
 					$bgcolor = "info";  // lightgray
 				}
-				/////////Get FBB/VSAT Signal
-			/*if($gateway['terminal_type'] === 'satlinkfbb'){
-
-				$telnet = new TelnetClient($gateway['monitor'], 9998);
-				$telnet->connect();
-				$telnet->setPrompt("XXXXX");
-				$telnet->sendCommand("AT_ISIG=1");
-				do{
-					$line = $telnet->getLine($matchesPrompt);
-					if(startsWith($line, "_ISIG")){
-						break;
-					}
-				}while(true);
-				$telnet->disconnect();
-				unset($telnet);
-			}
-			else if($gateway['terminal_type'] === 'jrcfbb'){
-
-				$telnet = new TelnetClient($gateway['monitor'], 1829);
-				$telnet->connect();
-				$telnet->setPrompt("XXXXX");
-				$telnet->sendCommand("AT_ISIG=1");
-				do{
-					$line = $telnet->getLine($matchesPrompt);
-					if(startsWith($line, "_ISIG")){
-						break;
-					}
-				}while(true);
-				$telnet->disconnect();
-				unset($telnet);
-			}
-			else if($gateway['terminal_type'] === 'furunofbb'){
-
-				$telnet = new TelnetClient($gateway['monitor'], 2533);
-				$telnet->connect();
-				$telnet->setPrompt("XXXXX");
-				$telnet->sendCommand("AT_ISIG=1");
-				do{
-					$line = $telnet->getLine($matchesPrompt);
-					if(startsWith($line, "_ISIG")){
-						break;
-					}
-				}while(true);
-				$telnet->disconnect();
-				unset($telnet);
-			}
-			$str = preg_replace('/[^0-9,.]*/s', '', $line);*/
 
 			} else {
 				$online = gettext("No Connection");
@@ -271,8 +224,8 @@ if (!function_exists('compose_manual_routing_contents')) {
 		}
 		return($rtnstr);
 	}
-}
 
+}
 // Compose the table contents and pass it back to the ajax caller
 if ($_REQUEST && $_REQUEST['ajax']) {
 	print(compose_manual_routing_contents($_REQUEST['widgetkey']));
@@ -359,7 +312,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 				<th class="text-center">Ext-Net</th>
 			</tr>
 		</thead>
-		<tbody id="<?=htmlspecialchars($widgetkey)?>-gwtblbody">
+		<tbody id="<?=htmlspecialchars($widgetkey)?>-manual-route">
 <?php
 		print(compose_manual_routing_contents($widgetkey));
 ?>
@@ -419,7 +372,7 @@ events.push(function(){
 
 	// Callback function called by refresh system when data is retrieved
 	function manual_routing_callback(s) {
-		$(<?= json_encode('#' . $widgetkey . '-gwtblbody')?>).html(s);
+		$(<?= json_encode('#' . $widgetkey .'-manual-route')?>).html(s);
 	}
 
 	// POST data to send via AJAX
@@ -433,7 +386,7 @@ events.push(function(){
 	manual_routingObject.url = "/widgets/widgets/manual_routing.widget.php";
 	manual_routingObject.callback = manual_routing_callback;
 	manual_routingObject.parms = postdata;
-	manual_routingObject.freq = 10;
+	manual_routingObject.freq = 1;
 
 	// Register the AJAX object
 	register_ajax(manual_routingObject);
