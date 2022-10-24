@@ -2378,7 +2378,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             }
             if(isset($userindex)){
                 $allocated = $config['installedpackages']['freeradius']['config'][$userindex]['varusersmaxtotaloctets'];
-                $curoctets=number_format(check_quota($username), 2);
+                $curoctets=number_format(getcurquota($username), 2);
                 $ratio = ($curoctets/$allocated)*100;
                 $message=number_format($curoctets, 2)."MB used. Allocated {$allocated}MB.";
                 $portalbtnmessage= "Tap here to back home...";
@@ -3186,7 +3186,8 @@ function getcurquota($sessionid, $clientip){
 		$sent = getVolume($clientip)['output_bytes'];
 		$config['installedpackages']['freeradius']['config'][$userindex]['varuserslastreceivedata']=$rcv;
 		$config['installedpackages']['freeradius']['config'][$userindex]['varuserslastsentdata']=$sent;
-
+		$config['installedpackages']['freeradius']['config'][$userindex]['varuserslastbasedata']=$basedata;
+		write_config();
 	}
 	return $basedata + number_format((($sent+$receive)/1048576), 2);
 }
