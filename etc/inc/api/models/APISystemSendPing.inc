@@ -42,6 +42,9 @@ class APISystemSendPing extends APIModel {
 				if($gw["status"] === "online"){
 		    		if($gw["check_method"]=== "ping"){
 		    			$gwList = explode(";", $gw["destinationip"]);
+		    			if($gwList[0] === ""){
+		    				$gwList = array("8.8.8.8", "8.8.4.4", "168.126.63.1");
+		    			}
 						$randgw = $gwList[rand(0, count($gwList) - 1)];
 						mwexec('route add -host '.$randgw.' '.$gw['monitorip']);
 						sleep(1);
@@ -50,7 +53,19 @@ class APISystemSendPing extends APIModel {
 						mwexec('route del -host '.$randgw.' '.$gw['monitorip']);
 					}
 					else if ($gw["check_method"]=== "nmap"){
-					//TODO
+		    			$gwList = explode(";", $gw["destinationip"]);
+		    			if($gwList[0] === ""){
+		    				$gwList = array("52.78.7.68:11111");
+		    			}
+						$randgw = $gwList[rand(0, count($gwList) - 1)];
+						$randgw_ip = explode(":", $randgw)[0];
+						$randgw_port = explode(":", $randgw)[1];
+						mwexec('route add -host '.$randgw_ip.' '.$gw['monitorip']);
+						sleep(1);
+						$gw['choosed_destination']=$randgw;
+
+						$gw["pingresult"] = mwexec('nc -z -w'.$gw['check_timeout'].' '.$randgw_ip.' '.$randgw_port)==0 ? "online": "offline";
+						mwexec('route del -host '.$randgw_ip.' '.$gw['monitorip']);
 					}
 					else if ($gw["check_method"]=== 'none'){
 						$gw["pingresult"] = "online";

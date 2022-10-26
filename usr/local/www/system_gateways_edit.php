@@ -266,7 +266,8 @@ $section->addInput(new Form_Input(
 	'destinationip',
 	'*Destionation IP',
 	'text',
-	$pconfig['destinationip']
+	$pconfig['destinationip'],
+	['placeholder' => 'Default: ping for 8.8.8.8,8.8.8,4 for nmap 52.78.7.68:11111']
 ))->setHelp('**IMPORTANT** wrong input may unusable the gateway, usage: ping [destination IP], Port Scan : [destination IP]:[port], User can input URL instead of IP address., use semicolon ";" to separate two or more addresses');
 $group=new Form_Group("Check Timeout in seonnds");
 $group->add(new Form_Select(
