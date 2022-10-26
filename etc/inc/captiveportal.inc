@@ -2299,7 +2299,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
 	$ourhostname = portal_hostname_from_client_ip($clientip);
 	$protocol = (isset($cpcfg['httpslogin'])) ? 'https://' : 'http://';
 	$portal_url=$redirurl;
-	
+
 	//////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////
 
 	/* Get captive portal layout */
@@ -2378,9 +2378,9 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             }
             if(isset($userindex)){
                 $allocated = $config['installedpackages']['freeradius']['config'][$userindex]['varusersmaxtotaloctets'];
-                $curoctets=number_format(getcurquota($username), 2);
+                $curoctets=check_quota($username);
                 $ratio = ($curoctets/$allocated)*100;
-                $message=number_format($curoctets, 2)."MB used. Allocated {$allocated}MB.";
+                $message="Allocated {$allocated}MB.\n{$curoctets}MB used";
                 $portalbtnmessage= "Tap here to back home...";
                 $portalerrbtnmessage= number_format($ratio, 2)."% used.";
             } else {
@@ -3182,33 +3182,25 @@ function getcurquota($sessionid, $clientip){
 		$usagenum = fgets($use_file);
 		fclose($use_file);
 		$basedata = number_format(abs($usagenum)/1048576, 2, '.',',');
-		$rcv = getVolume($clientip)['input_bytes'];
-		$sent = getVolume($clientip)['output_bytes'];
+		$rcv = number_format(abs(getVolume($clientip)['input_bytes'])/1048576, 2, '.',',');
+		$sent = number_format(abs(getVolume($clientip)['output_bytes'])/1048576, 2, '.',',');
 		$config['installedpackages']['freeradius']['config'][$userindex]['varuserslastreceivedata']=$rcv;
 		$config['installedpackages']['freeradius']['config'][$userindex]['varuserslastsentdata']=$sent;
 		$config['installedpackages']['freeradius']['config'][$userindex]['varuserslastbasedata']=$basedata;
-		write_config();
+		write_config("update quota");
 	}
-	return $basedata + number_format((($sent+$receive)/1048576), 2);
+	return str_replace(",", "", $basedata) + str_replace(",", "", $rcv) + str_replace(",", "", $sent);
 }
 function check_quota($username){
 	global $config;
 	if ($username != "") {
 		foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
-		    if($value['varusersusername']==$username){
-		    	$userindex = $item;
-		    	$timerange = $value['varusersmaxtotaloctetstimerange'];
-		    }
+			if($value['varusersusername']==$username){
+				$curquota=str_replace(",", "", $value['varuserslastbasedata'])+ str_replace(",", "", $value['varuserslastsentdata'])+ str_replace(",", "", $value['varuserslastreceivedata']);
+			}
 		}
-		if(file_exists("/var/log/radacct/datacounter/$timerange/used-octets-$username")){
-		    $use_file = fopen("/var/log/radacct/datacounter/$timerange/used-octets-$username", "r");
-		    $usagenum = fgets($use_file);
-		    fclose($use_file);
-		}
-		else { $usagenum = 0; }
-		$basedata = number_format(abs($usagenum)/1048576, 2, '.',',');
 	}
-	return $basedata;
+	return $curquota;
 }
 function getmaxquota($sessionid){
 	global $config;
