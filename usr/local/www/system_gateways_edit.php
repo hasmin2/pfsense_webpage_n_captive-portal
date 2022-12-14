@@ -240,13 +240,17 @@ $group->add(new Form_Select(
 	'*Terminal Type',
 	$pconfig['terminal_type'],
 	 array(
-		"satlinkfbb"=> "SATLink FleetBroadband",
-		"jrcfbb" => "JRC FleetBroadband",
-		"furunofbb" => "FURUNO FleetBroadband",
-		 "vsat" => "VSAT",
-		 "tcp" => "Internet" 
+		"fbb_satlink"=> "SATLink FleetBroadband",
+		"fbb_jrc" => "JRC FleetBroadband",
+		"fbb_furuno" => "FURUNO FleetBroadband",
+		"fbb_sailor" => "SAILOR FleetBroadband",
+		"iridium_other"=> "Iridium",
+		 "vsat_pri" => "1st VSAT (or FX CORP)",
+		 "vsat_sec" => "2nd VSAT (or FX CREW)",
+		 "vsat_thi" => "3rd VSAT (or any third VSAT terminal)",
+		 "tcp_other" => "Internet"
 	)
-))->setHelp('Choose terminal type, ***IMPORTANT *** Note that the Gateway priority is "Internet"-> "VSAT"->"any FBB"->"Iridium"');
+))->setHelp('Choose terminal type, ***IMPORTANT *** Note that the Gateway priority is "Internet"-> "VSAT(N)"->"any FBB"->"Iridium"');
 $section->add($group);
 
 $group=new Form_Group("Online Check Method");
@@ -276,7 +280,7 @@ $group->add(new Form_Select(
 	$pconfig['check_timeout'],
 	 array(
 	 	"3" => "3 (three) seconds (low latency) sutable for VSAT based connection",
-	 	"5" => "5 (five) seconds (low latency) sutable for FBB/Iridium based connection",
+	 	"5" => "5 (five) seconds (medium latency) sutable for FBB/Iridium based connection",
 	 	"10" => "10 (ten) seconds (high latency) sutable for slower than FBB connection"
 	 		)
 ))->setHelp('Choose terminal online check Timeout');
