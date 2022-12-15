@@ -30,7 +30,6 @@ require_once("guiconfig.inc");
 require_once("pfsense-utils.inc");
 require_once("functions.inc");
 require_once ("auth.inc");
-require_once("/usr/local/www/widgets/include/manage_server_module.inc");
 
 if (!function_exists('manage_server_module_contents')) {
 	function manage_server_module_contents($widgetkey) {
@@ -42,32 +41,30 @@ if (!function_exists('manage_server_module_contents')) {
 		$rtnstr .="<td><center>{$core_status[1]}</center></td>";
 		$rtnstr .="<td><center>N/I</center></td>";
 		$rtnstr .="<td><a> <input type=button value=Open class='btn-square-little-rich' onClick='return core_open()''></a></td>";
-		$rtnstr .="<td><a> <form action='/widgets/widgets/manage_server_module.widget.php' method='post' class='form-horizontal'  onSubmit='return confirm_resetfw()'> <input type='hidden' value={$widgetkey_html} name={$widgetkey_html}>";
+		$rtnstr .="<td><a> <form action='/widgets/widgets/manage_server_module.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_resetfw()'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
 		$rtnstr .="<input type='hidden' name=resetfw value = resetfw><input type=submit class='btn-square-little-rich' value=Restart title='Reset firewall'></form></a></td>";
-		$rtnstr .="<td><a> <form action='/widgets/widgets/manage_server_module.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_resetcore()'> <input type='hidden' value={$widgetkey_html} name={$widgetkey_html}>";
+		$rtnstr .="<td><a> <form action='/widgets/widgets/manage_server_module.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_resetcore()'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
 		$rtnstr .="<input type='hidden' name=resetcore value =resetcore><input type=submit class='btn-square-little-rich' value=Restart title='Reset Core module'></form></a></td>";
-		$rtnstr .="<td><a> <form action='/widgets/widgets/manage_server_module.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_reboot()'> <input type='hidden' value={$widgetkey_html} name={$widgetkey_html}>";
+		$rtnstr .="<td><a> <form action='/widgets/widgets/manage_server_module.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_reboot()'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
 		$rtnstr .="<input type='hidden' name=rebootpc value = rebootpc><input type=submit class='btn-square-little-rich' value=Reboot title='Reboot PC'></form></a></td>";
 		return($rtnstr);
-
 	}
 }
 get_module_status();
 if ($_POST['widgetkey']) {//변경할때이므로
-	if($_POST['resetfw']){
+	if($_POST['rebootpc']){
 		$postdata = '{"command": "sudo reboot"}';
-		$url = 'http://192.168.209.210:8999';
 	}
 	if($_POST['resetcore']){
-		$url = 'http://192.168.209.210:18630/rest/v1/system/restart';
+			$postdata = '{"command": "pkill -9 -ef streamsets"}';
+		//$url = 'http://192.168.209.210:18630/rest/v1/system/restart';
 	}
 	if($_POST['resetfw']){
 		$postdata = '{"command": "sudo virsh reboot vessel-firewall"}';
-		$url = 'http://192.168.209.210:8999';
 	}
 	$ch = curl_init();
 	curl_setopt_array($ch, array(
-		CURLOPT_URL => $url,
+		CURLOPT_URL => 'http://192.168.209.210:8999',
 		CURLOPT_TIMEOUT => 10,
 		CURLOPT_MAXREDIRS => 10,
 		CURLOPT_RETURNTRANSFER => true,
@@ -204,36 +201,3 @@ function confirm_reboot(){
 		</tbody>
 	</table>
 </div>
-<script>
-/*
-//<![CDATA[
-
-events.push(function(){
-	// --------------------- Centralized widget refresh system ------------------------------
-
-	// Callback function called by refresh system when data is retrieved
-	function manage_server_module_callback(s) {
-		$(<?= json_encode('#' . $widgetkey .'-manage-server-module')?>).html(s);
-	}
-
-	// POST data to send via AJAX
-	var postdata = {
-		ajax: "ajax",
-		widgetkey : <?=json_encode($widgetkey)?>
-	 };
-	// Create an object defining the widget refresh AJAX call
-	var manage_server_moduleObject= new Object();
-	manage_server_moduleObject.name = "manage_server_module";
-	manage_server_moduleObject.url = "/widgets/widgets/manage_server_module.widget.php";
-	manage_server_moduleObject.callback = manage_server_module_callback;
-	manage_server_moduleObject.parms = postdata;
-	manage_server_moduleObject.freq = 3;
-
-	// Register the AJAX object
-	register_ajax(manage_server_moduleObject);
-
-	// ---------------------------------------------------------------------------------------------------
-});
-
-//]]>*/
-</script>
