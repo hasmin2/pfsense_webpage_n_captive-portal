@@ -35,8 +35,6 @@ require_once("pfsense-utils.inc");
 require_once("functions.inc");
 require_once("openvpn.inc");
 require_once("/usr/local/www/widgets/include/manual_routing.inc");
-//require_once('/etc/inc/TelnetClient.php');
-//use TelnetClient\TelnetClient;
 
 
 if (!function_exists('compose_manual_routing_contents')) {
@@ -201,12 +199,51 @@ if (!function_exists('compose_manual_routing_contents')) {
 				}
 			}
 //////////////////////////////////////
+			if(startswith($gateway['terminal_type'], 'vsat')){
+				$ch = curl_init();
+				curl_setopt_array($ch, array(
+					CURLOPT_URL => 'http://192.168.209.210:8086/query?q=select%20*%20from%20satstatus%20where%20time%20%3E%20now()%20-30m%20order%20by%20time%20desc%20limit%201&db=acustatus',
+					CURLOPT_TIMEOUT => 1,
+					CURLOPT_MAXREDIRS => 10,
+					CURLOPT_CUSTOMREQUEST => GET,
+					CURLOPT_RETURNTRANSFER => TRUE,
+					CURLOPT_HTTPHEADER => array(
+						'Content-Type: application/json',
+						'Content-Type: application/vnd.flux'
+					)
+				));
+				$response = curl_exec($ch);
+				curl_close($ch);
+				if(!$response){
+				    $signal = '<font color="gray">No Signal</font>';
+				}
+				else{
+					$response = json_decode($response, true);
+			    	$signal = $response['results'][0]['series'][0]['values'][0][1];
+					if($signal < 70){
+						$signal = '<font color="red">'.$signal.'</font>';
+					}
+					else if ($signal >=70 && $signal < 120){
+						$signal = '<font color="yellow">'.$signal.'</font>';
+					}
+					else if ($signal >=120 && $signal < 180){
+						$signal = '<font color="green">'.$signal.'</font>';
+					}
+					else if ($signal >=180 && $signal < 200){
+						$signal = '<font color="blue">'.$signal.'</font>';
+					}
+					else {
+						$signal = '<font color="gray">'.$signal.'</font>';
+					}
+				}
+				$signal_description = "title='Signal Level, below 70 is normally unable to make internet connection.&#10;70~120 may able to internet with similar speed with FB250/500.&#10;110~170 may surfing with average speed.'";
+			}
 
-			$rtnstr .= 	"<td  class='text-center'></td>\n";
+			$rtnstr .= 	"<td {$signal_description} class='text-center'>$signal</td>\n";
 ///////////////////////////////////////
 			$rtnstr .= 	"<td class='text-center'>" . ($config['gateways']['defaultgw4']==$gateways_status[$gname]['name'] ? $timeRemain:"") . "</td>\n";
-			$rtnstr .= '<td class="bg-' . $bgcolor . '">' . $online . "</td>\n";
-			$rtnstr .= '<td class="bg-' . $pingcolor . '">' . $pingresult . "</td>\n";
+			$rtnstr .= '<td class="bg-' . $bgcolor . '" style="text-align:center">' . $online . "</td>\n";
+			$rtnstr .= '<td class="bg-' . $pingcolor . '" style="text-align:center">' . $pingresult . "</td>\n";
 
 			$rtnstr .= "</tr>\n";
 		}
@@ -241,19 +278,17 @@ if ($_POST['widgetkey']) {//변경할때이므로
 		    $config['gateways']['manualroutetimestamp']= round($date->getTimestamp()/60,0);
 		}
 		else{
-    			//unset($config['gateways'] ['manualrouteduration']);
-			//unset($config['gateways']['manualroutetimestamp']);
 			$config['gateways'] ['manualrouteduration']= 0;
 	   	 	$date = new DateTime();
 	    		$config['gateways']['manualroutetimestamp']= round($date->getTimestamp()/60,0);
 		}
 
 	 	write_config("manual routing");
-	             system_routing_configure();
-             		system_resolvconf_generate();
-             		filter_configure();
-	             setup_gateways_monitor();
-             		send_event("service reload dyndnsall");
+		system_routing_configure();
+		system_resolvconf_generate();
+		filter_configure();
+		setup_gateways_monitor();
+		send_event("service reload dyndnsall");
 		clear_subsystem_dirty("staticroutes");
 		if($_POST['routing_radiobutton']!="Automatic"){
 		$clients = openvpn_get_active_clients();
@@ -324,10 +359,11 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 <form action="/widgets/widgets/manual_routing.widget.php" method="post" class="form-horizontal">
 	<?//=gen_customwidgettitle_div($widgetconfig['title']);?>
 	<div class="form-group">
-		<label class="col-sm-4 control-label"><?=gettext('Manual Override')?></label>
+		<label title= "Manually force to select current internet connection.&#10;Operator may choose this by manually for certain time duration. all network flow will be routed to designated internet connection.&#10;The manual selection will be restored certain time period even if it was powered off." class="col-sm-4 control-label"><?=gettext('Manual Override')?></label>
 		<div class="col-sm-6">
 			<div class="radio">
-				<label><input name="routing_radiobutton" type="radio" value="Automatic">Automatic</label>
+				<label>
+				<input type="radio" value="Automatic">Automatic</label>
 			</div>
 
 <?php
@@ -344,7 +380,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 		endforeach;
 ?>
 		</div>
-		<label class="col-sm-4 control-label"><?=gettext('Time duration')?></label>
+		<label title="Time duration for manual selection.&#10;After the time goes to 0 the system is going back to auto routing mode." name="routing_radiobutton" class="col-sm-4 control-label"><?=gettext('Time duration')?></label>
 		<div class="col-sm-6">
 			<div class="radio">
 				<select name="routeduration" size="1">

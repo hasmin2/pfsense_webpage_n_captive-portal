@@ -49,13 +49,13 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
 				if($eachuser['varusersmodified']=="update"){$rtnstr .= "<td><center>Wait for logon</center></td>";}
 				else{$rtnstr .="<td><center>$used_quota MBytes</center></td>";}
 				$widgetkey_html = htmlspecialchars($widgetkey);
-				$rtnstr .= "<td><a> <form id=resetpw action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal'  onSubmit='return confirm_resetPw(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
-				$rtnstr .="<input type='hidden' name=resetpw value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Reset title='Reset Password'></form></a></td>";
+				$rtnstr .= "<td><a><center><form id=resetpw action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal'  onSubmit='return confirm_resetPw(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
+				$rtnstr .="<input type='hidden' name=resetpw value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Reset title='Reset Password'></form></center></a></td>";
 				if(strpos(get_config_user(), "admin") !== false){
-	        		$rtnstr .="<td><a> <form action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_resetData(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
-             		$rtnstr .="<input type='hidden' name=resetuser value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Reset title='Reset User data usage'></form></a></td>";
-		            $rtnstr .="<td><a> <form action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_delUser(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
-        		    $rtnstr .="<input type='hidden' name=delusername value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Delete title='delete'></form></a></td>";
+	        		$rtnstr .="<td><a><center><form action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_resetData(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
+             		$rtnstr .="<input type='hidden' name=resetuser value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Reset title='Reset User data usage'></form></center></a></td>";
+		            $rtnstr .="<td><a><center><form action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_delUser(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
+        		    $rtnstr .="<input type='hidden' name=delusername value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Delete title='delete'></form></center></a></td>";
 				} else {
 					$rtnstr .="<td><a></td>";
 					$rtnstr .="<td><a></td>";
