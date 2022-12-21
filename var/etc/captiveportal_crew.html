@@ -33,14 +33,13 @@
 			<ul class="list">
 				<li class="list__item">
 				  <label class="label--checkbox">
-					  <input type="checkbox" class="checkbox" onchange="document.getElementById('login').disabled = !this.checked;">
-					  <span>I agree with the <a target="_blank" rel="noopener" href="http://192.168.208.1:8002/example.pdf">terms & licences</a></span>
+					  <span>Once login, I agree with the <a target="_blank" rel="noopener" href="http://192.168.208.1:8002/example.pdf">terms & licences</a></span>
 				  </label>
 				</li>
 			</ul>
 		  </div>
 		<input name="redirurl" type="hidden" value="#PORTAL_REDIRURL#">
-		<input type="submit" name="accept" class="login login-submit" value="Login" id="login" disabled>
+		<input type="submit" name="accept" class="login login-submit" value="Login" id="login">
 	  </form>
 	  <form name="quota_form" method="post" action="#PORTAL_ACTION#">
 			Check Quota

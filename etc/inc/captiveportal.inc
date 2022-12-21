@@ -2333,8 +2333,8 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
 	            break;
 	        }
 	    }
-	if (isset($userindex)){//사용자가 있을 때
-	  if ($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified']=="update"){
+		if (isset($userindex)){//사용자가 있을 때
+			if ($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified']=="update"){
                $title="Updating..";
                $portalbtnmessage= "Update received. Tap to re-login";
                $portalinfobtnmessage = "Please login to apply changes";
