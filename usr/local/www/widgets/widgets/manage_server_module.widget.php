@@ -64,7 +64,11 @@ if (!function_exists('compose_manage_server_module_contents')) {
 		return($rtnstr);
 	}
 }
-
+// Compose the table contents and pass it back to the ajax caller
+if ($_REQUEST && $_REQUEST['ajax']) {
+	print(compose_manage_server_module_contents($_REQUEST['widgetkey']));
+	exit;
+}
 if ($_POST['widgetkey']) {//
 	if($_POST['configdef']){
 		global $config;
@@ -73,22 +77,17 @@ if ($_POST['widgetkey']) {//
 		write_config("update terminal info");
 				header("Location: /");
 	}
-
-	if($_POST['rebootpc']){
-		$postdata = '{"command": "sudo reboot"}';
-	}
-	else if($_POST['resetcore']){
-		$postdata = '{"command": "pkill -9 -ef streamsets"}';
-			//	$postdata = '{"command": "ls -altr"}';
-	}
-	else if($_POST['resetfw']){
-		$postdata = '{"command": "sudo virsh reboot vessel-firewall"}';
-	}
-	else{
-		print(compose_manage_server_module_contents($widgetkey));//아작스 호출 시에 사용되는 (부팅코어리셋 등이 아니면 여기 걸림)
-	}
-
 	if($_POST['rebootpc'] || $_POST['resetcore'] ||$_POST['resetfw']){
+		if($_POST['rebootpc']){
+			$postdata = '{"command": "sudo reboot"}';
+		}
+		else if($_POST['resetcore']){
+			$postdata = '{"command": "pkill -9 -ef streamsets"}';
+				//	$postdata = '{"command": "ls -altr"}';
+		}
+		else if($_POST['resetfw']){
+			$postdata = '{"command": "sudo virsh reboot vessel-firewall"}';
+		}
 		send_api('http://192.168.209.210:8999', 'POST', $postdata);
 		header("Location: /");
 	}

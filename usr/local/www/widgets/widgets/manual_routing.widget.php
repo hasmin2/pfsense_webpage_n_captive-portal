@@ -269,20 +269,19 @@ if ($_REQUEST && $_REQUEST['ajax']) {
 	exit;
 }
 if ($_POST['widgetkey']) {//변경할때이므로
-	//set_customwidgettitle($user_settings);
+
 	if($_POST['routing_radiobutton']){
+	echo $_POST['routing_radiobutton'];
 		if($_POST['routing_radiobutton']!="Automatic"){
 		    $config['gateways']['defaultgw4']=$_POST['routing_radiobutton'];
-		    $config['gateways'] ['manualrouteduration']= $_POST['routeduration'];
-		    $date = new DateTime();
-		    $config['gateways']['manualroutetimestamp']= round($date->getTimestamp()/60,0);
+		    $config['gateways']['manualrouteduration']= $_POST['routeduration'];
 		}
 		else{
-			$config['gateways'] ['manualrouteduration']= 0;
-	   	 	$date = new DateTime();
-	    		$config['gateways']['manualroutetimestamp']= round($date->getTimestamp()/60,0);
+			$config['gateways']['manualrouteduration']= 0;
+			echo $config['gateways']['manualrouteduration'];
 		}
-
+		$date = new DateTime();
+	    $config['gateways']['manualroutetimestamp']= round($date->getTimestamp()/60,0);
 	 	write_config("manual routing");
 		system_routing_configure();
 		system_resolvconf_generate();
@@ -325,7 +324,6 @@ if ($_POST['widgetkey']) {//변경할때이므로
 	} else {
 		$user_settings["widgets"][$_POST['widgetkey']]["gatewaysfilter"] = implode(',', $validNames);
 	}
-
 	save_widget_settings($_SESSION['Username'], $user_settings["widgets"], gettext("Updated gateways widget settings via dashboard."));
 	header("Location: /");
 	exit(0);
@@ -363,7 +361,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 		<div class="col-sm-6">
 			<div class="radio">
 				<label>
-				<input type="radio" value="Automatic">Automatic</label>
+				<input name="routing_radiobutton" type="radio" value="Automatic">Automatic</label>
 			</div>
 
 <?php
