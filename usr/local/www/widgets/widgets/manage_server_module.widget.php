@@ -36,17 +36,13 @@ require_once("api/framework/APIResponse.inc");
 if (!function_exists('compose_manage_server_module_contents')) {
 	function compose_manage_server_module_contents($widgetkey) {
 		$core_status = get_module_status();
+		$update_result = json_decode(send_api('http://192.168.209.210:8999/getversion', 'GET', '')[0], true);
+		$update_version = $update_result['data'][0]['update_version'];
 		$widgetkey_html = htmlspecialchars($widgetkey);
 		$rtnstr = '';
 		$rtnstr .= "<tr>";
 		$rtnstr .= "<td><center>{$core_status[0]}</center></td>";
-		$rtnstr .="<td><center>{$core_status[1]}</center></td>";
-		if($core_status[0] == "ONLINE"){
-			$isdisabled="";
-		}
-		else {
-			$isdisabled="diasbled=true";
-		}
+		$rtnstr .="<td><center>{$core_status[1]}-{$update_version}</center></td>";
 		$vsat_status = check_vsat_status_influxdb();
 		$vpn_clients = openvpn_get_active_clients();
 		$vpn_status = '<font color=green>ONLINE</font>';
@@ -88,7 +84,7 @@ if ($_POST['widgetkey']) {//
 		else if($_POST['resetfw']){
 			$postdata = '{"command": "sudo virsh reboot vessel-firewall"}';
 		}
-		send_api('http://192.168.209.210:8999', 'POST', $postdata);
+		send_api('http://192.168.209.210:8999/shellcommand', 'POST', $postdata);
 		header("Location: /");
 	}
 	exit(0);
@@ -118,10 +114,10 @@ function check_vsat_status_influxdb(){
 		$decoded = json_decode($response, true);
 		$resultcount = count($decoded['results'][0]['series'][0]['values']);
 		if($resultcount > 1){
-			return "<font color=green>ONLINE</font>";
+			return "<font color=green>MONITORING</font>";
 		}
 		else {
-			return "<font color=red>OFFLINE</font>";
+			return "<font color=red>NOT MONITORING</font>";
 		}
 	}
 }
@@ -154,11 +150,11 @@ function get_module_status(){
 	$pipelines_status_result = send_api('http://192.168.209.210:18630/rest/v1/pipelines/status', 'GET', '');
 
     if($pipelines_result[1] === 200 && $pipelines_status_result[1] === 200) {
-		$core_module_status = '<font color=green>ALL OK';
-		$core_status = '<font color=green>ONLINE';
+		$core_module_status = '<font color=green>OK';
+		$core_status = '<font color=green>OK';
 	}
 	else{
-		$core_status = '<font color=green>OFFLINE';
+		$core_status = '<font color=green>SHUTDOWN';
 		$core_module_status = '<font color=grey>N/A';
 	}
 	$noc_status = '<font color=green>ONLINE';
