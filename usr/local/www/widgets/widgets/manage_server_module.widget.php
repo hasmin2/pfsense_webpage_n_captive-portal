@@ -224,7 +224,7 @@ function confirm_rebootsvr(){
 			<th title='Core module status.&#10;If this is offline, the manage panel(this) should not be working.&#10;If problem persists, operator may physically push the smartBOX button to restart.'>
 			<center><?=gettext("Core");?></center></th>
 			<th title='Core Module logic status.&#10;If NOT OK, network switching, crew internet may not be working propely swithing&#10;By clicking "Reset Core" to reset core module to solve this issue.'>
-			<center><?=gettext("Core Logic");?></center></th>
+			<center><?=gettext("Version");?></center></th>
 			<th title = 'VSAT management connection status.&#10;If it is offline, VSAT terminal status may not be monitored.&#10;To recover the issue, operator may re-input VSAT ACU ip address both core and smartbox to recover it'>
 			<center><?=gettext("VSAT");?></center></th>
 			<th title = 'Fleet Broadband management connection status.&#10;If it is offline, FBB terminal status may not be monitored.&#10;To recover the issue, operator may re-input FBB ip address both core and smartbox to recover it'>

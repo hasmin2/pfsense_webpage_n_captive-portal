@@ -420,21 +420,17 @@ $diagnostics_menu[] = array(gettext("Packet Capture"), "/diag_packet_capture.php
 $diagnostics_menu = msort(array_merge($diagnostics_menu, return_ext_menu("Diagnostics")), 0);
 
 if (!$g['disablehelpmenu']) {
-	$help_menu = array();
-	/*$help_menu[] = array(gettext("About this Page"), $helpurl);
-	if ($g['product_name'] == "pfSense") {
-		$help_menu[] = array(gettext("Bug Database"), "https://redirects.netgate.com/issues");
-	}*/
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //여기에서 헬프 링크 추가한다, 만약 https 가 아닌 다른 링크를 넣고싶으면 204번째줄의 아웃풋 펑션에서 추가하면 된다.
 //
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-	$help_menu[] = array(gettext("SynerSAT Home(Korean)"), "https://synersat.co.kr");
+	$help_menu = array();
 	$help_menu[] = array(gettext("Mail to Support"), "mailto:korea@synersat.com?subject=Support Request");
-	$help_menu[] = array(gettext("FX Guide Book - English"), "http://{$_SERVER['SERVER_ADDR']}/Fleet Xpress User guide latest-Eng.pdf");
-	$help_menu[] = array(gettext("FX Guide Book - Korean"), "http://{$_SERVER['SERVER_ADDR']}/Fleet Xpress User guide latest-Kor.pdf");
-	$help_menu[] = array(gettext("Bluewave Mail Guide Book - English"), "http://{$_SERVER['SERVER_ADDR']}/Bluewave Mail User guide latest-Eng.pdf");
-	$help_menu[] = array(gettext("Bluewave Mail Guide Book - Korean"), "http://{$_SERVER['SERVER_ADDR']}/Bluewave Mail User guide latest-Kor.pdf");
+	$help_menu[] = array(gettext("SynerSAT Home(Korean)"), "https://synersat.co.kr");
+	$help_menu[] = array(gettext("FX Guide Book - English"), "http://{$_SERVER['SERVER_ADDR']}/manuals/Fleet Xpress User guide latest-Eng.pdf");
+	$help_menu[] = array(gettext("FX Guide Book - Korean"), "http://{$_SERVER['SERVER_ADDR']}/manuals/Fleet Xpress User guide latest-Kor.pdf");
+	$help_menu[] = array(gettext("Bluewave Mail Guide Book - English"), "http://{$_SERVER['SERVER_ADDR']}/manuals/Bluewave Mail User guide latest-Eng.pdf");
+	$help_menu[] = array(gettext("Bluewave Mail Guide Book - Korean"), "http://{$_SERVER['SERVER_ADDR']}/manuals/Bluewave Mail User guide latest-Kor.pdf");
 	$help_menu = msort(array_merge($help_menu, return_ext_menu("Help")), 0);
 }
 

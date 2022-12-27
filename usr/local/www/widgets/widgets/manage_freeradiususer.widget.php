@@ -65,6 +65,10 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
 		return($rtnstr);
 	}
 }
+if ($_REQUEST && $_REQUEST['ajax']) {
+	print(compose_manage_freeradiususer_contents($_REQUEST['widgetkey']));
+	exit;
+}
 
 if ($_POST['widgetkey']) {//변경할때이므로
 	global $config;
@@ -222,7 +226,7 @@ function confirm_delUser(username){
 
 		</tr>
 		</thead>
-		<tbody id="<?=htmlspecialchars($widgetkey)?>-manage-freeradius">
+		<tbody id="<?=htmlspecialchars($widgetkey)?>-manage_freeradiususer">
 <?php
 		print(compose_manage_freeradiususer_contents($widgetkey));
 ?>
@@ -239,3 +243,32 @@ function confirm_delUser(username){
 	<i class="fa fa-save icon-embed-btn"></i>
 	<?=gettext("Apply")?>
 	</button></div></div></form>
+
+<script type="text/javascript">
+events.push(function(){
+	// --------------------- Centralized widget refresh system ------------------------------
+
+	// Callback function called by refresh system when data is retrieved
+	function manage_freeradiususer_callback(s) {
+		$(<?= json_encode('#' . $widgetkey .'-manage_freeradiususer')?>).html(s);
+	}
+
+	// POST data to send via AJAX
+	var postdata = {
+		ajax: "ajax",
+		widgetkey : <?=json_encode($widgetkey)?>
+	 };
+	// Create an object defining the widget refresh AJAX call
+	var manage_freeradiususerObject= new Object();
+	manage_freeradiususerObject.name = "manage_freeradiususer";
+	manage_freeradiususerObject.url = "/widgets/widgets/manage_freeradiususer.widget.php";
+	manage_freeradiususerObject.callback = manage_freeradiususer_callback;
+	manage_freeradiususerObject.parms = postdata;
+	manage_freeradiususerObject.freq = 30;
+
+	// Register the AJAX object
+	register_ajax(manage_freeradiususerObject);
+
+	// ---------------------------------------------------------------------------------------------------
+});
+</script>
