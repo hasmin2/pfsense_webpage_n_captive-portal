@@ -28,7 +28,6 @@ require_once("service-utils.inc");
 require_once('notices.inc');
 
 header('Content-Type: text/html; charset=utf-8');
-
 $pagetitle = gentitle($pgtitle);
 $system_url = $config['system']['hostname'] . "." . $config['system']['domain'];
 
@@ -87,7 +86,6 @@ if (!isset($config['system']['webgui']['dashboardcolumns'])) {
    separately */
 $uri_split = "";
 preg_match("/\/(.*)\?(.*)/", $_SERVER["REQUEST_URI"], $uri_split);
-
 /* If there was no match, there were no parameters, just grab the filename
    Otherwise, use the matched filename from above. */
 if (empty($uri_split[0])) {
@@ -433,10 +431,10 @@ if (!$g['disablehelpmenu']) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 	$help_menu[] = array(gettext("SynerSAT Home(Korean)"), "https://synersat.co.kr");
 	$help_menu[] = array(gettext("Mail to Support"), "mailto:korea@synersat.com?subject=Support Request");
-	$help_menu[] = array(gettext("FX Guide Book - English"), "http://192.168.209.1/Fleet Xpress User guide latest-Eng.pdf");
-	$help_menu[] = array(gettext("FX Guide Book - Korean"), "http://192.168.209.1/Fleet Xpress User guide latest-Kor.pdf");
-	$help_menu[] = array(gettext("Bluewave Mail Guide Book - English"), "http://192.168.209.1/Bluewave Mail User guide latest-Eng.pdf");
-	$help_menu[] = array(gettext("Bluewave Mail Guide Book - Korean"), "http://192.168.209.1/Bluewave Mail User guide latest-Kor.pdf");
+	$help_menu[] = array(gettext("FX Guide Book - English"), "http://{$_SERVER['SERVER_ADDR']}/Fleet Xpress User guide latest-Eng.pdf");
+	$help_menu[] = array(gettext("FX Guide Book - Korean"), "http://{$_SERVER['SERVER_ADDR']}/Fleet Xpress User guide latest-Kor.pdf");
+	$help_menu[] = array(gettext("Bluewave Mail Guide Book - English"), "http://{$_SERVER['SERVER_ADDR']}/Bluewave Mail User guide latest-Eng.pdf");
+	$help_menu[] = array(gettext("Bluewave Mail Guide Book - Korean"), "http://{$_SERVER['SERVER_ADDR']}/Bluewave Mail User guide latest-Kor.pdf");
 	$help_menu = msort(array_merge($help_menu, return_ext_menu("Help")), 0);
 }
 
