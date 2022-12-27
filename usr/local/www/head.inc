@@ -209,7 +209,7 @@ function output_menu($arrayitem, $target = null, $section = "") {
 		/* If the user has access to help pages, also show the full help menu. See #5909 */
 		if (isAllowedPage($item[1]) || $item[1] == "/index.php?logout" ||
 		    (($section == "Help") && isAllowedPage("help.php")) ||
-		    (substr($item[1], 0, 8) == "https://") || (substr($item[1], 0, 7) == "mailto:")) {
+		    (substr($item[1], 0, 4) == "http") || (substr($item[1], 0, 7) == "mailto:")) {
 			$attr = sprintf("href=\"%s\"", htmlentities($item[1]));
 
 			if ($target) {
@@ -433,10 +433,10 @@ if (!$g['disablehelpmenu']) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 	$help_menu[] = array(gettext("SynerSAT Home(Korean)"), "https://synersat.co.kr");
 	$help_menu[] = array(gettext("Mail to Support"), "mailto:korea@synersat.com?subject=Support Request");
-	$help_menu[] = array(gettext("Quick Guide"), "");
-	$help_menu[] = array(gettext("VSAT-Ku Guide Book"), "");
-	$help_menu[] = array(gettext("FX Guide Book"), "");
-	$help_menu[] = array(gettext("Bluewave Mail Guide Book"), "");
+	$help_menu[] = array(gettext("FX Guide Book - English"), "http://192.168.209.1/Fleet Xpress User guide latest-Eng.pdf");
+	$help_menu[] = array(gettext("FX Guide Book - Korean"), "http://192.168.209.1/Fleet Xpress User guide latest-Kor.pdf");
+	$help_menu[] = array(gettext("Bluewave Mail Guide Book - English"), "http://192.168.209.1/Bluewave Mail User guide latest-Eng.pdf");
+	$help_menu[] = array(gettext("Bluewave Mail Guide Book - Korean"), "http://192.168.209.1/Bluewave Mail User guide latest-Kor.pdf");
 	$help_menu = msort(array_merge($help_menu, return_ext_menu("Help")), 0);
 }
 
