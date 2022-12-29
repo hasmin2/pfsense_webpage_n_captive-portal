@@ -273,11 +273,44 @@ function get_module_status(){
 </style>
 <script>
 function core_open(){
-	window.open("http://192.168.209.210:18630");
+	var form = document.createElement("form");
+	form.setAttribute("method", "post");
+	form.setAttribute("target", "_blank");
+	form.setAttribute("action", "http://192.168.209.210:18630/j_security_check");
+	var input = document.createElement('input');
+	input.type = 'hidden';
+	input.name = "j_username";
+	input.value = "admin";
+	form.appendChild(input);
+	input = document.createElement('input');
+	input.type = 'hidden';
+	input.name = "j_password";
+	input.value = "admin";
+	form.appendChild(input);
+	document.body.appendChild(form);
+	form.submit();
+	document.body.removeChild(form);
 }
 
 function console_open(ipaddr){
-	window.open(`http://${ipaddr}`);
+	var form = document.createElement("form");
+	form.setAttribute("method", "post");
+	form.setAttribute("target", "_blank");
+	form.setAttribute("action", `http://${ipaddr}/cgi-bin/setagent.cgi?type=l`);
+	var input = document.createElement('input');
+	input.type = 'hidden';
+	input.name = "username";
+	input.value = "intellian";
+	form.appendChild(input);
+	input = document.createElement('input');
+	input.type = 'hidden';
+	input.name = "pw";
+	input.value = "12345678";
+	form.appendChild(input);
+	document.body.appendChild(form);
+	form.submit();
+	document.body.removeChild(form);
+	//window.open(`http://${ipaddr}`);
 }
 function confirm_resetfw(){
    return window.confirm(`Are you sure you want to reset firewall?\nIt takes 2~3 mins to restore internet.`);
@@ -427,7 +460,7 @@ events.push(function(){
 	manage_server_moduleObject.url = "/widgets/widgets/manage_server_module.widget.php";
 	manage_server_moduleObject.callback = manage_server_module_callback;
 	manage_server_moduleObject.parms = postdata;
-	manage_server_moduleObject.freq = 1;
+	manage_server_moduleObject.freq = 10;
 
 	// Register the AJAX object
 	register_ajax(manage_server_moduleObject);
