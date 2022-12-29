@@ -195,18 +195,17 @@ function get_module_status(){
 		if(substr($item['title'],0,16)=== '[System Pipeline'){
 			foreach($status as $statusitem){
 				if($statusitem['pipelineId'] === $item['pipelineId']&&
-				   $statusitem['status'] === 'RUNNING' ||
-				   $statusitem['status'] === 'RETRY' ||
-				   $statusitem['status'] === 'STARTING' ||
-				   $statusitem['status'] === 'CONNECTING' ||
-				   $statusitem['status'] === 'FINISHED' ||
-				   $statusitem['status'] === 'FINISHING'
-
-				){
-					$core_module_status = '<font color=green>OK';
-				}
-
-				else {
+				   $statusitem['status'] === 'EDITED' ||
+				   $statusitem['status'] === 'RUN_ERROR' ||
+				   $statusitem['status'] === 'STOPPED' ||
+				   $statusitem['status'] === 'START_ERROR' ||
+				   $statusitem['status'] === 'STOP_ERROR' ||
+				   $statusitem['status'] === 'DISCONNECTED' ||
+				   $statusitem['status'] === 'RUNNING_ERROR' ||
+				   $statusitem['status'] === 'STARTING_ERROR' ||
+				   $statusitem['status'] === 'STOPPING' ||
+				   $statusitem['status'] === 'STOPPING_ERROR'
+				   ) {
 					$core_module_status = '<font color=red>NOT OK';
 					break;
 				}
