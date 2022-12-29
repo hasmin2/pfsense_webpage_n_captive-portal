@@ -133,7 +133,7 @@ function check_vsat_status_influxdb(){
 		$lonIdx = 0;
 		$latDirIdx = 0;
 		$lonDirIdx = 0;
-		if($resultcount > 1){
+		if($resultcount > 2){
 			for ($i = 0; $i < $resultcount; $i++){
 				switch($decoded['results'][0]['series'][0]['columns'][$i]){
 					case "Heading":
@@ -163,24 +163,13 @@ function check_vsat_status_influxdb(){
 			$lon_last = $decoded['results'][0]['series'][0]['values'][1][$lonIdx];
 			$latDir_last = $decoded['results'][0]['series'][0]['values'][1][$latDirIdx];
 			$lonDir_last = $decoded['results'][0]['series'][0]['values'][1][$lonDirIdx];
-			if($latDir == "S"){
-				$lat_current = $lat*-1;
-			}
-			else {
-				$lat_current = $lat;
-			}
-			if($lonDir == "W"){
-				$lon_current = 360 - $lon;
-			}
-			else {
-				$lon_current = $lon;
-			}
-			if($latDir_last == "S"){
-				$lat_last = $lat_last*-1;
-			}
-			if($lonDir_last == "W"){
-				$lon_last = 360-$lon_last;
-			}
+			if($latDir == "S"){ $lat_current = $lat*-1; }
+			else { $lat_current = $lat; }
+			if($lonDir == "W"){ $lon_current = 360 - $lon; }
+			else { $lon_current = $lon; }
+			if($latDir_last == "S"){ $lat_last = $lat_last*-1; }
+			if($lonDir_last == "W"){ $lon_last = 360-$lon_last; }
+
 			$current_time= $decoded['results'][0]['series'][0]['values'][0][0];
 			$last_time= $decoded['results'][0]['series'][0]['values'][1][0];
 			$timegap= strtotime($current_time) - strtotime($last_time);
@@ -189,7 +178,7 @@ function check_vsat_status_influxdb(){
 			return array("<font color=green>MONITORING</font>","{$lat}{$latDir},{$lon}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
 		}
 		else {
-			return array("<font color=red>NOT MONITORING</font>","N/A");
+			return array("<font color=gray>AWAITING INFO</font>","N/A");
 		}
 	}
 }
