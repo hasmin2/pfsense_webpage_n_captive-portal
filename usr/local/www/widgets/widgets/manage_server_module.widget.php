@@ -52,9 +52,9 @@ if (!function_exists('compose_manage_server_module_contents')) {
 			}
 			break;
 		}
-		$rtnstr .="<td><center>{$vsat_status}</center></td>";
+		$rtnstr .="<td><center>{$vsat_status[0]}</center></td>";
 		$rtnstr .="<td><center>N/I</center></td>";
-		$rtnstr .="<td><center>N/I</center></td>";
+		$rtnstr .="<td><center>{$vsat_status[1]}</center></td>";
 		$rtnstr .="<td><center>{$vpn_status}</center></td>";
 		$rtnstr .="<td><center><font color=green>OK</font></center></td>";
 		return($rtnstr);
@@ -93,10 +93,11 @@ if ($_POST['widgetkey']) {//
 
 $widgetperiod = isset($config['widgets']['period']) ? $config['widgets']['period'] * 1000 : 10000;
 $widgetkey_nodash = str_replace("-", "", $widgetkey);
+
 function check_vsat_status_influxdb(){
 	$ch = curl_init();
 	curl_setopt_array($ch, array(
-		CURLOPT_URL => 'http://192.168.209.210:8086/query?q=select%20*%20from%20satstatus%20where%20time%20%3E%20now()%20-10m%20order%20by%20time%20desc&db=acustatus',
+		CURLOPT_URL => 'http://192.168.209.210:8086/query?q=select%20*%20from%20vesselposition%20where%20time%20%3E%20now()%20-10m%20order%20by%20time%20desc&db=acustatus',
 		CURLOPT_TIMEOUT => 1,
 		CURLOPT_MAXREDIRS => 10,
 		CURLOPT_CUSTOMREQUEST => GET,
@@ -107,14 +108,44 @@ function check_vsat_status_influxdb(){
 	));
 	$response = curl_exec($ch);
 	curl_close($ch);
+
 	if(!$response){
-		return "<font color=red>OFFLINE</font>";
+		return array ("<font color=red>NOT MONITORING</font>", "N/A");
 	}
 	else {
 		$decoded = json_decode($response, true);
 		$resultcount = count($decoded['results'][0]['series'][0]['values']);
-		if($resultcount > 1){
-			return "<font color=green>MONITORING</font>";
+		$headingIdx = 0;
+		$latIdx = 0;
+		$lonIdx = 0;
+		$latDirIdx = 0;
+		$lonDirIdx = 0;
+		if($resultcount >= 1){
+			for ($i = 0; $i < $resultcount; $i++){
+				switch($decoded['results'][0]['series'][0]['columns'][$i]){
+					case "Heading":
+						$headingIdx = $i;
+						break;
+					case "Latitude":
+						$latIdx = $i;
+						break;
+					case "Longitude":
+						$lonIdx = $i;
+						break;
+					case "lat-direction":
+						$latDirIdx = $i;
+						break;
+					case "lon-direction":
+						$lonDirIdx = $i;
+						break;
+				}
+			}
+			$heading = $decoded['results'][0]['series'][0]['values'][0][$headingIdx];
+			$lat = $decoded['results'][0]['series'][0]['values'][0][$latIdx];
+			$lon = $decoded['results'][0]['series'][0]['values'][0][$lonIdx];
+			$latDir = $decoded['results'][0]['series'][0]['values'][0][$latDirIdx];
+			$lonDir = $decoded['results'][0]['series'][0]['values'][0][$lonDirIdx];
+			return array("<font color=green>MONITORING</font>","{$lat}{$latDir},{$lon}{$lonDir}@{$heading}<sup>o</sup>");
 		}
 		else {
 			return "<font color=red>NOT MONITORING</font>";
@@ -163,7 +194,19 @@ function get_module_status(){
 	foreach($pipelines as $item){
 		if(substr($item['title'],0,16)=== '[System Pipeline'){
 			foreach($status as $statusitem){
-				if($statusitem['pipelineId'] === $item['pipelineId']&& $statusitem['status'] !== 'RUNNING'){
+				if($statusitem['pipelineId'] === $item['pipelineId']&&
+				   $statusitem['status'] === 'RUNNING' ||
+				   $statusitem['status'] === 'RETRY' ||
+				   $statusitem['status'] === 'STARTING' ||
+				   $statusitem['status'] === 'CONNECTING' ||
+				   $statusitem['status'] === 'FINISHED' ||
+				   $statusitem['status'] === 'FINISHING'
+
+				){
+					$core_module_status = '<font color=green>OK';
+				}
+
+				else {
 					$core_module_status = '<font color=red>NOT OK';
 					break;
 				}
