@@ -32,7 +32,20 @@ require_once("functions.inc");
 require_once ("auth.inc");
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
+function haversineGreatCircleDistance($latitudeFrom, $longitudeFrom, $latitudeTo, $longitudeTo, $earthRadius = 6371000){
+  // convert from degrees to radians
+  $latFrom = deg2rad($latitudeFrom);
+  $lonFrom = deg2rad($longitudeFrom);
+  $latTo = deg2rad($latitudeTo);
+  $lonTo = deg2rad($longitudeTo);
 
+  $latDelta = $latTo - $latFrom;
+  $lonDelta = $lonTo - $lonFrom;
+
+  $angle = 2 * asin(sqrt(pow(sin($latDelta / 2), 2) +
+    cos($latFrom) * cos($latTo) * pow(sin($lonDelta / 2), 2)));
+  return $angle * $earthRadius;
+}
 if (!function_exists('compose_manage_server_module_contents')) {
 	function compose_manage_server_module_contents($widgetkey) {
 		$core_status = get_module_status();
@@ -120,7 +133,7 @@ function check_vsat_status_influxdb(){
 		$lonIdx = 0;
 		$latDirIdx = 0;
 		$lonDirIdx = 0;
-		if($resultcount >= 1){
+		if($resultcount > 1){
 			for ($i = 0; $i < $resultcount; $i++){
 				switch($decoded['results'][0]['series'][0]['columns'][$i]){
 					case "Heading":
@@ -145,10 +158,38 @@ function check_vsat_status_influxdb(){
 			$lon = $decoded['results'][0]['series'][0]['values'][0][$lonIdx];
 			$latDir = $decoded['results'][0]['series'][0]['values'][0][$latDirIdx];
 			$lonDir = $decoded['results'][0]['series'][0]['values'][0][$lonDirIdx];
-			return array("<font color=green>MONITORING</font>","{$lat}{$latDir},{$lon}{$lonDir}@{$heading}<sup>o</sup>");
+
+			$lat_last = $decoded['results'][0]['series'][0]['values'][1][$latIdx];
+			$lon_last = $decoded['results'][0]['series'][0]['values'][1][$lonIdx];
+			$latDir_last = $decoded['results'][0]['series'][0]['values'][1][$latDirIdx];
+			$lonDir_last = $decoded['results'][0]['series'][0]['values'][1][$lonDirIdx];
+			if($latDir == "S"){
+				$lat_current = $lat*-1;
+			}
+			else {
+				$lat_current = $lat;
+			}
+			if($lonDir == "W"){
+				$lon_current = 360 - $lon;
+			}
+			else {
+				$lon_current = $lon;
+			}
+			if($latDir_last == "S"){
+				$lat_last = $lat_last*-1;
+			}
+			if($lonDir_last == "W"){
+				$lon_last = 360-$lon_last;
+			}
+			$current_time= $decoded['results'][0]['series'][0]['values'][0][0];
+			$last_time= $decoded['results'][0]['series'][0]['values'][1][0];
+			$timegap= strtotime($current_time) - strtotime($last_time);
+			$distance = haversineGreatCircleDistance($lat_current, $lon_current, $lat_last, $lon_last, 6371);
+			$avrhrspeed= round($distance/$timegap*3600/1.852, 2);
+			return array("<font color=green>MONITORING</font>","{$lat}{$latDir},{$lon}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
 		}
 		else {
-			return "<font color=red>NOT MONITORING</font>";
+			return array("<font color=red>NOT MONITORING</font>","N/A");
 		}
 	}
 }
@@ -185,7 +226,7 @@ function get_module_status(){
 		$core_status = '<font color=green>OK';
 	}
 	else{
-		$core_status = '<font color=green>SHUTDOWN';
+		$core_status = '<font color=red>SHUTDOWN';
 		$core_module_status = '<font color=grey>N/A';
 	}
 	$noc_status = '<font color=green>ONLINE';
@@ -271,7 +312,7 @@ function confirm_rebootsvr(){
 			<center><?=gettext("VSAT");?></center></th>
 			<th title = 'Fleet Broadband management connection status.&#10;If it is offline, FBB terminal status may not be monitored.&#10;To recover the issue, operator may re-input FBB ip address both core and smartbox to recover it'>
 			<center><?=gettext("FBB");?></center></th>
-			<th><center><?=gettext("GPS");?></center></th>
+			<th><center><?=gettext("POSITION");?></center></th>
 			<th title = 'Network Operation Center(NOC) status.&#10;If it is offline, Internet connection may unstable or shoreside server was offline.&#10;If vessel's internet connection was stable,leave it as offline'>
 			<center><?=gettext("NOC");?></center></th>
 			<th><center><?=gettext("Server");?></center></th>

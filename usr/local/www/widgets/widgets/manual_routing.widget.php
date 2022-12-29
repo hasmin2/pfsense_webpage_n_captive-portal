@@ -215,26 +215,31 @@ if (!function_exists('compose_manual_routing_contents')) {
 				$response = curl_exec($ch);
 				curl_close($ch);
 				if(!$response){
-				    $signal = '<font color="gray">No Signal</font>';
+				    $signal = '<font color="red">Offline</font>';
 				}
 				else{
 					$response = json_decode($response, true);
 			    	$signal = $response['results'][0]['series'][0]['values'][0][1];
-					if($signal < 70){
-						$signal = '<font color="red">'.$signal.'</font>';
-					}
-					else if ($signal >=70 && $signal < 120){
-						$signal = '<font color="yellow">'.$signal.'</font>';
-					}
-					else if ($signal >=120 && $signal < 180){
-						$signal = '<font color="green">'.$signal.'</font>';
-					}
-					else if ($signal >=180 && $signal < 200){
-						$signal = '<font color="blue">'.$signal.'</font>';
-					}
-					else {
-						$signal = '<font color="gray">'.$signal.'</font>';
-					}
+			    	if($signal > 1){
+			    		$signal = '<font color="red">No Signal</font>';
+			    	}
+			    	else{
+			    		if($signal < 70){
+							$signal = '<font color="red">'.$signal.'</font>';
+						}
+						else if ($signal >=70 && $signal < 120){
+							$signal = '<font color="yellow">'.$signal.'</font>';
+						}
+						else if ($signal >=120 && $signal < 180){
+							$signal = '<font color="green">'.$signal.'</font>';
+						}
+						else if ($signal >=180 && $signal < 200){
+							$signal = '<font color="blue">'.$signal.'</font>';
+						}
+						else {
+							$signal = '<font color="gray">'.$signal.'</font>';
+						}
+			    	}
 				}
 				$signal_description = "title='Signal Level, below 70 is normally unable to make internet connection.&#10;70~120 may able to internet with similar speed with FB250/500.&#10;110~170 may surfing with average speed.'";
 			}
