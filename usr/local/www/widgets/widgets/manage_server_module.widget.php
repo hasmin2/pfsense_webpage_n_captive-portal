@@ -133,8 +133,9 @@ function check_vsat_status_influxdb(){
 		$lonIdx = 0;
 		$latDirIdx = 0;
 		$lonDirIdx = 0;
+		$columncount= count($decoded['results'][0]['series'][0]['columns']);
 		if($resultcount > 2){
-			for ($i = 0; $i < $resultcount; $i++){
+			for ($i = 0; $i < $columncount; $i++){
 				switch($decoded['results'][0]['series'][0]['columns'][$i]){
 					case "Heading":
 						$headingIdx = $i;
