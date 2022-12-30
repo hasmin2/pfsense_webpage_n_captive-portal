@@ -123,9 +123,10 @@ function check_vsat_status_influxdb(){
 	curl_close($ch);
 
 	if(!$response){
-		return array ("<font color=red>NOT MONITORING</font>", "N/A");
+		return array ("<font color=red>STORE ERROR</font>", "N/A");
 	}
 	else {
+		if(
 		$decoded = json_decode($response, true);
 		$resultcount = count($decoded['results'][0]['series'][0]['values']);
 		$headingIdx = 0;
@@ -134,7 +135,13 @@ function check_vsat_status_influxdb(){
 		$latDirIdx = 0;
 		$lonDirIdx = 0;
 		$columncount= count($decoded['results'][0]['series'][0]['columns']);
-		if($resultcount > 2){
+		if($resulecount <= 0){
+			return array ("<font color=red>OFFLINE</font>", "N/A");
+		}
+		else if ($resultcount > 0 && $columncount <= 2){
+			return array("<font color=gray>AWAITING INFO</font>","N/A");
+		}
+		else{
 			for ($i = 0; $i < $columncount; $i++){
 				switch($decoded['results'][0]['series'][0]['columns'][$i]){
 					case "Heading":
@@ -177,9 +184,6 @@ function check_vsat_status_influxdb(){
 			$distance = haversineGreatCircleDistance($lat_current, $lon_current, $lat_last, $lon_last, 6371);
 			$avrhrspeed= round($distance/$timegap*3600/1.852, 2);
 			return array("<font color=green>MONITORING</font>","{$lat}{$latDir},{$lon}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
-		}
-		else {
-			return array("<font color=gray>AWAITING INFO</font>","N/A");
 		}
 	}
 }
