@@ -126,7 +126,6 @@ function check_vsat_status_influxdb(){
 		return array ("<font color=red>STORE ERROR</font>", "N/A");
 	}
 	else {
-		if(
 		$decoded = json_decode($response, true);
 		$resultcount = count($decoded['results'][0]['series'][0]['values']);
 		$headingIdx = 0;
