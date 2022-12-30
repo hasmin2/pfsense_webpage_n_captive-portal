@@ -135,7 +135,7 @@ function check_vsat_status_influxdb(){
 		$lonDirIdx = 0;
 		$columncount= count($decoded['results'][0]['series'][0]['columns']);
 		if($resulecount <= 0){
-			return array ("<font color=red>OFFLINE</font>", "N/A");
+			return array ("<font color=red>NOT MONITORING</font>", "N/A");
 		}
 		else if ($resultcount > 0 && $columncount <= 2){
 			return array("<font color=gray>AWAITING INFO</font>","N/A");
