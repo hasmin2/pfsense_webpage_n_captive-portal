@@ -49,7 +49,7 @@ class APISystemSendPing extends APIModel {
 						mwexec('route add -host '.$randgw.' '.$gw['monitorip']);
 						sleep(1);
 						$gw['choosed_destination']=$randgw;
-						$gw["pingresult"] = mwexec('ping -c1 -t '.$gw['check_timeout'].' -S '.$gw['srcip'].' '.$randgw)==0 ? "online": "offline";
+						$gw["pingresult"] = mwexec('ping -c1 -t '.$gw['check_timeout'].' -S '.$gw['srcip'].' '.$randgw.' > /dev/null')==0 ? "online": "offline";
 						mwexec('route del -host '.$randgw.' '.$gw['monitorip']);
 					}
 					else if ($gw["check_method"]=== "nmap"){
@@ -64,14 +64,13 @@ class APISystemSendPing extends APIModel {
 						sleep(1);
 						$gw['choosed_destination']=$randgw;
 
-						$gw["pingresult"] = mwexec('nc -z -w'.$gw['check_timeout'].' '.$randgw_ip.' '.$randgw_port)==0 ? "online": "offline";
-						mwexec('route del -host '.$randgw_ip.' '.$gw['monitorip']);
+						$gw["pingresult"] = mwexec('nc -z -w'.$gw['check_timeout'].' '.$randgw_ip.' '.$randgw_port.' > /dev/null')==0 ? "online": "offline";
+						mwexec('route del -host '.$randgw_ip.' '.$gw['monitorip'].' > /dev/null');
 					}
 					else if ($gw["check_method"]=== 'none'){
 						$gw["pingresult"] = "online";
 					}
 					else {
-					//TODO
 						$gw["pingresult"] = "unknown";
 					}
 				}

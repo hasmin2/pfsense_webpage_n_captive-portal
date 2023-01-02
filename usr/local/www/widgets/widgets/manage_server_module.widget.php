@@ -297,7 +297,7 @@ function core_open(){
 }
 
 function console_open(ipaddr){
-	var form = document.createElement("form");
+	/*var form = document.createElement("form");
 	form.setAttribute("method", "post");
 	form.setAttribute("target", "_blank");
 	form.setAttribute("action", `http://${ipaddr}/cgi-bin/setagent.cgi?type=l`);
@@ -313,8 +313,8 @@ function console_open(ipaddr){
 	form.appendChild(input);
 	document.body.appendChild(form);
 	form.submit();
-	document.body.removeChild(form);
-	//window.open(`http://${ipaddr}`);
+	document.body.removeChild(form);*/
+	window.open(`http://${ipaddr}`);
 }
 function confirm_resetfw(){
    return window.confirm(`Are you sure you want to reset firewall?\nIt takes 2~3 mins to restore internet.`);
