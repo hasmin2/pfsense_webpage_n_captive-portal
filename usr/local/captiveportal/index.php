@@ -196,6 +196,20 @@ if ($_POST['logout_id']) {//When User click logout button from './logout.php'
 	/* display captive portal page */
 	$isDisconnected = already_connected($clientip, $clientmac);
 	if($isDisconnected===false){//isDisconnected
+		foreach($_SERVER as $key => $value){
+			if($key === HTTP_HOST){
+				//echo "key: {$key}, value: {$value}";
+				if($value === "www.msftconnecttest.com" || $value === "connectivitycheck.gstatic.com"
+				  || $value === "edge-http.microsoft.com" || $value === "play.googleapis.com"|| $value==="captive.apple.com"){
+				ob_start();
+				header ("HTTP/1.1 204 NO CONTENT");
+				header("Expires: 0");
+				ob_end_flush();
+
+				}
+			}
+
+		}
 		portal_reply_page($redirurl, "login", "Welcome!", $clientmac, $clientip);
 	}
 	else {//is still connected
