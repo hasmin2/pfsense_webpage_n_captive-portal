@@ -31,8 +31,10 @@
 	}
 }
 function commitpw() {
-  document.getElementById('commit_change_pw').setAttribute('disabled', 'true');
+  document.getElementById('password').setAttribute('readonly', 'true');
+  document.getElementById('cnfrm-password').setAttribute('readonly', 'true');
   document.getElementById('commit_change_pw').value='Syncing new PW...';
+
 
 }
 

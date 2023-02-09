@@ -57,7 +57,7 @@ if (!function_exists('compose_manual_routing_contents')) {
 		$gw_displayed = false;
 
 		foreach ($a_gateways as $gname => $gateway) {
-			if ($gateway['monitor_disable']) {
+			if ($gateway['monitor_disable'] || $gateway['terminal_type']==="vpn") {
 				continue;
 			}
 			$gw_displayed = true;
@@ -243,6 +243,14 @@ if (!function_exists('compose_manual_routing_contents')) {
 				}
 				$signal_description = "title='Signal Level, below 70 is normally unable to make internet connection.&#10;70~120 may able to internet with similar speed with FB250/500.&#10;110~170 may surfing with average speed.'";
 			}
+			else if(startswith($gateway['terminal_type'], 'fbb')){
+				$signal = '<font color="gray">N/I</font>';
+				$signal_description = "title='Signal Level, below 70 is normally unable to make internet connection.&#10;70~120 may able to internet with similar speed with FB250/500.&#10;110~170 may surfing with average speed.'";
+			}
+			else{
+				$signal = '<font color="gray">N/A</font>';
+				$signal_description = "title='Signal Level, below 70 is normally unable to make internet connection.&#10;70~120 may able to internet with similar speed with FB250/500.&#10;110~170 may surfing with average speed.'";
+			}
 
 			$rtnstr .= 	"<td {$signal_description} class='text-center'>$signal</td>\n";
 ///////////////////////////////////////
@@ -372,7 +380,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 <?php
 		$gateways = return_gateways_array();
 		foreach ($gateways as $gname => $gateway):
-		if (!$gateway['monitor_disable']):
+		if (!startswith($gateway['terminal_type'], 'vpn') ):
 ?>
 			<div class="radio">
 				<label><input name="routing_radiobutton" type="radio" value=<?echo($gname);?> <?//echo($config['gateways']['defaultgw4']==$gname) ? 'checked':'';?>><?echo($gname);?></label>

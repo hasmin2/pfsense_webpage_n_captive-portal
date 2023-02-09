@@ -240,15 +240,16 @@ $group->add(new Form_Select(
 	'*Terminal Type',
 	$pconfig['terminal_type'],
 	 array(
+		"vsat_pri" => "1st VSAT (or FX CORP)",
+		"vsat_sec" => "2nd VSAT (or FX CREW)",
+		"vsat_thi" => "3rd VSAT (or any third VSAT terminal)",
+		"tcp_other" => "Internet",
+		"vpn"=> "VPN Network",
 		"fbb_satlink"=> "SATLink FleetBroadband",
 		"fbb_jrc" => "JRC FleetBroadband",
 		"fbb_furuno" => "FURUNO FleetBroadband",
 		"fbb_sailor" => "SAILOR FleetBroadband",
-		"iridium_other"=> "Iridium",
-		 "vsat_pri" => "1st VSAT (or FX CORP)",
-		 "vsat_sec" => "2nd VSAT (or FX CREW)",
-		 "vsat_thi" => "3rd VSAT (or any third VSAT terminal)",
-		 "tcp_other" => "Internet"
+		"iridium_other"=> "Iridium"
 	)
 ))->setHelp('Choose terminal type, ***IMPORTANT *** Note that the Gateway priority is "Internet"-> "VSAT(N)"->"any FBB"->"Iridium"');
 $section->add($group);

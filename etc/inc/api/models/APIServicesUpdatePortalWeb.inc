@@ -16,7 +16,7 @@
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 require_once("captiveportal.inc");
-class APIServicesUpdatePortal extends APIModel {
+class APIServicesUpdatePortalWeb extends APIModel {
     # Create our method constructor
     public function __construct() {
         parent::__construct();
@@ -25,22 +25,21 @@ class APIServicesUpdatePortal extends APIModel {
 
     public function action() {
         # Local variables
-        if(!isset($this->initial_data['zone']) ||!isset($this->initial_data['portalactive'])){
-            return APIResponse\get(5000, "Missing 'zone', or'portalactive' parameters");
+        if(!isset($this->initial_data['zone']) &&!isset($this->initial_data['htmltext'])
+           && !isset($this->initial_data['errtext']) && !isset($this->initial_data['logouttext'])){
+            return APIResponse\get(5000, "Missing update files for captive crew webpage");
         }
 
         else{
-            if(!$this->config["captiveportal"][$this->initial_data['zone']]){
-		        return APIResponse\get(5000, "Zone was not found");
+            if($isset($this->initial_data['htmltext']) && isset($this->initial_data['zone'])){
+            	$this->config["captiveportal"][$this->initial_data['zone']]['page']['htmltext']=$this->initial_data['htmltext'];
 	        }
-	        else{
-	            if($this->initial_data['portalactive']){
-			$this->config["captiveportal"][$this->initial_data['zone']]['enable']="";
-	    	    }
-	    	    else{
-			unset($this->config["captiveportal"][$this->initial_data['zone']]['enable']);
-	    	    }
-            }
+			if($isset($this->initial_data['errtext']) && isset($this->initial_data['zone'])){
+            	$this->config["captiveportal"][$this->initial_data['zone']]['page']['errtext']=$this->initial_data['errtext'];
+	        }
+	        if($isset($this->initial_data['logouttext']) && isset($this->initial_data['zone'])){
+				$this->config["captiveportal"][$this->initial_data['zone']]['page']['logouttext']=$this->initial_data['logouttext'];
+			}
             write_config("CaptivePortal Toggle by landline Active");
 		captiveportal_configure();
 	      filter_configure();

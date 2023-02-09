@@ -2301,7 +2301,6 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
 	$portal_url=$redirurl;
 
 	//////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////
-
 	/* Get captive portal layout */
 	if ($type == "redir") {
 		$redirurl = is_URL($redirurl) ? $redirurl : $portal_url;
@@ -2309,21 +2308,20 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
 		return;
 	} else if ($type == "change_pw") {
 	    $sessionid = already_connected($clientip, $clientmac)[5];
-        	    $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-resetpw.html");
+        	    $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-crew-resetpw.html");
 	} else if ($type=="commit_change_pw"){
 	    $sessionid = already_connected($clientip, $clientmac)[5];
 	    $username = getusername($sessionid);
 	    foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
-	        if($username==$value['varusersusername'] && !$username===""){
+	        if($username===$value['varusersusername']){
 	    		$config['installedpackages']['freeradius']['config'][$item][varuserspassword]=$password;
 	        }
 	    }
-
-   	    write_config("{$username} change password applied");
+   	   write_config("{$username} change password applied");
    	    sleep(1);
-        freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
-       	captiveportal_disconnect_client($sessionid);
-	    portal_reply_page($redirurl, "login","PW Reset", $clientmac, $clientip);
+	   freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
+       	  captiveportal_disconnect_client($sessionid);
+	  portal_reply_page($redirurl, "login","PW Reset", $clientmac, $clientip);
 	} else if ($type == "connected") {
 	    $sessionid = already_connected($clientip, $clientmac)[5];
 	    $username = getusername($sessionid);

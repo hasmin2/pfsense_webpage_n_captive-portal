@@ -26,4 +26,7 @@ class APIServicesPortal extends APIEndpoint {
     protected function post() {
         return (new APIServicesUpdatePortal())->call();
     }
+        protected function put() {
+            return (new APIServicesUpdatePortalWeb())->call();
+        }
 }
