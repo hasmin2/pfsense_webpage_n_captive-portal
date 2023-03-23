@@ -32,6 +32,8 @@ require_once("functions.inc");
 require_once ("auth.inc");
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
+require_once("/usr/local/www/widgets/include/manage_server_module.inc");
+
 function haversineGreatCircleDistance($latitudeFrom, $longitudeFrom, $latitudeTo, $longitudeTo, $earthRadius = 6371000){
   // convert from degrees to radians
   $latFrom = deg2rad($latitudeFrom);

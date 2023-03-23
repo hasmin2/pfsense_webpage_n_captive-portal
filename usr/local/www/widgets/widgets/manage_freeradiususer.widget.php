@@ -32,6 +32,7 @@ require_once("functions.inc");
 require_once("freeradius.inc");
 require_once ("captiveportal.inc");
 require_once ("auth.inc");
+require_once("/usr/local/www/widgets/include/manage_freeradiususer.inc");
 
 
 if (!function_exists('compose_manage_freeradiususer_contents')) {
@@ -245,7 +246,7 @@ function confirm_delUser(username){
 	</button></div></div></form>
 
 <script type="text/javascript">
-events.push(function(){
+/*events.push(function(){
 	// --------------------- Centralized widget refresh system ------------------------------
 
 	// Callback function called by refresh system when data is retrieved
@@ -270,5 +271,5 @@ events.push(function(){
 	register_ajax(manage_freeradiususerObject);
 
 	// ---------------------------------------------------------------------------------------------------
-});
+});*/
 </script>

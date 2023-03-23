@@ -21,6 +21,5 @@
  * limitations under the License.
  */
 
-$captive_portal_status_title = gettext("Crew Connection");
-$captive_portal_status_title_link = "status_captiveportal.php";
+$manage_server_module_title = gettext("Server Status");
 ?>

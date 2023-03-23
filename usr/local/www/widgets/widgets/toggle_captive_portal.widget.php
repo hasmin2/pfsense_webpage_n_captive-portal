@@ -132,10 +132,10 @@ if ($_POST['widgetkey']) {//변경할때이므로
 <form action="/widgets/widgets/toggle_captive_portal.widget.php" method="post" class="form-horizontal">
 <div class="container">
     <div class="row">
-        <div class="col-xs-0 col-sm-10 col-md-5 col-sm-offset-0 col-md-offset-0">
+        <div class="col-xs-2 col-sm-10 col-md-5 col-sm-offset-0 col-md-offset-0">
             <div class="panel panel-default">
                 <!-- Default panel contents -->
-                <div class="panel-heading" align="center">Private internet control panel</div>
+                <!--div class="panel-heading" align="center">Private internet control panel</div-->
             
                 <!-- List group -->
                 <ul class="list-group">

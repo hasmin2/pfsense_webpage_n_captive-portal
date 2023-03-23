@@ -21,5 +21,5 @@
  * limitations under the License.
  */
 
-$toggle_captive_portal_title = gettext("Crew Internet Control Panel");
+$toggle_captive_portal_title = gettext("Private Internet Control");
 ?>
