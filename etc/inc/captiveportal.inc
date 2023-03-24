@@ -2339,19 +2339,26 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
                $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
                captiveportal_disconnect_client($sessionid);
             } else {//사용량 확인함.
-                $currentquota=getcurquota($sessionid, $clientip);
-                $maxquota=getmaxquota($sessionid);
-                if($currentquota<$maxquota){
-                    $title = "You are Online!";
-                    $portalbtnmessage="Click here to log out";
-                    $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
-                } else {
-                    $title = "Login Failed!";
-                    $message="You reached allocated data amount.\nContact system admin";
-                    $portalbtnmessage="Click here to back home";
-                    $portalerrbtnmessage=$maxquota."MB limit reached.";
-                    captiveportal_disconnect_client($sessionid, "Usage-Exceed");
-                    $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
+				if (isset($config['captiveportal'][$cpzone]['terminate_duration'])){
+						$title = "Disconnected by Admin!";
+						$portalbtnmessage="Click here to back home";
+						$htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
+				}
+				else{
+					$currentquota=getcurquota($sessionid, $clientip);
+					$maxquota=getmaxquota($sessionid);
+					if($currentquota<$maxquota){
+						$title = "You are Online!";
+						$portalbtnmessage="Click here to log out";
+						$htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
+					} else {
+						$title = "Login Failed!";
+						$message="You reached allocated data amount.\nContact system admin";
+						$portalbtnmessage="Click here to back home";
+						$portalerrbtnmessage=$maxquota."MB limit reached.";
+						captiveportal_disconnect_client($sessionid, "Usage-Exceed");
+						$htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
+					}
                 }
             }
 	    } else {

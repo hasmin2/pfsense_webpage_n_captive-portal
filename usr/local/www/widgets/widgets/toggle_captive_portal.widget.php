@@ -61,11 +61,13 @@ if ($_POST['widgetkey']) {//변경할때이므로
         unset($config['captiveportal']['crew']['autoportal']);
     }
     if($_POST['terminate_portal']){
+		$cpzone = strtolower($config['captiveportal']['crew']['zone']);
+    	$cpzoneid = $config['captiveportal']['crew']['zoneid'];
         captiveportal_disconnect_all();
         $config['captiveportal']['crew']['terminate_duration']=$_POST['terminate_duration'];
         $date = new DateTime();
         $config['captiveportal']['crew']['terminate_timestamp']=round($date->getTimestamp()/60, 0);
-
+		captiveportal_disconnect_all($term_cause = 6, $logoutReason = "DISCONNECT", $carp_loop = false);
     }
     else{
         unset($config['captiveportal']['crew']['terminate_duration']);
