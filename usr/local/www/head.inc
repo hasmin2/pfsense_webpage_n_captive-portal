@@ -431,6 +431,8 @@ if (!$g['disablehelpmenu']) {
 	$help_menu[] = array(gettext("FX Guide Book - Korean"), "http://{$_SERVER['SERVER_ADDR']}/manuals/Fleet Xpress User guide latest-Kor.pdf");
 	$help_menu[] = array(gettext("Bluewave Mail Guide Book - English"), "http://{$_SERVER['SERVER_ADDR']}/manuals/Bluewave Mail User guide latest-Eng.pdf");
 	$help_menu[] = array(gettext("Bluewave Mail Guide Book - Korean"), "http://{$_SERVER['SERVER_ADDR']}/manuals/Bluewave Mail User guide latest-Kor.pdf");
+	$help_menu[] = array(gettext("Crew Internet Guide - English"), "http://{$_SERVER['SERVER_ADDR']}/manuals/Crew Internet User guide latest-Eng.pdf");
+	$help_menu[] = array(gettext("Crew Internet Guide - Korean"), "http://{$_SERVER['SERVER_ADDR']}/manuals/Crew Internet User guide latest-Kor.pdf");
 	$help_menu = msort(array_merge($help_menu, return_ext_menu("Help")), 0);
 }
 
