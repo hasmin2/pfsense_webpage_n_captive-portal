@@ -28,7 +28,6 @@ class APISystemSendPing extends APIModel {
     public function action() {
 	global $config;
 	$result=array();
-
         $gw_metrics_raw = return_gateways_status(true);
         $gw_metrics = [];
 		unset($config['gatewaystatus']);
@@ -46,11 +45,21 @@ class APISystemSendPing extends APIModel {
 		    				$gwList = array("8.8.8.8", "8.8.4.4", "168.126.63.1");
 		    			}
 						$randgw = $gwList[rand(0, count($gwList) - 1)];
-						mwexec('route add -host '.$randgw.' '.$gw['monitorip']);
+						/*mwexec('route add -host '.$randgw.' '.$gw['monitorip']);
 						sleep(1);
 						$gw['choosed_destination']=$randgw;
 						$gw["pingresult"] = mwexec('ping -c1 -t '.$gw['check_timeout'].' -S '.$gw['srcip'].' '.$randgw.' > /dev/null')==0 ? "online": "offline";
-						mwexec('route del -host '.$randgw.' '.$gw['monitorip']);
+						mwexec('route del -host '.$randgw.' '.$gw['monitorip']);*/
+						mwexec('/bin/sh /etc/inc/ping_check.sh '.$gw['check_timeout'].' '.$gw['srcip'].' '.$gw['monitorip'].' '.$randgw.' > /dev/null &');
+						if(file_exists("/etc/inc/".$gw['srcip'].".log")){
+							$fp=fopen ("/etc/inc/".$gw['srcip'].".log", "r");
+							$online_status= preg_replace('/\r\n|\r|\n/','',fgets($fp));
+							fclose($fp);
+							$gw["pingresult"] = $online_status;
+						}
+						else{
+							$gw["pingresult"] = "unknown";
+						}
 					}
 					else if ($gw["check_method"]=== "nmap"){
 		    			$gwList = explode(";", $gw["destinationip"]);
@@ -60,12 +69,20 @@ class APISystemSendPing extends APIModel {
 						$randgw = $gwList[rand(0, count($gwList) - 1)];
 						$randgw_ip = explode(":", $randgw)[0];
 						$randgw_port = explode(":", $randgw)[1];
-						mwexec('route add -host '.$randgw_ip.' '.$gw['monitorip']);
-						sleep(1);
+						/*mwexec('route add -host '.$randgw_ip.' '.$gw['monitorip']);
 						$gw['choosed_destination']=$randgw;
-
 						$gw["pingresult"] = mwexec('nc -z -w'.$gw['check_timeout'].' '.$randgw_ip.' '.$randgw_port.' > /dev/null')==0 ? "online": "offline";
-						mwexec('route del -host '.$randgw_ip.' '.$gw['monitorip'].' > /dev/null');
+						mwexec('route del -host '.$randgw_ip.' '.$gw['monitorip'].' > /dev/null');*/
+						mwexec('/bin/sh /etc/inc/nmap_check.sh '.$gw['check_timeout'].' '.$gw['srcip'].' '.$randgw.' '.$randgw_port.' > /dev/null &');
+						if(file_exists("/etc/inc/".$gw['srcip'].".log")){
+							$fp=fopen ("/etc/inc/".$gw['srcip'].".log", "r");
+							$online_status= preg_replace('/\r\n|\r|\n/','',fgets($fp));
+							fclose($fp);
+							$gw["pingresult"] = $online_status;
+						}
+						else{
+							$gw["pingresult"] = "unknown";
+						}
 					}
 					else if ($gw["check_method"]=== 'none'){
 						$gw["pingresult"] = "online";
