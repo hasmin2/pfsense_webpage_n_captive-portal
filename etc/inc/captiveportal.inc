@@ -2308,7 +2308,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
 		return;
 	} else if ($type == "change_pw") {
 	    $sessionid = already_connected($clientip, $clientmac)[5];
-        	    $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-crew-resetpw.html");
+        	    $htmltext = get_include_contents("/var/db/cpelements/captiveportal-crew-resetpw.html");
 	} else if ($type=="commit_change_pw"){
 	    $sessionid = already_connected($clientip, $clientmac)[5];
 	    $username = getusername($sessionid);

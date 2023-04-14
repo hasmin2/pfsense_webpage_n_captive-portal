@@ -220,7 +220,7 @@ if (!function_exists('compose_manual_routing_contents')) {
 				else{
 					$response = json_decode($response, true);
 			    	$signal = $response['results'][0]['series'][0]['values'][0][1];
-			    	if($signal > 1){
+			    	if($signal < 1){
 			    		$signal = '<font color="red">No Signal</font>';
 			    	}
 			    	else{
@@ -233,7 +233,7 @@ if (!function_exists('compose_manual_routing_contents')) {
 						else if ($signal >=120 && $signal < 180){
 							$signal = '<font color="green">'.$signal.'</font>';
 						}
-						else if ($signal >=180 && $signal < 200){
+						else if ($signal >=180 && $signal < 300){
 							$signal = '<font color="blue">'.$signal.'</font>';
 						}
 						else {
