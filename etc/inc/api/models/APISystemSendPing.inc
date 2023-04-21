@@ -73,7 +73,7 @@ class APISystemSendPing extends APIModel {
 						$gw['choosed_destination']=$randgw;
 						$gw["pingresult"] = mwexec('nc -z -w'.$gw['check_timeout'].' '.$randgw_ip.' '.$randgw_port.' > /dev/null')==0 ? "online": "offline";
 						mwexec('route del -host '.$randgw_ip.' '.$gw['monitorip'].' > /dev/null');*/
-						mwexec('/bin/sh /etc/inc/nmap_check.sh '.$gw['check_timeout'].' '.$gw['srcip'].' '.$randgw.' '.$randgw_port.' > /dev/null &');
+						mwexec('/bin/sh /etc/inc/nmap_check.sh '.$gw['check_timeout'].' '.$gw['srcip'].' '.$randgw_ip.' '.$randgw_port.' > /dev/null &');
 						if(file_exists("/etc/inc/".$gw['srcip'].".log")){
 							$fp=fopen ("/etc/inc/".$gw['srcip'].".log", "r");
 							$online_status= preg_replace('/\r\n|\r|\n/','',fgets($fp));
