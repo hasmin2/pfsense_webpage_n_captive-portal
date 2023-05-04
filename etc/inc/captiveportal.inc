@@ -2299,32 +2299,31 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
 	$ourhostname = portal_hostname_from_client_ip($clientip);
 	$protocol = (isset($cpcfg['httpslogin'])) ? 'https://' : 'http://';
 	$portal_url=$redirurl;
-
 	//////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////
+    $sessionid = already_connected($clientip, $clientmac)[5];
+    $username_from_id = getusername($sessionid);
+    if($username_from_id != ""){
+        $username  = $username_from_id;
+    }
 	/* Get captive portal layout */
 	if ($type == "redir") {
 		$redirurl = is_URL($redirurl) ? $redirurl : $portal_url;
 		header("Location: {$redirurl}");
 		return;
 	} else if ($type == "change_pw") {
-	    $sessionid = already_connected($clientip, $clientmac)[5];
-        	    $htmltext = get_include_contents("/var/db/cpelements/captiveportal-crew-resetpw.html");
+   	    $htmltext = get_include_contents("/var/db/cpelements/captiveportal-crew-resetpw.html");
 	} else if ($type=="commit_change_pw"){
-	    $sessionid = already_connected($clientip, $clientmac)[5];
-	    $username = getusername($sessionid);
 	    foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
 	        if($username===$value['varusersusername']){
 	    		$config['installedpackages']['freeradius']['config'][$item][varuserspassword]=$password;
 	        }
 	    }
-   	   write_config("{$username} change password applied");
+   	    write_config("{$username} change password applied");
    	    sleep(1);
-	   freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
-       	  captiveportal_disconnect_client($sessionid);
-	  portal_reply_page($redirurl, "login","PW Reset", $clientmac, $clientip);
+	    freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
+       	captiveportal_disconnect_client($sessionid);
+	    portal_reply_page($redirurl, "login","PW Reset", $clientmac, $clientip);
 	} else if ($type == "connected") {
-	    $sessionid = already_connected($clientip, $clientmac)[5];
-	    $username = getusername($sessionid);
 	    foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
 	        if($username==$value['varusersusername']){
 	            $userindex = $item;
