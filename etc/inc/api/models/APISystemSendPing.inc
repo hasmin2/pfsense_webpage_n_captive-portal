@@ -64,7 +64,7 @@ class APISystemSendPing extends APIModel {
 					else if ($gw["check_method"]=== "nmap"){
 		    			$gwList = explode(";", $gw["destinationip"]);
 		    			if($gwList[0] === ""){
-		    				$gwList = array("52.78.7.68:11111");
+		    				$gwList = array("52.78.7.68:11111", "google.com:443", "naver.com:443","daum.net:443");
 		    			}
 						$randgw = $gwList[rand(0, count($gwList) - 1)];
 						$randgw_ip = explode(":", $randgw)[0];
