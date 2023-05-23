@@ -279,10 +279,14 @@ function get_module_status(){
 </style>
 <script>
 function core_open(){
+	var ip = "192.168.209.210";
+	if(ip.startsWith("10")){
+		ip = location.host;
+	}
 	var form = document.createElement("form");
 	form.setAttribute("method", "post");
 	form.setAttribute("target", "_blank");
-	form.setAttribute("action", "http://192.168.209.210:18630/j_security_check");
+	form.setAttribute("action", "http://"+ip+":18630/j_security_check");
 	var input = document.createElement('input');
 	input.type = 'hidden';
 	input.name = "j_username";
@@ -299,24 +303,12 @@ function core_open(){
 }
 
 function console_open(ipaddr){
-	/*var form = document.createElement("form");
-	form.setAttribute("method", "post");
-	form.setAttribute("target", "_blank");
-	form.setAttribute("action", `http://${ipaddr}/cgi-bin/setagent.cgi?type=l`);
-	var input = document.createElement('input');
-	input.type = 'hidden';
-	input.name = "username";
-	input.value = "intellian";
-	form.appendChild(input);
-	input = document.createElement('input');
-	input.type = 'hidden';
-	input.name = "pw";
-	input.value = "12345678";
-	form.appendChild(input);
-	document.body.appendChild(form);
-	form.submit();
-	document.body.removeChild(form);*/
-	window.open(`http://${ipaddr}`);
+	var ip = location.host;
+	var openurl = ipaddr;
+	if(ip.startsWith("10")){
+		openurl = ip+":8010";
+	}
+	window.open(`http://${openurl}`);
 }
 function confirm_resetfw(){
    return window.confirm(`Are you sure you want to reset firewall?\nIt takes 2~3 mins to restore internet.`);
