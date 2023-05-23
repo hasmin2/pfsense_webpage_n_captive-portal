@@ -280,7 +280,7 @@ function get_module_status(){
 <script>
 function core_open(){
 	var ip = "192.168.209.210";
-	if(ip.startsWith("10")){
+	if(location.host.startsWith("10")){
 		ip = location.host;
 	}
 	var form = document.createElement("form");
