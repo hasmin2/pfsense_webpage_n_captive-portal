@@ -42,7 +42,7 @@ class APISystemSendPing extends APIModel {
 		    		if($gw["check_method"]=== "ping"){
 		    			$gwList = explode(";", $gw["destinationip"]);
 		    			if($gwList[0] === ""){
-		    				$gwList = array("8.8.8.8", "8.8.4.4", "168.126.63.1");
+		    				$gwList = array("8.8.8.8", "8.8.4.4", "168.126.63.1","1.1.1.1","1.0.0.1","208.67.222.222");
 		    			}
 						$randgw = $gwList[rand(0, count($gwList) - 1)];
 						/*mwexec('route add -host '.$randgw.' '.$gw['monitorip']);
@@ -64,7 +64,7 @@ class APISystemSendPing extends APIModel {
 					else if ($gw["check_method"]=== "nmap"){
 		    			$gwList = explode(";", $gw["destinationip"]);
 		    			if($gwList[0] === ""){
-		    				$gwList = array("52.78.7.68:11111", "google.com:443", "naver.com:443","daum.net:443");
+		    				$gwList = array("google.com:443", "naver.com:443","daum.net:443", "kakao.com:443", "youtube.com:443","facebook.com:443","tiktok.com:443");
 		    			}
 						$randgw = $gwList[rand(0, count($gwList) - 1)];
 						$randgw_ip = explode(":", $randgw)[0];
