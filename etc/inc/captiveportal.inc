@@ -3182,9 +3182,14 @@ function getcurquota($sessionid, $clientip){
 		    	$timerange = $value['varusersmaxtotaloctetstimerange'];
 		    }
 		}
-		$use_file = fopen("/var/log/radacct/datacounter/$timerange/used-octets-$username", "r");
-		$usagenum = fgets($use_file);
-		fclose($use_file);
+		$filepath = "/var/log/radacct/datacounter/$timerange/used-octets-$username";
+        if(file_exists($filepath) && ($use_file = fopen($filepath, "r"))!==false ){
+    		$usagenum = fgets($use_file);
+	    	fclose($use_file);
+		}
+		else {
+            $usagenum = 0;
+		}
 		$basedata = number_format(abs($usagenum)/1048576, 2, '.',',');
 		$rcv = number_format(abs(getVolume($clientip)['input_bytes'])/1048576, 2, '.',',');
 		$sent = number_format(abs(getVolume($clientip)['output_bytes'])/1048576, 2, '.',',');
