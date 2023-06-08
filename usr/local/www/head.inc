@@ -426,6 +426,7 @@ if (!$g['disablehelpmenu']) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 	$help_menu = array();
 	$help_menu[] = array(gettext("Mail to Support"), "mailto:korea@synersat.com?subject=Support Request");
+	$help_menu[] = array(gettext("Download TeamViewer Quick Support"), "http://{$_SERVER['SERVER_ADDR']}/manuals/TeamViewerQS.exe");
 	$help_menu[] = array(gettext("SynerSAT Home(Korean)"), "https://synersat.co.kr");
 	$help_menu[] = array(gettext("FX Guide Book - English"), "http://{$_SERVER['SERVER_ADDR']}/manuals/Fleet Xpress User guide latest-Eng.pdf");
 	$help_menu[] = array(gettext("FX Guide Book - Korean"), "http://{$_SERVER['SERVER_ADDR']}/manuals/Fleet Xpress User guide latest-Kor.pdf");
