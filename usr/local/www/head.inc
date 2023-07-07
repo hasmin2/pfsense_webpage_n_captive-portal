@@ -29,12 +29,11 @@ require_once('notices.inc');
 
 header('Content-Type: text/html; charset=utf-8');
 $pagetitle = gentitle($pgtitle);
-$system_url = $config['system']['hostname'] . "." . $config['system']['domain'];
-
+$vesselinfo=$config['system']['vesselinfo'];
 if ($user_settings['webgui']['pagenamefirst']) {
 	$tabtitle = $pagetitle . " - " . htmlspecialchars($system_url);
 } else {
-	$tabtitle = htmlspecialchars($system_url) . " - " . $pagetitle;
+	$tabtitle = htmlspecialchars($vesselinfo['vesselname']) . " - " . $pagetitle;
 }
 
 $cssfile = "/css/pfSense.css";
@@ -44,7 +43,6 @@ if (isset($user_settings['webgui']['webguicss'])) {
 		$cssfile = "/css/" . $user_settings['webgui']['webguicss'];
 	}
 }
-
 // set default columns to two if unset
 if (!isset($config['system']['webgui']['dashboardcolumns'])) {
 	$config['system']['webgui']['dashboardcolumns'] = 2;
@@ -418,7 +416,6 @@ $diagnostics_menu[] = array(gettext("Traceroute"), "/diag_traceroute.php");
 $diagnostics_menu[] = array(gettext("Packet Capture"), "/diag_packet_capture.php");
 
 $diagnostics_menu = msort(array_merge($diagnostics_menu, return_ext_menu("Diagnostics")), 0);
-
 if (!$g['disablehelpmenu']) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //여기에서 헬프 링크 추가한다, 만약 https 가 아닌 다른 링크를 넣고싶으면 204번째줄의 아웃풋 펑션에서 추가하면 된다.

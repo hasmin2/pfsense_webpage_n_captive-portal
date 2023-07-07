@@ -26,6 +26,7 @@
 
 include_once("auth.inc");
 include_once("priv.inc");
+
 if (!function_exists('platform_booting')) {
 	require_once('globals.inc');
 }
@@ -100,11 +101,12 @@ if (!$_SESSION['Post_Login']) {
 phpsession_end(true);
 
 /*
+
  * determine if the user is allowed access to the requested page
  */
 function display_error_form($http_code, $desc) {
 	global $config, $user_settings, $g;
-
+	$vesselinfo = $config['system']['vesselinfo'];
 	if (isAjax()) {
 		printf(gettext('Error: %1$s Description: %2$s'), $http_code, $desc);
 		return;
@@ -172,7 +174,7 @@ function display_error_form($http_code, $desc) {
 function display_login_form() {
 	require_once("globals.inc");
 	global $config, $g;
-
+	$vesselinfo = $config['system']['vesselinfo'];
 	unset($input_errors);
 
 	if (isAjax()) {
@@ -351,7 +353,7 @@ function display_login_form() {
 	        	<div class="col-sm-4 offset-md-4 logoCol">
 					<div class="loginCont center-block">
 		                <form method="post" <?=$loginautocomplete?> class="login">
-			                <p class="form-title">SIGN IN</p>
+			                <p class="form-title">Welcome! <br><?echo $vesselinfo['vesselname'];?></p>
 			                <input name="usernamefld" id="usernamefld" type="text" placeholder="Username" autocorrect="off" autocapitalize="none"/>
 			                <input name="passwordfld" id="passwordfld" type="password" placeholder="Password" />
 			                <input type="submit" name="login" value="Sign In" class="btn btn-success btn-sm" />
@@ -359,7 +361,7 @@ function display_login_form() {
 					</div>
 	            </div>
 
-	        	<div class="col-sm-4"></div>
+	        	<div class="col-sm-4"><p class="form-title">VPN: <?echo $vesselinfo['vesselvpnip'];?></p></div>
 	        </div>
 
 	        <footer id="3">
