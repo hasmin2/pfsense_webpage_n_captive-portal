@@ -156,17 +156,22 @@ if ($_POST['widgetkey']) {//변경할때이므로
 		else{ $terminated="";}
 		if(isset($a_cp['crew']['autoportal'])){
 			$autoportal= "checked";
-			$toggledisable="disabled";
+
 		}
 		else{
 			$autoportal="";
-			$toggledisable="";
 		}
+		if(strpos(get_config_user(), "admin") !== false){
+        	$toggledisable="";
+        }
+        else{
+           $toggledisable="disabled";
+        }
 ?>
                     <li class="list-group-item">
 			Enable / Disable private internet<br> **If Disable, private internet will be transmitted without control**
                         <div class="material-switch pull-right">
-                            <input id="crew" name=crew type="checkbox" <?echo($checkbox);?> />
+                            <input id="crew" name=crew type="checkbox" <?echo($checkbox);?> <?echo($toggledisable);?>/>
                             <label for="crew" class="label-primary"></label>
                         </div>
                     </li>
@@ -185,6 +190,8 @@ if ($_POST['widgetkey']) {//변경할때이므로
 					<option value="30">30 minutes </option>
 					<option value="60">60 minutes </option>
 					<option value="300">5 hours </option>
+					<option value="1440">1 day </option>
+					<option value="100000000">permanent </option>
 				</select>
                         <div class="material-switch pull-right">
                             <input id="terminate_portal" name="terminate_portal" type="checkbox" <?echo($terminated);?> <?echo($disabled);?>/>
