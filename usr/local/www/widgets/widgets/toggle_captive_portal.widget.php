@@ -43,17 +43,21 @@ if (isset($_POST['zone'])) {
 }
 $cpzone = strtolower($cpzone);
 
-
 if ($_POST['widgetkey']) {//변경할때이므로
 //여기에 컨트롤 코드 넣음.
 	//이건 각 포탈별로 Enable/Disable 할 때
-
     if(isset($_POST['crew'])){
         $config['captiveportal']['crew']['enable']='';
     }
     else{
+        if(isset($_POST['crewhidden'])){
+            $config['captiveportal']['crew']['enable']='';
+        }
+        else{
         unset($config['captiveportal']['crew']['enable']);
+        }
     }
+
     if($_POST['auto_portal_enable']){
         $config['captiveportal']['crew']['autoportal']="";
     }
@@ -86,14 +90,14 @@ if ($_POST['widgetkey']) {//변경할때이므로
 
 <style>
 .material-switch > input[type="checkbox"] {
-    display: none;   
+    display: none;
 }
 
 .material-switch > label {
     cursor: pointer;
     height: 0px;
-    position: relative; 
-    width: 40px;  
+    position: relative;
+    width: 40px;
 }
 
 .material-switch > label::before {
@@ -130,7 +134,6 @@ if ($_POST['widgetkey']) {//변경할때이므로
     left: 20px;
 }
 </style>
-
 <form action="/widgets/widgets/toggle_captive_portal.widget.php" method="post" class="form-horizontal">
 <div class="container">
     <div class="row">
@@ -138,7 +141,7 @@ if ($_POST['widgetkey']) {//변경할때이므로
             <div class="panel panel-default">
                 <!-- Default panel contents -->
                 <!--div class="panel-heading" align="center">Private internet control panel</div-->
-            
+
                 <!-- List group -->
                 <ul class="list-group">
 <?php
@@ -147,7 +150,7 @@ if ($_POST['widgetkey']) {//변경할때이므로
 			$disabled = "";
 		}
 		else {
-			$checkbox = ""; 
+			$checkbox = "";
 			$disabled="disabled";
 		}
 		if(isset($a_cp['crew']['terminate_duration'])){
@@ -156,7 +159,6 @@ if ($_POST['widgetkey']) {//변경할때이므로
 		else{ $terminated="";}
 		if(isset($a_cp['crew']['autoportal'])){
 			$autoportal= "checked";
-
 		}
 		else{
 			$autoportal="";
@@ -173,6 +175,10 @@ if ($_POST['widgetkey']) {//변경할때이므로
                         <div class="material-switch pull-right">
                             <input id="crew" name=crew type="checkbox" <?echo($checkbox);?> <?echo($toggledisable);?>/>
                             <label for="crew" class="label-primary"></label>
+		<?if($toggledisable==="disabled"){
+                            echo ("<input id='crewhidden' name='crewhidden' type='hidden'". $checkbox .' '.$toggleadmin.'/>');
+		}
+		?>
                         </div>
                     </li>
 
