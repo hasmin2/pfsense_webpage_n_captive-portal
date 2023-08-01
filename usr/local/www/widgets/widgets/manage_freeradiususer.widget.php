@@ -238,7 +238,7 @@ function confirm_delUser(username){
 	</div><div id="<?=$widget_panel_footer_id?>" class="panel-footer collapse"><form name=registeruser action="/widgets/widgets/manage_freeradiususer.widget.php" method="post" class="form-horizontal" onSubmit="return checkForm()"><div class="form-group">
 	<label class="col-sm-4 control-label"><?=gettext("Input User Information")?></label><div class="col-sm-6"><div class="radio"><label>User Name <input name="createusername" type="text"  value></label><label>Password <input name="createuserpassword" type="text"  value></label>
 	<label>Allow data <input name="createuserquota" type="text"  value></label></div></div>
-	<label class="col-sm-4 control-label"><?=gettext("Reset Period")?></label><div class="col-sm-6"><div class="radio"><select name="createsuerquotaperiod" size="1"><option value="daily">Daily </option><option value="monthly">Monthly </option>
+	<label class="col-sm-4 control-label"><?=gettext("Reset Period")?></label><div class="col-sm-6"><div class="radio"><select name="createsuerquotaperiod" size="1"><option value="monthly">Monthly </option><option value="daily">Daily </option>
 	</select></div></div><br/><input type="hidden" name="widgetkey" value="<?=htmlspecialchars($widgetkey); ?>"><div>
 	<button <? if(strpos(get_config_user(), "admin") !== false) {} else {?>disabled="disabled" <?}?>type="submit" class="btn btn-primary">
 	<i class="fa fa-save icon-embed-btn"></i>

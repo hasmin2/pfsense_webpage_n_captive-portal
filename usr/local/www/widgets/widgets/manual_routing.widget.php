@@ -186,7 +186,7 @@ if (!function_exists('compose_manual_routing_contents')) {
 			$date = new DateTime();
 			$curDate = round($date->getTimestamp(),0);
 			$timeleft = ($config['gateways']['manualroutetimestamp']+$config['gateways']['manualrouteduration'])*60 - $curDate;
-			if($timeleft>3600){
+			if($timeleft>36000){
 				$timeRemain= "Fixed";
 			}
 			else if($timeleft>60){
