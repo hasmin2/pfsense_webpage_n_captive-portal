@@ -186,7 +186,10 @@ if (!function_exists('compose_manual_routing_contents')) {
 			$date = new DateTime();
 			$curDate = round($date->getTimestamp(),0);
 			$timeleft = ($config['gateways']['manualroutetimestamp']+$config['gateways']['manualrouteduration'])*60 - $curDate;
-			if($timeleft>60){
+			if($timeleft>3600){
+				$timeRemain= "Fixed";
+			}
+			else if($timeleft>60){
 				$timeRemain= round($timeleft/60, 0) ." minutes";
 			}
 			else{
@@ -195,7 +198,6 @@ if (!function_exists('compose_manual_routing_contents')) {
 				}
 				else {
 					 $timeRemain = "Auto";
-
 				}
 			}
 //////////////////////////////////////
@@ -399,6 +401,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 					<option value="30">30 minutes </option>
 					<option value="60">60 minutes </option>
 					<option value="300">5 hours </option>
+					<option value="864000000">Permanent</option>
 				</select>
 			</div>
 		</div>
