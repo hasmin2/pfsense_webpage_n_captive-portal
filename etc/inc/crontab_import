@@ -1,0 +1,9 @@
+0 0 1 * * /bin/rm /var/log/radacct/datacounter/monthly/used-octets-*
+0 0 * * * /bin/rm /var/log/radacct/datacounter/daily/used-octets-*
+* * * * * /usr/local/bin/php /usr/local/www/openvpn_restart_timeperiod_check.php
+* * * * * /usr/local/bin/php /usr/local/www/captive_portal_timeperiod_check.php
+* * * * * /usr/local/bin/php /usr/local/www/gps_update.php
+*/5 * * * * /usr/local/bin/php /usr/local/www/network_usage_timeperiod_check.php
+0 0 1 * * /usr/local/bin/php /usr/local/www/crew_monthlyusage_reset_check.php
+* * * * * /usr/local/bin/php /usr/local/www/crew_usage_timeperiod_check.php
+* * * * * /usr/local/bin/php /usr/local/www/manual_routing_timeperiod_check.php
