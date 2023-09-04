@@ -1,3 +1,4 @@
+namespace etc\inc\api\endpoints;
 
 <?php
 //   Copyright 2022 Jared Hendrickson
@@ -14,14 +15,19 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
+use etc\inc\api\models\APIStatusGetGpsPosition;
+
 require_once("api/framework/APIEndpoint.inc");
 
-class APIStatusGPS extends APIEndpoint {
-    public function __construct() {
+class APIStatusGPS extends APIEndpoint
+{
+    public function __construct()
+    {
         $this->url = "/api/v1/status/gpsposition";
     }
 
-    protected function get() {
+    protected function get()
+    {
         return (new APIStatusGetGpsPosition())->call();
     }
 

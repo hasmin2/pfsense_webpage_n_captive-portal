@@ -1,7 +1,5 @@
-namespace etc\inc\api\endpoints;
-
 <?php
-//   Copyright 2022 Jared Hendrickson
+//   Copyright 2021 Jared Hendrickson
 //
 //   Licensed under the Apache License, Version 2.0 (the "License");
 //   you may not use this file except in compliance with the License.
@@ -15,20 +13,40 @@ namespace etc\inc\api\endpoints;
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-use etc\inc\api\models\APIStatusGetConfig;
+namespace etc\inc\api\endpoints;
+
+use APIEndpoint;
+use etc\inc\api\models\APIFreeRADIUSUserCreate;
+use etc\inc\api\models\APIFreeRADIUSUserDelete;
+use etc\inc\api\models\APIFreeRADIUSUserRead;
+use etc\inc\api\models\APIFreeRADIUSUserUpdate;
 
 require_once("api/framework/APIEndpoint.inc");
 
-class APIStatusGetall extends APIEndpoint
+class APIFreeRadiusUser extends APIEndpoint
 {
     public function __construct()
     {
-        $this->url = "/api/v1/status/getall";
+        $this->url = "/api/v1/freeradiususer";
     }
 
     protected function get()
     {
-        return (new APIStatusGetConfig())->call();
+        return (new APIFreeRADIUSUserRead())->call();
     }
 
+    protected function put()
+    {
+        return (new APIFreeRADIUSUserCreate())->call();
+    }
+
+    protected function post()
+    {
+        return (new APIFreeRADIUSUserUpdate())->call();
+    }
+
+    protected function delete()
+    {
+        return (new APIFreeRADIUSUserDelete())->call();
+    }
 }

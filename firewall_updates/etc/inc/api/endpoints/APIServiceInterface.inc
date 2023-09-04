@@ -1,5 +1,3 @@
-namespace etc\inc\api\endpoints;
-
 <?php
 //   Copyright 2022 Jared Hendrickson
 //
@@ -15,20 +13,40 @@ namespace etc\inc\api\endpoints;
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-use etc\inc\api\models\APIStatusGetConfig;
+namespace etc\inc\api\endpoints;
+use APIEndpoint;
+use APIStatusInterfaceDown;
+use APIStatusInterfaceRead;
+use APIStatusInterfaceRenew;
+use APIStatusInterfaceUp;
 
 require_once("api/framework/APIEndpoint.inc");
 
-class APIStatusGetall extends APIEndpoint
+class APIServiceInterface extends APIEndpoint
 {
     public function __construct()
     {
-        $this->url = "/api/v1/status/getall";
+        $this->url = "/api/v1/service/interface";
     }
 
     protected function get()
     {
-        return (new APIStatusGetConfig())->call();
+        return (new APIStatusInterfaceRead())->call();
+    }
+
+    protected function post()
+    {
+        return (new APIStatusInterfaceRenew())->call();
+    }
+
+    protected function put()
+    {
+        return (new APIStatusInterfaceUp())->call();
+    }
+
+    protected function delete()
+    {
+        return (new APIStatusInterfaceDown())->call();
     }
 
 }

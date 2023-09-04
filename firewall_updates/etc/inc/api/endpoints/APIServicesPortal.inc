@@ -1,5 +1,3 @@
-namespace etc\inc\api\endpoints;
-
 <?php
 //   Copyright 2022 Jared Hendrickson
 //
@@ -15,20 +13,34 @@ namespace etc\inc\api\endpoints;
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-use etc\inc\api\models\APIStatusGetConfig;
+namespace etc\inc\api\endpoints;
+
+use APIEndpoint;
+use etc\inc\api\models\APIServicesReadPortal;
+use etc\inc\api\models\APIServicesUpdatePortal;
+use etc\inc\api\models\APIServicesUpdatePortalWeb;
 
 require_once("api/framework/APIEndpoint.inc");
 
-class APIStatusGetall extends APIEndpoint
+class APIServicesPortal extends APIEndpoint
 {
     public function __construct()
     {
-        $this->url = "/api/v1/status/getall";
+        $this->url = "/api/v1/services/portal";
     }
 
     protected function get()
     {
-        return (new APIStatusGetConfig())->call();
+        return (new APIServicesReadPortal())->call();
     }
 
+    protected function post()
+    {
+        return (new APIServicesUpdatePortal())->call();
+    }
+
+    protected function put()
+    {
+        return (new APIServicesUpdatePortalWeb())->call();
+    }
 }

@@ -1,5 +1,3 @@
-namespace etc\inc\api\endpoints;
-
 <?php
 //   Copyright 2022 Jared Hendrickson
 //
@@ -15,20 +13,28 @@ namespace etc\inc\api\endpoints;
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-use etc\inc\api\models\APIStatusGetConfig;
+namespace etc\inc\api\models;
+use APIModel;
 
-require_once("api/framework/APIEndpoint.inc");
+require_once("api/framework/APIModel.inc");
+require_once("api/framework/APIResponse.inc");
 
-class APIStatusGetall extends APIEndpoint
+
+class APIStatusOpenVPNRestart extends APIModel
 {
+    # Create our method constructor
     public function __construct()
     {
-        $this->url = "/api/v1/status/getall";
+        parent::__construct();
+        $this->privileges = ["page-all", "page-status-openvpn"];
     }
 
-    protected function get()
+    public function action()
     {
-        return (new APIStatusGetConfig())->call();
-    }
+        $result = [];
+        $this->config['openvpn']['openvpnrestart'] = "";
+        write_config("openvpn_restart");
 
+        return APIResponse\get(0, $this->config['openvpn']['openvpnrestart'] == "" ? "success" : "failure");
+    }
 }
