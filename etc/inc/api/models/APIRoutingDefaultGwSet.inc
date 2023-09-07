@@ -22,7 +22,6 @@ class APIRoutingDefaultGwSet extends APIModel {
         parent::__construct();
         $this->privileges = ["page-all", "page-system-gateways"];
     }
-
     public function action() {
        $this->config["gateways"]["defaultgw4"] = $this->initial_data["defaultgw4"];
 	if(isset($this->initial_data['manualrouteduration'])){

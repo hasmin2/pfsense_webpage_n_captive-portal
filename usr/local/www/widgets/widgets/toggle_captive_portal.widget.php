@@ -33,7 +33,6 @@ require_once("functions.inc");
 require_once("captiveportal.inc");
 require_once("/usr/local/www/widgets/include/toggle_captive_portal.inc");
 
-
 init_config_arr(array('captiveportal'));
 $a_cp = &$config['captiveportal'];
 

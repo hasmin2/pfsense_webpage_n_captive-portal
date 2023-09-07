@@ -19,7 +19,6 @@
  */
 
 namespace TelnetClient;
-
 require_once('AnsiAsciiControlParser.php');
 
 use \AnsiAsciiControlParser;

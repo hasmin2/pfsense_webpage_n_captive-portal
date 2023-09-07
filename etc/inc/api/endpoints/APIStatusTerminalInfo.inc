@@ -19,7 +19,6 @@ class APIStatusTerminalInfo extends APIEndpoint {
     public function __construct() {
         $this->url = "/api/v1/status/terminalinfo";
     }
-
     protected function get() {
         return (new APIStatusTerminalInfoRead())->call();
     }

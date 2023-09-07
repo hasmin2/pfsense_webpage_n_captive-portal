@@ -29,7 +29,6 @@ class APIFreeRADIUSUserUpdate extends APIModel {
         $this->write_config();
         return APIResponse\get(0, $this->validated_data);
     }
-
     private function __validate_username() {
         # Check for our required `username` payload value
         if (isset($this->initial_data['freeradius_username'])) {

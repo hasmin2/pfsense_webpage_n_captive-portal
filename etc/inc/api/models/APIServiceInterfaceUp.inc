@@ -16,7 +16,6 @@
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 require_once("interfaces.inc");
-
 class APIServiceInterfaceUp extends APIModel {
     # Create our method constructor
     public function __construct() {

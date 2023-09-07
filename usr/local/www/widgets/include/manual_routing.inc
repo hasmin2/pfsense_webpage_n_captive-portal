@@ -20,7 +20,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 //set variable for custom title
 $manual_routing_title = gettext("Terminal Status");
 $manual_routing_allow_multiple_widget_copies = false;

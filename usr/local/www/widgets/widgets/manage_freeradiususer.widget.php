@@ -25,7 +25,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 require_once("guiconfig.inc");
 require_once("pfsense-utils.inc");
 require_once("functions.inc");
@@ -71,7 +70,7 @@ if ($_REQUEST && $_REQUEST['ajax']) {
 	exit;
 }
 
-if ($_POST['widgetkey']) {//º¯°æÇÒ¶§ÀÌ¹Ç·Î
+if ($_POST['widgetkey']) {//ï¿½ï¿½ï¿½ï¿½ï¿½Ò¶ï¿½ï¿½Ì¹Ç·ï¿½
 	global $config;
 	if($_POST['delusername']){
 		 foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
@@ -177,15 +176,15 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
   padding: 0.25em 0.5em;
   text-decoration: none;
   color: #FFF;
-  background: #03A9F4;/*ßä*/
-  border: solid 1px #0f9ada;/*àÊßä*/
+  background: #03A9F4;/*ï¿½ï¿½*/
+  border: solid 1px #0f9ada;/*ï¿½ï¿½ï¿½ï¿½*/
   border-radius: 4px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
   text-shadow: 0 1px 0 rgba(0,0,0,0.2);
 }
 
 .btn-square-little-rich:active {
-  /*äãª·ª¿ªÈª­*/
+  /*ï¿½ãª·ï¿½ï¿½ï¿½Èªï¿½*/
   border: solid 1px #03A9F4;
   box-shadow: none;
   text-shadow: none;

@@ -26,7 +26,6 @@ require_once("functions.inc");
 require_once("shortcuts.inc");
 require_once("service-utils.inc");
 require_once('notices.inc');
-
 header('Content-Type: text/html; charset=utf-8');
 $pagetitle = gentitle($pgtitle);
 $vesselinfo=$config['system']['vesselinfo'];

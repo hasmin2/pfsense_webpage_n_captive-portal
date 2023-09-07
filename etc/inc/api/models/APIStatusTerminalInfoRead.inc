@@ -22,7 +22,6 @@ class APIStatusTerminalInfoRead extends APIModel {
         parent::__construct();
         $this->privileges = ["page-all", "page-system-gateways"];
     }
-
     public function action() {
         return APIResponse\get(0, $this->config["terminalinfo"]);
     }

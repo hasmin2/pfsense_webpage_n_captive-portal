@@ -15,7 +15,6 @@
 
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
-
 class APIFreeRADIUSUserCreate extends APIModel {
     # Create our method constructor
 

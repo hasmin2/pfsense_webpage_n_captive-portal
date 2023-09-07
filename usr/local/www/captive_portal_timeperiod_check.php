@@ -21,7 +21,6 @@ else {
 	if(isset($config['captiveportal'][$cpzone]['terminate_timestamp']) && !isset($config['captiveportal'][$cpzone]['terminate_duration'])){
 		unset($config['captiveportal'][$cpzone]['terminate_timestamp']);
 		write_config("Modified gateway via API");
-
 	}
 	else{
 		unset($config['captiveportal'][$cpzone]['terminate_duration']);

@@ -12,7 +12,6 @@ foreach($vpnclients as $vpnclient){
 if ($pingresult == "offline"){
 	$config['openvpn']['openvpnrestart']="";
 }
-
 if(isset($config['openvpn']['openvpnrestart'])){
 	$clients = openvpn_get_active_clients();
 

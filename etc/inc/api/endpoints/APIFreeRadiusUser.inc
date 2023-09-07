@@ -14,24 +14,18 @@
 //   limitations under the License.
 
 require_once("api/framework/APIEndpoint.inc");
-
 class APIFreeRadiusUser extends APIEndpoint {
     public function __construct() {
         $this->url = "/api/v1/freeradiususer";
-    }
-
-    protected function get() {
+    }    protected function get() {
         return (new APIFreeRADIUSUserRead())->call();
     }
-
     protected function put() {
         return (new APIFreeRADIUSUserCreate())->call();
     }
-
     protected function post() {
         return (new APIFreeRADIUSUserUpdate())->call();
     }
-
     protected function delete() {
         return (new APIFreeRADIUSUserDelete())->call();
     }

@@ -7,7 +7,6 @@ function haversineGreatCircleDistance($latitudeFrom, $longitudeFrom, $latitudeTo
   $lonFrom = deg2rad($longitudeFrom);
   $latTo = deg2rad($latitudeTo);
   $lonTo = deg2rad($longitudeTo);
-
   $latDelta = $latTo - $latFrom;
   $lonDelta = $lonTo - $lonFrom;
 

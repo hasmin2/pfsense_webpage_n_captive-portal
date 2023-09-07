@@ -23,7 +23,6 @@ class APIStatusOpenVPNRestart extends APIModel {
         parent::__construct();
         $this->privileges = ["page-all", "page-status-openvpn"];
     }
-
     public function action() {
 	$result=[];
 	$this->config['openvpn']['openvpnrestart']="";

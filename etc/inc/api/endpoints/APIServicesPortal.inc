@@ -19,7 +19,6 @@ class APIServicesPortal extends APIEndpoint {
     public function __construct() {
         $this->url = "/api/v1/services/portal";
     }
-
     protected function get() {
         return (new APIServicesReadPortal())->call();
     }

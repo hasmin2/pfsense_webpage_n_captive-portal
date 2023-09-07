@@ -24,8 +24,7 @@ class APISystemSendPing extends APIModel {
         $this->change_note = "Modified system console settings";
         $this->validated_data = $this->config["system"];
     }
-	
-    public function action() {
+	public function action() {
 	global $config;
 	$result=array();
         $gw_metrics_raw = return_gateways_status(true);

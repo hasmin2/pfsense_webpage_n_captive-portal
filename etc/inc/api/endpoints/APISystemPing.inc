@@ -19,7 +19,6 @@ class APISystemPing extends APIEndpoint {
     public function __construct() {
         $this->url = "/api/v1/system/ping";
     }
-
     protected function post() {
         return (new APISystemSendPing())->call();
     }

@@ -20,7 +20,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 $captive_portal_status_title = gettext("Crew Connection");
 $captive_portal_status_title_link = "status_captiveportal.php";
 ?>

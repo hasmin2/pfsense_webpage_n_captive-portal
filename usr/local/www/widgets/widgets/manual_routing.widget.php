@@ -283,7 +283,7 @@ if ($_REQUEST && $_REQUEST['ajax']) {
 	print(compose_manual_routing_contents($_REQUEST['widgetkey']));
 	exit;
 }
-if ($_POST['widgetkey']) {//º¯°æÇÒ¶§ÀÌ¹Ç·Î
+if ($_POST['widgetkey']) {//ï¿½ï¿½ï¿½ï¿½ï¿½Ò¶ï¿½ï¿½Ì¹Ç·ï¿½
 
 	if($_POST['routing_radiobutton']){
 	echo $_POST['routing_radiobutton'];
@@ -388,7 +388,6 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 				<label><input name="routing_radiobutton" type="radio" value=<?echo($gname);?> <?//echo($config['gateways']['defaultgw4']==$gname) ? 'checked':'';?>><?echo($gname);?></label>
 			</div>
 <?php
-
 		endif;
 		endforeach;
 ?>

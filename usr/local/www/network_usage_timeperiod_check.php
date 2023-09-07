@@ -25,7 +25,6 @@
 
 //require_once("ipsec.inc");
 require_once("status_traffic_totals.inc");
-
 $json_string = '';
 $fd = popen("/usr/local/bin/vnstat --json f 1", "r");
 $error = "";

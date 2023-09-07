@@ -16,7 +16,6 @@ class Sequence {
 	}
 }
 
-
 class TextSequence extends Sequence {
 	//Always complete
 	public function __construct($string, $complete = true) {

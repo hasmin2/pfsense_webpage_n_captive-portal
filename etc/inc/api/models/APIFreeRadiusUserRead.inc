@@ -15,17 +15,13 @@
 
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
-
 class APIFreeRADIUSUserRead extends APIModel {
     # Create our method constructor
     public function __construct() {
         parent::__construct();
-//        $this->privileges = ["page-all", "page-system-usermanager"];
           $this->privileges = ["page-all", "page-services-freeradius"];
     }
-
     public function action() {
-//        return APIResponse\get(0, $this->config["installedpackages"]["freeradius"]["config"]);
         return APIResponse\get(0,$this->config["installedpackages"]["freeradius"]["config"]);
 
     }

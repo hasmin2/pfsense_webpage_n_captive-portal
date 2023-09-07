@@ -347,7 +347,6 @@ function confirm_rebootsvr(){
 		</tbody>
 	</table>
 </div>
-
 	<!-- close the body we're wrapped in and add a configuration-panel -->
 </div>
 	<div id="<?=$widget_panel_footer_id?>" class="panel-footer collapse">

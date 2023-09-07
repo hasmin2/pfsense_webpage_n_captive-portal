@@ -19,7 +19,6 @@ class APIServiceInterface extends APIEndpoint {
     public function __construct() {
         $this->url = "/api/v1/service/interface";
     }
-
     protected function get() {
         return (new APIStatusInterfaceRead())->call();
     }

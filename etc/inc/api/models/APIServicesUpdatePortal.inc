@@ -22,7 +22,6 @@ class APIServicesUpdatePortal extends APIModel {
         parent::__construct();
         $this->privileges = ["page-all", "page-system-gateways"];
     }
-
     public function action() {
         # Local variables
         if(!isset($this->initial_data['zone']) ||!isset($this->initial_data['portalactive'])){

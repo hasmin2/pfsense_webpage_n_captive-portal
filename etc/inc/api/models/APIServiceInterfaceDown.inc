@@ -23,7 +23,6 @@ class APIServiceInterfaceDown extends APIModel {
         parent::__construct();
         $this->privileges = ["page-all", "page-status-interfaces"];
     }
-
     public function action() {
          # Update our new user in the config and set the user on the backend
         return APIResponse\get(0, $this->__get_metrics());

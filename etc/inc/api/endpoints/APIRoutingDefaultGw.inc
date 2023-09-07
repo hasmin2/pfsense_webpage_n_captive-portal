@@ -22,8 +22,6 @@ class APIRoutingDefaultGw extends APIEndpoint {
     protected function post() {
         return (new APIRoutingDefaultGwRead())->call();
     }
-
-
     protected function put() {
         return (new APIRoutingDefaultGwSet())->call();
     }

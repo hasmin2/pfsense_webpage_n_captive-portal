@@ -27,5 +27,4 @@ else {
 	}
 	//echo('uncecessary setting for time duration, recovering back to auto-routing');
 }
-
 ?>

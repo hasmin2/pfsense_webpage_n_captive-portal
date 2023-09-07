@@ -19,7 +19,6 @@ class APISystemVesselinfo extends APIEndpoint {
     public function __construct() {
         $this->url = "/api/v1/system/vesselinfo";
     }
-
     protected function post() {
         return (new APISystemUpdateVesselinfo())->call();
     }

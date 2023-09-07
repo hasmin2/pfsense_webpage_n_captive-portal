@@ -19,7 +19,6 @@ class APIStatusOpenVPN extends APIEndpoint {
     public function __construct() {
         $this->url = "/api/v1/status/openvpn";
     }
-
     protected function get() {
         return (new APIStatusOpenVPNRead())->call();
     }

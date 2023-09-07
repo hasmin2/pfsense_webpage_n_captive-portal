@@ -20,7 +20,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 require_once("config.inc");
 require_once("filter.inc");
 require_once("globals.inc");

@@ -24,7 +24,6 @@ class APISystemUpdateVesselInfo extends APIModel {
         $this->change_note = "Modified system console settings";
         $this->validated_data = $this->config["system"];
     }
-
     public function action() {
         $isSet = false;
         if (isset($this->initial_data['vesselname'])) {
