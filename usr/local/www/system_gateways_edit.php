@@ -251,6 +251,16 @@ $group->add(new Form_Select(
 		"iridium_other"=> "Iridium"
 	)
 ))->setHelp('Choose terminal type, ***IMPORTANT *** Note that the Gateway priority is "Internet"-> "VSAT(N)"->"any FBB"->"Iridium"');
+//$section->add($group);
+
+//$group=new Form_Group("Monthly data limit");
+
+$section->addInput(new Form_Input(
+	'allowance',
+	'*Monthly Data Allowance',
+	'text',
+	$pconfig['allowance']
+))->setHelp('Enter an monthly data usage limit here in GB, 0 or blank for unlimited');
 $section->add($group);
 
 $group=new Form_Group("Online Check Method");
@@ -259,13 +269,12 @@ $group->add(new Form_Select(
 	'*Check Method',
 	$pconfig['check_method'],
 	 array(
+		 "nmap" => "Specific check port (Port scan) can be banned in certain case",
 	 	"none" => "no Monitor (Always Online once terminal is up)",
-		"ping"=> "Ping (Preferred)",
-		 "nmap" => "Specific check port (Port scan) can be banned in certain case"
+		"ping"=> "Ping (Preferred)"
 	)
 ))->setHelp('Choose terminal online check method, **IMPORTANT** NOTE that port scan can be banned by site policy');
 $section->add($group);
-
 $section->addInput(new Form_Input(
 	'destinationip',
 	'*Destionation IP',
@@ -273,7 +282,8 @@ $section->addInput(new Form_Input(
 	$pconfig['destinationip'],
 	['placeholder' => 'Default: ping for 8.8.8.8,8.8.8,4 for nmap 52.78.7.68:11111']
 ))->setHelp('**IMPORTANT** wrong input may unusable the gateway, usage: ping [destination IP], Port Scan : [destination IP]:[port], User can input URL instead of IP address., use semicolon ";" to separate two or more addresses');
-$group=new Form_Group("Check Timeout in seonnds");
+
+$group=new Form_Group("Check Timeout in seconds");
 $group->add(new Form_Select(
 	'check_timeout',
 	'*Check Timeout',
