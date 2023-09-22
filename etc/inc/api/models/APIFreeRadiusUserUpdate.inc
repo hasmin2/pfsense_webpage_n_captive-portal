@@ -43,7 +43,17 @@ class APIFreeRADIUSUserUpdate extends APIModel {
             }
             # Set an error if no user was found
             if (!isset($this->validated_data["freeradius_username"])) {
-                $this->errors[] = APIResponse\get(5001);
+                if($this->initial_data['freeradius_username']==='updatealluser'){
+                    $usercount = count ($this->config["installedpackages"]["freeradius"]["config"]);
+                    for ($i=0; $i < $usercount; $i++){
+                        $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersresetquota"]="true";
+                        $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersmodified"]="update";
+                    }
+                    $this->write_config("Reset Crew wifi usage");
+                }
+                else{
+                    $this->errors[] = APIResponse\get(5001);
+                }
             }
         } else {
             $this->errors[] = APIResponse\get(5000);

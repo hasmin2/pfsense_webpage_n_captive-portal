@@ -41,7 +41,7 @@ class APISystemSendPing extends APIModel {
 		    		if($gw["check_method"]=== "ping"){
 		    			$gwList = explode(";", $gw["destinationip"]);
 		    			if($gwList[0] === ""){
-		    				$gwList = array("8.8.8.8", "8.8.4.4", "168.126.63.1","1.1.1.1","1.0.0.1","208.67.222.222");
+		    				$gwList = array("168.126.63.2", "8.8.4.4","149.112.112.112","9.9.9.9","1.0.0.1","208.67.222.222");
 		    			}
 						$randgw = $gwList[rand(0, count($gwList) - 1)];
 						/*mwexec('route add -host '.$randgw.' '.$gw['monitorip']);
@@ -100,7 +100,7 @@ class APISystemSendPing extends APIModel {
 			}
 			$config['gatewaystatus'][$gw['name']]['pingresult']=$gw['pingresult'];
         }
-		setup_gateways_monitor();
+		//setup_gateways_monitor();
 		write_config("Write ping result");
         return APIResponse\get(0,$gw_metrics);
 
