@@ -417,7 +417,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 		<div class="col-sm-6">
 			<div class="radio">
 				<select name="routeduration" size="1">
-					<option value="1">5 minutes </option>
+					<option value="5">5 minutes </option>
 					<option value="30">30 minutes </option>
 					<option value="60">60 minutes </option>
 					<option value="300">5 hours </option>
