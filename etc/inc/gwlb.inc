@@ -501,6 +501,12 @@ function return_gateways_status($byname = false, $gways = false) {
                 if($item['destinationip']){
                     $status[$target]['destinationip']=$item['destinationip'];
                 }
+                if($item['rootinterface']){
+                    $status[$target]['rootinterface']=$item['rootinterface'];
+                }
+                if($item['currentusage']){
+                    $status[$target]['currentusage']=$item['currentusage'];
+                }
                 if($item['allowance']){
                     $status[$target]['allowance']=$item['allowance'];
                 }
@@ -573,6 +579,12 @@ function return_gateways_status($byname = false, $gways = false) {
                 }
                 if($item['destinationip']){
                     $status[$target]['destinationip']=$item['destinationip'];
+                }
+                if($item['rootinterface']){
+                    $status[$target]['rootinterface']=$item['rootinterface'];
+                }
+                if($item['currentusage']){
+                    $status[$target]['currentusage']=$item['currentusage'];
                 }
                 if($item['allowance']){
                     $status[$target]['allowance']=$item['allowance'];
@@ -2112,6 +2124,8 @@ function save_gateway($gateway_settings, $realid = "") {
     $gateway['check_method'] = $gateway_settings['check_method'];
     $gateway['destinationip'] = $gateway_settings['destinationip'];
     $gateway['allowance'] = $gateway_settings['allowance'];
+    $gateway['rootinterface'] = $gateway_settings['rootinterface'];
+    $gateway['currentusage'] = $gateway_settings['currentusage'];
     $gateway['check_timeout'] = $gateway_settings['check_timeout'];
 
     $gateway['descr'] = $gateway_settings['descr'];

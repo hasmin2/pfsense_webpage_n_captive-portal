@@ -20,16 +20,16 @@ class APIServiceInterface extends APIEndpoint {
         $this->url = "/api/v1/service/interface";
     }
     protected function get() {
-        return (new APIStatusInterfaceRead())->call();
+        return (new APIServiceInterfaceRead())->call();
     }
     protected function post(){
-	return (new APIStatusInterfaceRenew())->call();
+	return (new APIServiceInterfaceRenew())->call();
     }
     protected function put(){
-	return (new APIStatusInterfaceUp())->call();
+	return (new APIServiceInterfaceUp())->call();
     }
     protected function delete(){
-	return (new APIStatusInterfaceDown())->call();
+	return (new APIServiceInterfaceDown())->call();
     }
 
 }

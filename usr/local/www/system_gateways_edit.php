@@ -62,6 +62,9 @@ if (isset($id) && $a_gateways[$id]) {
 	$pconfig['friendlyiface'] = $a_gateways[$id]['friendlyiface'];
 	$pconfig['terminal_type'] = $a_gateways[$id]['terminal_type'];
 	$pconfig['check_method'] = $a_gateways[$id]['check_method'];
+	$pconfig['rootinterface'] = $a_gateways[$id]['rootinterface'];
+	$pconfig['currentusage'] = $a_gateways[$id]['currentusage'];
+	$pconfig['allowance'] = $a_gateways[$id]['allowance'];
 	$pconfig['destinationip'] = $a_gateways[$id]['destinationip'];
 	$pconfig['check_timeout'] = $a_gateways[$id]['check_timeout'];
 	$pconfig['ipprotocol'] = $a_gateways[$id]['ipprotocol'];
@@ -248,9 +251,10 @@ $group->add(new Form_Select(
 		"fbb_jrc" => "JRC FleetBroadband",
 		"fbb_furuno" => "FURUNO FleetBroadband",
 		"fbb_sailor" => "SAILOR FleetBroadband",
-		"iridium_other"=> "Iridium"
+		"iridium_other"=> "Iridium",
+		"metered_other"=> "Metered terminial"
 	)
-))->setHelp('Choose terminal type, ***IMPORTANT *** Note that the Gateway priority is "Internet"-> "VSAT(N)"->"any FBB"->"Iridium"');
+))->setHelp('Choose terminal type, ***IMPORTANT *** Note that the Gateway priority is "Internet"-> "VSAT(N)"->"any FBB"->"Iridium"->"Metered"');
 //$section->add($group);
 
 //$group=new Form_Group("Monthly data limit");
@@ -260,7 +264,21 @@ $section->addInput(new Form_Input(
 	'*Monthly Data Allowance',
 	'text',
 	$pconfig['allowance']
-))->setHelp('Enter an monthly data usage limit here in GB, 0 or blank for unlimited');
+))->setHelp('Enter an monthly data usage limit here in GB, -1 or blank for unlimited');
+
+$section->addInput(new Form_Input(
+	'rootinterface',
+	'*Root Interface',
+	'text',
+	$pconfig['rootinterface']
+))->setHelp('Enter the root interface name here, e.g. "vtnet0" or "vtnet2.1000"');
+
+$section->addInput(new Form_Input(
+	'currentusage',
+	'*Current Usage',
+	'text',
+	$pconfig['currentusage']
+))->setHelp('Current usage in GB, In case of adjustment, manually input value in GB unit.');
 $section->add($group);
 
 $group=new Form_Group("Online Check Method");
@@ -271,7 +289,7 @@ $group->add(new Form_Select(
 	 array(
 		 "nmap" => "Specific check port (Port scan) can be banned in certain case",
 	 	"none" => "no Monitor (Always Online once terminal is up)",
-		"ping"=> "Ping (Preferred)"
+		"ping"=> "Ping"
 	)
 ))->setHelp('Choose terminal online check method, **IMPORTANT** NOTE that port scan can be banned by site policy');
 $section->add($group);

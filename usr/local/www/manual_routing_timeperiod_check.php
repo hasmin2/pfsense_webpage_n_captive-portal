@@ -3,7 +3,7 @@ require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 if(isset($config['gateways']['manualroutetimestamp']) && isset($config['gateways']['manualrouteduration'])){
 	$date = new DateTime();
-	if((round($date->getTimestamp()/60,0) - $config['gateways']['manualroutetimestamp']) >= $config['gateways']['manualrouteduration']){
+	if((round($date->getTimestamp()/60,0) - $config['gateways']['manualroutetimestamp']+1) >= $config['gateways']['manualrouteduration']){
 		unset($config['gateways']['manualroutetimestamp']);
 		unset($config['gateways']['manualrouteduration']);
 		write_config("Modified gateway via API");

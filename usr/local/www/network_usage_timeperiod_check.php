@@ -45,14 +45,26 @@ while (!feof($fd)) {
 
 pclose($fd);
 $datastring="traffic ";
+global $config;
+$interface = $config['gateways']['gateway_item'];
+
 foreach (json_decode($json_string, true)["interfaces"] as $value) {
 	if(strpos($value['name'], "vtnet")!== false || strpos($value['name'], "ovpn")!==false){
-	$datestring = $value["traffic"]["fiveminute"][0]["date"]["year"] . "-" . $value["traffic"]["fiveminute"][0]["date"]["month"] . "-" . $value["traffic"]["fiveminute"][0]["date"]["day"] . " " . $value["traffic"]["fiveminute"][0]["time"]["hour"] . ":" . $value["traffic"]["fiveminute"][0]["time"]["minute"] . ":00";
-	$timestamp = strtotime($datestring)/60;
-	$alias = $value['alias']==='' ? "none" : $value['alias'];
-	$datastring .= $value['name']. "_rx=" . $value["traffic"]["fiveminute"][0]["rx"].",".$value['name']. "_tx=" . $value["traffic"]["fiveminute"][0]["tx"].",";
+        $datestring = $value["traffic"]["fiveminute"][0]["date"]["year"] . "-" . $value["traffic"]["fiveminute"][0]["date"]["month"] . "-" . $value["traffic"]["fiveminute"][0]["date"]["day"] . " " . $value["traffic"]["fiveminute"][0]["time"]["hour"] . ":" . $value["traffic"]["fiveminute"][0]["time"]["minute"] . ":00";
+        $timestamp = strtotime($datestring)/60;
+        $alias = $value['alias']==='' ? "none" : $value['alias'];
+        $datastring .= $value['name']. "_rx=" . $value["traffic"]["fiveminute"][0]["rx"].",".$value['name']. "_tx=" . $value["traffic"]["fiveminute"][0]["tx"].",";
+	}
+	foreach ($interface as $key => $item) {
+	    if(strpos ($value['name'], $item['rootinterface']) !== false && $item['allowance'] !== ''||$item['allowance']=='-1'){
+	        $config['gateways']['gateway_item'][$key]['currentusage'] += round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6);
+    	    $config['gateways']['gateway_item'][$key]['speedtx']=round ($value['traffic']['fiveminute'][0]['tx']/38400,0);
+    	    $config['gateways']['gateway_item'][$key]['speedrx']=round ($value['traffic']['fiveminute'][0]['rx']/38400,0);
+	    }
 	}
 }
+write_config("networkusage update");
+
 $datastring = rtrim($datastring, ',');
 $datastring .= " " .$timestamp;
 
