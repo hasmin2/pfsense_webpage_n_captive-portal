@@ -258,7 +258,13 @@ if (!function_exists('compose_manual_routing_contents')) {
                 $quotausage = '<font color="gray">Unlimited</font>';
             }
             if ($gateway['rootinterface'] && $gateway['rootinterface'] != ''){
-                $speedstring = '<br>'.$gateway['speedtx'].'/'.$gateway['speedrx'].'Kbps';
+                if($gateway['speedtx']>=1024 && $gateway['speedrx'] >=1024){
+                    $speedstring = '<br>'.round($gateway['speedtx']/1024, 1).'/'.round($gateway['speedrx']/1024, 1).'Mbps';
+                }
+                else{
+                    $speedstring = '<br>'.$gateway['speedtx'].'/'.$gateway['speedrx'].'Kbps';
+                }
+
             }
             else {
                 $speedstring = '<br>setLAN';
@@ -293,17 +299,17 @@ if ($_REQUEST && $_REQUEST['ajax']) {
 	print(compose_manual_routing_contents($_REQUEST['widgetkey']));
 	exit;
 }
-if ($_POST['widgetkey']) {//�����Ҷ��̹Ƿ�
+if ($_POST['widgetkey']) {//     Ҷ  ̹Ƿ
     global $config;
 	if($_POST['routing_radiobutton']){
 		if($_POST['routing_radiobutton']!="Automatic"){
             foreach($config['filter']['rule'] as $index => $ruleitem){
                 foreach ($config['gateways']['gateway_item'] as $key => $gateway){//Both Rule and gateways item
-                    if(substr($gateway['terminal_type'], 0,3)==='tcp' && $ruleitem['gateway']==$config['gateways']['defaultgw4']){
+                    if(s$ruleitem['gateway']==$config['gateways']['defaultgw4']){
                         //Old gateway rules disable if it is.
                         $config['filter']['rule'][$index]['disabled']="";
                     }
-                    if(substr($gateway['terminal_type'], 0,3)==='tcp' && $ruleitem['gateway']==$_POST['routing_radiobutton']){
+                    if($ruleitem['gateway']==$_POST['routing_radiobutton']){
                         //renew gateway rules Enable if it is.
                         unset ($config['filter']['rule'][$index]['disabled']);
                     }

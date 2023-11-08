@@ -56,13 +56,17 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
         $datastring .= $value['name']. "_rx=" . $value["traffic"]["fiveminute"][0]["rx"].",".$value['name']. "_tx=" . $value["traffic"]["fiveminute"][0]["tx"].",";
 	}
 	foreach ($interface as $key => $item) {
-	    if(strpos ($value['name'], $item['rootinterface']) !== false && $item['allowance'] !== ''||$item['allowance']=='-1'){
-	        $config['gateways']['gateway_item'][$key]['currentusage'] += round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6);
-    	    $config['gateways']['gateway_item'][$key]['speedtx']=round ($value['traffic']['fiveminute'][0]['tx']/38400,0);
-    	    $config['gateways']['gateway_item'][$key]['speedrx']=round ($value['traffic']['fiveminute'][0]['rx']/38400,0);
-	    }
+	    if($value['name'] == $item['rootinterface']){
+	        $config['gateways']['gateway_item'][$key]['speedtx']=round ($value['traffic']['fiveminute'][0]['tx']/38400,0);
+            $config['gateways']['gateway_item'][$key]['speedrx']=round ($value['traffic']['fiveminute'][0]['rx']/38400,0);
+		    $currentusagegb = floatval($config['gateways']['gateway_item'][$key]['currentusage']);
+            $currentusagegb += floatval(round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6));
+	        //echo ("time:".time()."  CurrentUsage : ".$currentusagegb."  Usage: ".round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6)." LastUsage:".$config['gateways']['gateway_item'][$key]['currentusage']."\n");
+	        $config['gateways']['gateway_item'][$key]['currentusage'] = $currentusagegb;
+        }
 	}
 }
+sleep (3);
 write_config("networkusage update");
 
 $datastring = rtrim($datastring, ',');

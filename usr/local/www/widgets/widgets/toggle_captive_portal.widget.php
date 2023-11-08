@@ -56,9 +56,14 @@ if ($_POST['widgetkey']) {//변경할때이므로
         unset($config['captiveportal']['crew']['enable']);
         }
     }
-
+    if(isset($_POST['auto_crew_route'])){
+        $config['captiveportal']['crew']['autocrewroute']='';
+    }
+    else{
+        unset($config['gateway']['autocrewroute']);
+    }
     if($_POST['auto_portal_enable']){
-        $config['captiveportal']['crew']['autoportal']="";
+        $config['captiveportal']['crew']['autoportal']='';
     }
     else {
         unset($config['captiveportal']['crew']['autoportal']);
@@ -162,6 +167,12 @@ if ($_POST['widgetkey']) {//변경할때이므로
 		else{
 			$autoportal="";
 		}
+		if(isset($a_cp['crew']['autocrewroute'])){
+            $fixed= "checked";
+        }
+        else{
+            $fixed="";
+        }
 		if(strpos(get_config_user(), "admin") !== false){
         	$toggledisable="";
         }
@@ -201,6 +212,14 @@ if ($_POST['widgetkey']) {//변경할때이므로
                         <div class="material-switch pull-right">
                             <input id="terminate_portal" name="terminate_portal" type="checkbox" <?echo($terminated);?> <?echo($disabled);?>/>
                             <label for="terminate_portal" class="label-success"></label>
+                        </div>
+
+                    </li>
+                    <li class="list-group-item">
+                         Autoselect crew  Internet connection
+                        <div class="material-switch pull-right">
+                            <input id="auto_crew_route" name="auto_crew_route" type="checkbox" <?echo($fixed);?>/>
+                            <label for="auto_crew_route" class="label-success"></label>
                         </div>
                     </li>
                 </ul>

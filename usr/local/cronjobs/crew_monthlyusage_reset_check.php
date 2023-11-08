@@ -11,6 +11,6 @@ $usercount = count ($config["installedpackages"]["freeradius"]["config"]);
 for ($i=0; $i < $usercount; $i++){
 	$config["installedpackages"]["freeradius"]["config"][$i]["varusersresetquota"]="true";
 	$config["installedpackages"]["freeradius"]["config"][$i]["varusersmodified"]="update";
-	write_config("Reset Crew wifi usage");
 }
+write_config("Reset Crew wifi usage");
 ?>

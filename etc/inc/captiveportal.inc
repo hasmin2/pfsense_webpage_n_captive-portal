@@ -1630,7 +1630,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
             if($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']){
                 unset($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']);
                 $timerange=strtolower($config['installedpackages']['freeradius']['config'][$userindex]['varuserspointoftime']);
-                unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$username}*");
+                unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$login}*");
             }
             write_config("freeradius user update");
             //다음으로 수정사항이 있으면 유저 리싱크 함.
