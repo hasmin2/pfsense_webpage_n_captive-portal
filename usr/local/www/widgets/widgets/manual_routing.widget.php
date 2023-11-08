@@ -62,7 +62,7 @@ if (!function_exists('compose_manual_routing_contents')) {
 			}
 			$gw_displayed = true;
 			$rtnstr .= "<tr>\n";
-			$rtnstr .= 	"<td class='text-center' title='{$gtitle}'>\n";
+			$rtnstr .= 	"<td class='text-center' title='{$title}'>\n";
 			$rtnstr .= htmlspecialchars($gateway['name']);
 			if (isset($gateway['isdefaultgw'])) {
 				$rtnstr .= ' <i class="fa fa-globe"></i>';
@@ -305,7 +305,7 @@ if ($_POST['widgetkey']) {//     Ҷ  ̹Ƿ
 		if($_POST['routing_radiobutton']!="Automatic"){
             foreach($config['filter']['rule'] as $index => $ruleitem){
                 foreach ($config['gateways']['gateway_item'] as $key => $gateway){//Both Rule and gateways item
-                    if(s$ruleitem['gateway']==$config['gateways']['defaultgw4']){
+                    if($ruleitem['gateway']==$config['gateways']['defaultgw4']){
                         //Old gateway rules disable if it is.
                         $config['filter']['rule'][$index]['disabled']="";
                     }
