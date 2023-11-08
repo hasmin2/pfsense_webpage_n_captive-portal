@@ -61,7 +61,7 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
             $config['gateways']['gateway_item'][$key]['speedrx']=round ($value['traffic']['fiveminute'][0]['rx']/38400,0);
 		    $currentusagegb = floatval($config['gateways']['gateway_item'][$key]['currentusage']);
             $currentusagegb += floatval(round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6));
-	        //echo ("time:".time()."  CurrentUsage : ".$currentusagegb."  Usage: ".round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6)." LastUsage:".$config['gateways']['gateway_item'][$key]['currentusage']."\n");
+	        echo ("time:".time()."  CurrentUsage : ".$currentusagegb."  Usage: ".round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6)." LastUsage:".$config['gateways']['gateway_item'][$key]['currentusage']."\n");
 	        $config['gateways']['gateway_item'][$key]['currentusage'] = $currentusagegb;
         }
 	}
