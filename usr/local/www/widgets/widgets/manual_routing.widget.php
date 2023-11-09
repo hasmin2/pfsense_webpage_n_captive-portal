@@ -448,7 +448,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 <script>
 //<![CDATA[
 
-/*events.push(function(){
+events.push(function(){
 	// --------------------- Centralized widget refresh system ------------------------------
 
 	// Callback function called by refresh system when data is retrieved
@@ -475,5 +475,5 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 	// ---------------------------------------------------------------------------------------------------
 });
 
-//]]>*/
+//]]>
 </script>
