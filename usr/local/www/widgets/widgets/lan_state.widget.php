@@ -98,7 +98,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 </div>
 
 <script type="text/javascript">
-events.push(function(){
+/*events.push(function(){
 	// --------------------- Centralized widget refresh system ------------------------------
 
 	// Callback function called by refresh system when data is retrieved
@@ -123,5 +123,5 @@ events.push(function(){
 	register_ajax(lan_StateObject);
 
 	// ---------------------------------------------------------------------------------------------------
-});
+});*/
 </script>
