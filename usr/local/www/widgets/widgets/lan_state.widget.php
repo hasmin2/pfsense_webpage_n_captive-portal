@@ -31,13 +31,11 @@ require_once("pfsense-utils.inc");
 
 if (!function_exists('compose_lan_state_contents')) {
 	function compose_lan_state_contents($widgetkey) {
-		$theadstr = '<thead><tr>';
 		$tbodystr = '';
 		global $config;
 		if(isset($config['interface']['lanstate'])){
 			$lanstate = &$config['interface']['lanstate'];
 			foreach ($lanstate as $key => $item) {
-				$theadstr .= "<th center> ${key} </center></th>";
 				if($item==1){
 					$itemstate="UP";
 				}
@@ -47,11 +45,7 @@ if (!function_exists('compose_lan_state_contents')) {
 				$tbodystr .= "<td><center>$itemstate</center></td>";
 			}
 		}
-		else{
-
-		}
-		$theadstr .= "</tr></thead>";
-		return($theadstr.$tbodystr);
+		return($tbodystr);
 	}
 }
 if ($_REQUEST && $_REQUEST['ajax']) {
@@ -66,62 +60,71 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 ?>
 <style>
 
-.btn-square-little-rich {
-  position: relative;
-  display: inline-block;
-  padding: 0.25em 0.5em;
-  text-decoration: none;
-  color: #FFF;
-  background: #03A9F4;/*��*/
-  border: solid 1px #0f9ada;/*����*/
-  border-radius: 4px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
-  text-shadow: 0 1px 0 rgba(0,0,0,0.2);
-}
+	.btn-square-little-rich {
+		position: relative;
+		display: inline-block;
+		padding: 0.25em 0.5em;
+		text-decoration: none;
+		color: #FFF;
+		background: #03A9F4;/*占쏙옙*/
+		border: solid 1px #0f9ada;/*占쏙옙占쏙옙*/
+		border-radius: 4px;
+		box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+		text-shadow: 0 1px 0 rgba(0,0,0,0.2);
+	}
 
-.btn-square-little-rich:active {
-  /*�㪷���Ȫ�*/
-  border: solid 1px #03A9F4;
-  box-shadow: none;
-  text-shadow: none;
-}
+	.btn-square-little-rich:active {
+		/*占썬し占쏙옙占싫わ옙*/
+		border: solid 1px #03A9F4;
+		box-shadow: none;
+		text-shadow: none;
+	}
 </style>
 <div class="table-responsive">
 	<table class="table table-striped table-hover table-condensed">
 
 		<tbody id="<?=htmlspecialchars($widgetkey)?>-lan_state">
-<?php
-		print(compose_lan_state_contents($widgetkey));
-?>
+		<thead><tr>
+			<?php
+			global $config;
+			if(isset($config['interface']['lanstate'])){
+				$lanstate = &$config['interface']['lanstate'];
+				foreach ($lanstate as $key => $item) {
+					$theadstr .= "<th center> ${key} </center></th>";
+				}
+			}
+			echo $theadstr;
+			?>
+		</thead></tr>
 		</tbody>
 	</table>
 </div>
 
 <script type="text/javascript">
-/*events.push(function(){
-	// --------------------- Centralized widget refresh system ------------------------------
+	events.push(function(){
+		// --------------------- Centralized widget refresh system ------------------------------
 
-	// Callback function called by refresh system when data is retrieved
-	function lan_state_callback(s) {
-		$(<?= json_encode('#' . $widgetkey .'-lan_state')?>).html(s);
-	}
+		// Callback function called by refresh system when data is retrieved
+		function lan_state_callback(s) {
+			$(<?= json_encode('#' . $widgetkey .'-lan_state')?>).html(s);
+		}
 
-	// POST data to send via AJAX
-	var postdata = {
-		ajax: "ajax",
-		widgetkey : <?=json_encode($widgetkey)?>
-	 };
-	// Create an object defining the widget refresh AJAX call
-	var lan_stateObject= new Object();
-	lan_stateObject.name = "lan_state";
-	lan_stateObject.url = "/widgets/widgets/lan_state.widget.php";
-	lan_stateObject.callback = lan_state_callback;
-	lan_stateObject.parms = postdata;
-	lan_stateObject.freq = 1;
+		// POST data to send via AJAX
+		var postdata = {
+			ajax: "ajax",
+			widgetkey : <?=json_encode($widgetkey)?>
+		};
+		// Create an object defining the widget refresh AJAX call
+		var lan_stateObject= new Object();
+		lan_stateObject.name = "lan_state";
+		lan_stateObject.url = "/widgets/widgets/lan_state.widget.php";
+		lan_stateObject.callback = lan_state_callback;
+		lan_stateObject.parms = postdata;
+		lan_stateObject.freq = 1;
 
-	// Register the AJAX object
-	register_ajax(lan_StateObject);
+		// Register the AJAX object
+		register_ajax(lan_stateObject);
 
-	// ---------------------------------------------------------------------------------------------------
-});*/
+		// ---------------------------------------------------------------------------------------------------
+	});
 </script>
