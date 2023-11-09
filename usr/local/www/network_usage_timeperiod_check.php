@@ -61,15 +61,11 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
             $config['gateways']['gateway_item'][$key]['speedrx']=round ($value['traffic']['fiveminute'][0]['rx']/38400,0);
 		    $currentusagegb = floatval($config['gateways']['gateway_item'][$key]['currentusage']);
             $currentusagegb += floatval(round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6));
-            sleep(1);
 	        echo ("time:".time()."  CurrentUsage : ".$currentusagegb."  Usage: ".round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6)." LastUsage:".$config['gateways']['gateway_item'][$key]['currentusage']."\n");
 	        $config['gateways']['gateway_item'][$key]['currentusage'] = $currentusagegb;
         }
 	}
 }
-sleep (1);
-write_config("networkusage update");
-
 $datastring = rtrim($datastring, ',');
 $datastring .= " " .$timestamp;
 
@@ -87,5 +83,8 @@ $response = curl_exec($ch);
 $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $error = curl_error($ch);
 curl_close($ch);
+
+sleep (1);
+write_config("networkusage update");
 
 ?>
