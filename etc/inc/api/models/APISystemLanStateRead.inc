@@ -12,40 +12,22 @@
 //   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
+
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
-require_once("interfaces.inc");
 
-class APIServiceInterfaceRenew extends APIModel {
+class APISystemLanstateRead extends APIModel {
     # Create our method constructor
     public function __construct() {
         parent::__construct();
         $this->privileges = ["page-all", "page-status-interfaces"];
     }
-
     public function action() {
-         # Update our new user in the config and set the user on the backend
-        return APIResponse\get(0, $this->__get_metrics());
+        return APIResponse\get(0, $this->__get_lanstate());
     }
-    public function validate_payload() {
-        # Run each validation method
-        $this->__run_renew();
-    }
-    private function __run_renew(){
-	interface_bring_down($this->initial_data["interface"]);
-	sleep(1);
-	interface_configure($this->initial_data["interface"]);
-    }
-    private function __get_metrics() {
-        $if_descrs = get_configured_interface_with_descr(true);
-        $if_info = [];
-        foreach ($if_descrs as $if_descr => $if_name) {
-	    if($this->initial_data["interface"]==$if_descr){
-		$if = ["name" => $if_descr, "descr" => $if_name];
-		$if = $if + get_interface_info($if_descr);
-		$if_info[] = $if;
-	    }
-	}
-        return $if_info;
+
+    private function __get_lanstate() {
+        global $config;
+        return $config['interface']['lanstate'];
     }
 }

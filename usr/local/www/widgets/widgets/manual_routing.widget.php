@@ -197,7 +197,12 @@ if (!function_exists('compose_manual_routing_contents')) {
 					$timeRemain = ($timeleft). " seconds";
 				}
 				else {
-					 $timeRemain = "Auto";
+					if($config['gateways']['defaultgw4']==''){
+						$timeRemain= '';
+					}
+					else {
+						$timeRemain = "Auto";
+					}
 				}
 			}
 //////////////////////////////////////
@@ -443,7 +448,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 <script>
 //<![CDATA[
 
-events.push(function(){
+/*events.push(function(){
 	// --------------------- Centralized widget refresh system ------------------------------
 
 	// Callback function called by refresh system when data is retrieved
@@ -470,5 +475,5 @@ events.push(function(){
 	// ---------------------------------------------------------------------------------------------------
 });
 
-//]]>
+//]]>*/
 </script>
