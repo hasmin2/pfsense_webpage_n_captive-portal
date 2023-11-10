@@ -245,7 +245,7 @@ function confirm_delUser(username){
 	</button></div></div></form>
 
 <script type="text/javascript">
-/*events.push(function(){
+events.push(function(){
 	// --------------------- Centralized widget refresh system ------------------------------
 
 	// Callback function called by refresh system when data is retrieved
@@ -264,11 +264,11 @@ function confirm_delUser(username){
 	manage_freeradiususerObject.url = "/widgets/widgets/manage_freeradiususer.widget.php";
 	manage_freeradiususerObject.callback = manage_freeradiususer_callback;
 	manage_freeradiususerObject.parms = postdata;
-	manage_freeradiususerObject.freq = 30;
+	manage_freeradiususerObject.freq = 60;
 
 	// Register the AJAX object
 	register_ajax(manage_freeradiususerObject);
 
 	// ---------------------------------------------------------------------------------------------------
-});*/
+});
 </script>
