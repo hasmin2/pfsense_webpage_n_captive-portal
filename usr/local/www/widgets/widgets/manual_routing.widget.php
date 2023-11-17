@@ -276,7 +276,7 @@ if (!function_exists('compose_manual_routing_contents')) {
                 $quotausage = '<font color="gray">Unlimited</font>';
             }
             if ($gateway['rootinterface'] && $gateway['rootinterface'] != ''){
-                if($gateway['speedtx']>=1024 && $gateway['speedrx'] >=1024){
+                if($gateway['speedtx']>=1024 || $gateway['speedrx'] >=1024){
                     $speedstring = '<br>'.round($gateway['speedtx']/1024, 1).'/'.round($gateway['speedrx']/1024, 1).'Mbps';
                 }
                 else{
