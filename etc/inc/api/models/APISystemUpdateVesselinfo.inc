@@ -26,41 +26,15 @@ class APISystemUpdateVesselInfo extends APIModel {
     }
     public function action() {
         $isSet = false;
-        if (isset($this->initial_data['vesselname'])) {
-		    $this->config['system']['vesselinfo']['vesselname'] = $this->initial_data['vesselname'];
-		    $isSet=true;
-        }
-        if (isset($this->initial_data['vesselcallsign'])) {
-		    $this->config['system']['vesselinfo']['vesselcallsign'] = $this->initial_data['vesselcallsign'];
-		    $isSet=true;
-        }
-        if (isset($this->initial_data['vesselimo'])) {
-		    $this->config['system']['vesselinfo']['vesselimo'] = $this->initial_data['vesselimo'];
-		    $isSet=true;
-        }
-        if (isset($this->initial_data['vesselmmsi'])) {
-		    $this->config['system']['vesselinfo']['vesselmmsi'] = $this->initial_data['vesselmmsi'];
-		    $isSet=true;
-        }
-       if (isset($this->initial_data['vesselhullno'])) {
-    		$this->config['system']['vesselinfo']['vesselhullno'] = $this->initial_data['vesselhullno'];
-    		$isSet=true;
-        }
-       if (isset($this->initial_data['vesselvpnip'])) {
-		    $this->config['system']['vesselinfo']['vesselvpnip'] = $this->initial_data['vesselvpnip'];
-		    $isSet=true;
-        }
-       if (isset($this->initial_data['vesselpublicip'])) {
-    		$this->config['system']['vesselinfo']['vesselpublicip'] = $this->initial_data['vesselpublicip'];
-    		$isSet=true;
-        }
-        if($isSet) {
+        if (is_array($this->initial_data)) {
+		    $this->config['system']['vesselinfo'] = $this->initial_data['vesselinfo'];
+
             write_config("Updated vessel info");
-            return APIResponse\get(0,"Success???");
+            return APIResponse\get(0,$this->config['system']['vesselinfo']);
         }
         else{
-                    $this->errors[] = APIResponse\get(5001);
-	            return APIResponse\get(0,"Input failed you may input proper data or tagname.");
+            $this->errors[] = APIResponse\get(5001);
+	        return APIResponse\get(0,"Input failed you may input proper data or tagname.");
         }
 
 	}

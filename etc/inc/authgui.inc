@@ -360,8 +360,16 @@ function display_login_form() {
                     </form>
                 </div>
             </div>
+            <?php
+                //$printstr = '<p>';
+                foreach ($config['system']['vesselinfo'] as $key => $item){
+                    $printstr .= '<div class="col-sm-4">'.$key.' : '.$item.'</div>';
+                }
+                //$printstr = '</p>';
+                echo $printstr;
 
-            <div class="col-sm-4"><p class="form-title">VPN: <?echo $vesselinfo['vesselvpnip'];?></p></div>
+            ?>
+
         </div>
 
         <footer id="3">
