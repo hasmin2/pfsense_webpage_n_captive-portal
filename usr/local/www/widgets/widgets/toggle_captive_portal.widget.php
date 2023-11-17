@@ -35,13 +35,13 @@ require_once("/usr/local/www/widgets/include/toggle_captive_portal.inc");
 
 init_config_arr(array('captiveportal'));
 $a_cp = &$config['captiveportal'];
-
+$clientip = $_SERVER['REMOTE_ADDR'];
+$serverip = $_SERVER['SERVER_ADDR'];
 $cpzone = $_GET['zone'];
 if (isset($_POST['zone'])) {
 	$cpzone = $_POST['zone'];
 }
 $cpzone = strtolower($cpzone);
-
 if ($_POST['widgetkey']) {//변경할때이므로
 //여기에 컨트롤 코드 넣음.
 	//이건 각 포탈별로 Enable/Disable 할 때
@@ -53,15 +53,18 @@ if ($_POST['widgetkey']) {//변경할때이므로
             $config['captiveportal']['crew']['enable']='';
         }
         else{
-        unset($config['captiveportal']['crew']['enable']);
+            unset($config['captiveportal']['crew']['enable']);
         }
     }
-    if(isset($_POST['auto_crew_route'])){
-        $config['captiveportal']['crew']['autocrewroute']='';
+    if(isset($_POST['ban_all'])){
+        $config['interface']['ban_all']='';
+        add_linked_rule($serverip, $clientip);
     }
     else{
-        unset($config['gateway']['autocrewroute']);
+        unset($config['interface']['ban_all']);
+        del_linked_rule($serverip, $clientip);
     }
+
     if($_POST['auto_portal_enable']){
         $config['captiveportal']['crew']['autoportal']='';
     }
@@ -71,7 +74,7 @@ if ($_POST['widgetkey']) {//변경할때이므로
     if($_POST['terminate_portal']){
 		$cpzone = strtolower($config['captiveportal']['crew']['zone']);
     	$cpzoneid = $config['captiveportal']['crew']['zoneid'];
-        captiveportal_disconnect_all();
+        //captiveportal_disconnect_all();
         $config['captiveportal']['crew']['terminate_duration']=$_POST['terminate_duration'];
         $date = new DateTime();
         $config['captiveportal']['crew']['terminate_timestamp']=round($date->getTimestamp()/60, 0);
@@ -90,6 +93,78 @@ if ($_POST['widgetkey']) {//변경할때이므로
 	header("Location: /");
 	exit(0);
 }
+function get_interfacename($ipaddr){
+    global $config;
+    foreach($config['interfaces'] as $ifname => $ifitem){
+        if($ifitem['ipaddr'] == $ipaddr){
+            $interface = $ifname;
+            break;
+        }
+    }
+    return $interface;
+}
+
+function del_linked_rule($serverip, $clientip){
+    global $config;
+    $interface = get_interfacename($serverip);
+    if(isset($interface)) {
+        foreach ($config['filter']['rule'] as $key => $rule) {
+            if ($rule['type']=='pass'
+                && $rule['interface']==$interface
+                && $rule['source']['address']==$clientip){
+                unset($config['filter']['rule'][$key]);
+            }
+            if ($rule['type']=='block'
+                && $rule['interface']==$interface
+                && $rule['source']['network']==$interface
+                && $rule['destination']['network']=='(self)'
+                && $rule['destination']['not']==''){
+                unset($config['filter']['rule'][$key]);
+            }
+        }
+    }
+}
+function add_linked_rule($serverip, $clientip){
+    global $config;
+    $interface = get_interfacename($serverip);
+    if(isset($interface)){
+        $newrule = array();
+        $newrule['id'] = '';
+        $newrule['tracker']=time();
+        $newrule['type']='block';
+        $newrule['interface']=$interface;
+        $newrule['ipprotocol']='inet';
+        $newrule['tag'] = '';
+        $newrule['tagged'] = '';
+        $newrule['max'] = '';
+        $newrule['max-src-nodes'] = '';
+        $newrule['max-src-conn'] = '';
+        $newrule['max-src-states'] = '';
+        $newrule['statetimeout'] = '';
+        $newrule['statetype'] = 'keep state';
+        $newrule['os'] = '';
+        $newrule['source']['network']=$interface;
+        $newrule['destination']['network']='(self)';
+        $newrule['destination']['not']='';
+        $newrule['descr']="[User Rule] {$clientip} ban-all-rule";
+        $newrule['gateway']="";
+        $newrule['updated']['time']=time();
+        $newrule['updated']['username']='admin@{$clientip}';
+        $newrule['created']['time']=time();
+        $newrule['created']['username']='admin@{$clientip}';
+        array_unshift($config['filter']['rule'], $newrule);
+        $newrule['type']='pass';
+        unset($newrule['source']['network']);
+        unset($newrule['destination']['network']);
+        unset($newrule['destination']['not']);
+        $newrule['source']['address']=$clientip;
+        $newrule['destination']['any']='';
+        $newrule['descr']="[User Rule] {$clientip} allow only 'this' PC";
+        array_unshift($config['filter']['rule'], $newrule);
+    }
+    return $interface;
+}
+
 ?>
 
 <style>
@@ -167,11 +242,11 @@ if ($_POST['widgetkey']) {//변경할때이므로
 		else{
 			$autoportal="";
 		}
-		if(isset($a_cp['crew']['autocrewroute'])){
-            $fixed= "checked";
+		if(isset($config['interface']['ban_all'])){
+            $banned= "checked";
         }
         else{
-            $fixed="";
+            $banned="";
         }
 		if(strpos(get_config_user(), "admin") !== false){
         	$toggledisable="";
@@ -216,10 +291,10 @@ if ($_POST['widgetkey']) {//변경할때이므로
 
                     </li>
                     <li class="list-group-item">
-                         Autoselect crew  Internet connection
+                         Block all business internet access except for "this" PC
                         <div class="material-switch pull-right">
-                            <input id="auto_crew_route" name="auto_crew_route" type="checkbox" <?echo($fixed);?>/>
-                            <label for="auto_crew_route" class="label-success"></label>
+                            <input id="ban_all" name="ban_all" type="checkbox" <?echo($banned);?>/>
+                            <label for="ban_all" class="label-success"></label>
                         </div>
                     </li>
                 </ul>

@@ -43,19 +43,21 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
 			foreach ($radiususers as $eachuser) {
 				$rtnstr .= "<tr>";
 				$rtnstr .= "<td><center>{$eachuser['varusersusername']}</center></td>";
+				$terminaltype = $eachuser['varusersterminaltype']=='' ?  'Auto' : $eachuser['varusersterminaltype'];
+				$rtnstr .= "<td><center>".$terminaltype ."</center></td>";
 				$rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctetstimerange']}</center></td>";
 				$rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctets']}&nbsp;MBytes</center></td>";
-				$used_quota=check_quota($eachuser['varusersusername']);
+				$used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
 				if($eachuser['varusersmodified']=="update"){$rtnstr .= "<td><center>Wait for logon</center></td>";}
-				else{$rtnstr .="<td><center>$used_quota MBytes</center></td>";}
+				else{$rtnstr .="<td><center>".number_format($used_quota,2,'.',',')." MBytes</center></td>";}
 				$widgetkey_html = htmlspecialchars($widgetkey);
 				$rtnstr .= "<td><a><center><form id=resetpw action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal'  onSubmit='return confirm_resetPw(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
 				$rtnstr .="<input type='hidden' name=resetpw value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Reset title='Reset Password'></form></center></a></td>";
 				if(strpos(get_config_user(), "admin") !== false){
-	        		$rtnstr .="<td><a><center><form action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_resetData(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
-             		$rtnstr .="<input type='hidden' name=resetuser value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Reset title='Reset User data usage'></form></center></a></td>";
-		            $rtnstr .="<td><a><center><form action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_delUser(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
-        		    $rtnstr .="<input type='hidden' name=delusername value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Delete title='delete'></form></center></a></td>";
+					$rtnstr .="<td><a><center><form action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_resetData(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
+					$rtnstr .="<input type='hidden' name=resetuser value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Reset title='Reset User data usage'></form></center></a></td>";
+					$rtnstr .="<td><a><center><form action='/widgets/widgets/manage_freeradiususer.widget.php' method='post' class='form-horizontal' onSubmit='return confirm_delUser(\"{$eachuser['varusersusername']}\")'> <input type='hidden' value={$widgetkey_html} name=widgetkey>";
+					$rtnstr .="<input type='hidden' name=delusername value = {$eachuser['varusersusername']}><input type=submit class='btn-square-little-rich' value=Delete title='delete'></form></center></a></td>";
 				} else {
 					$rtnstr .="<td><a></td>";
 					$rtnstr .="<td><a></td>";
@@ -73,21 +75,28 @@ if ($_REQUEST && $_REQUEST['ajax']) {
 if ($_POST['widgetkey']) {//�����Ҷ��̹Ƿ�
 	global $config;
 	if($_POST['delusername']){
-		 foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
+		foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
 			if ($_POST['delusername'] === $userentry['varusersusername']) {
 				unset($config["installedpackages"]["freeradius"]["config"][$item]);  // flag for remove DB for when anyone who is in site is open webpage.
+				unlink_if_exists("/var/log/radacct/datacounter/{$userentry['varusersmaxtotaloctetstimerange']}/used-octets-{$_POST['delusername']}*");
 			}
 		}
 	}
+	else if($_POST['resetalluser']){
+		foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
+			$config['installedpackages']['freeradius']['config'][$item]['varusersresetquota']="true";
+			$config['installedpackages']['freeradius']['config'][$item]['varusersmodified']="update";
+		}
+	}
 	else if($_POST['resetpw']){
-		 foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
+		foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
 			if ($_POST['resetpw'] === $userentry['varusersusername']) {
 				$config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword']="1111";
 			}
 		}
 	}
 	else if($_POST['resetuser']){
-		 foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
+		foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
 			if ($_POST['resetuser'] === $userentry['varusersusername']) {
 				$config['installedpackages']['freeradius']['config'][$item]['varusersresetquota']="true";
 				$config['installedpackages']['freeradius']['config'][$item]['varusersmodified']="update";
@@ -96,67 +105,97 @@ if ($_POST['widgetkey']) {//�����Ҷ��̹Ƿ�
 		}
 	}
 	else if($_POST['createusername'] && $_POST['createuserpassword'] && $_POST['createuserquota']){
-	    foreach($config['installedpackages']['freeradius']['config'] as $item){
-	        if($_POST['createusername'] === $item['varusersusername']){
-	            header("Location: /");
-                exit(0);
-	        }
-	    }
-        $userinfoentry = array(
-            "sortable"=>"",
-            "varusersusername"=>"",
-            "varuserspassword"=>"",
-            "varuserspasswordencryption"=>"Cleartext-Password",
-            "varusersmotpenable"=>"",
-            "varusersauthmethod"=>"motp",
-            "varusersmotpinitsecret"=>"",
-            "varusersmotppin"=>"",
-            "varusersmotpoffset"=>"",
-            "qrcodetext"=>"",
-            "varuserswisprredirectionurl"=>"",
-            "varuserssimultaneousconnect"=>"",
-            "description"=>"",
-            "varusersframedipaddress"=>"",
-            "varusersframedipnetmask"=>"",
-            "varusersframedroute"=>"",
-            "varusersframedip6address"=>"",
-            "varusersframedip6route"=>"",
-            "varusersvlanid"=>"",
-            "varusersexpiration"=>"",
-            "varuserssessiontimeout"=>"",
-            "varuserslogintime"=>"",
-            "varusersamountoftime"=>"",
-            "varuserspointoftime"=>"Monthly",
-            "varusersmaxtotaloctets"=>"1",
-            "varusersmaxtotaloctetstimerange"=>"monthly",
-            "varusersmaxbandwidthdown"=>"",
-            "varusersmaxbandwidthup"=>"",
-            "varusersacctinteriminterval"=>"600",
-            "varuserstopadditionaloptions"=>"",
-            "varuserscheckitemsadditionaloptions"=>"",
-            "varusersreplyitemsadditionaloptions"=>"",
-            "varuserslastreceivedata"=>0,
-            "varuserslastsentdata"=>0,
-            "varuserslastbasedata"=>0,
-            "varusersresetquota"=>"true",
-        );
-		$userinfoentry['varusersusername']=$_POST['createusername'];
-		$userinfoentry['varuserspassword']=$_POST['createuserpassword'];
-		if(is_numeric($_POST['createuserquota'])){
-		    $userinfoentry['varusersmaxtotaloctets']=$_POST['createuserquota'];
+		if($_POST['createusernumber']==''){
+			$vouchernumber = 1;
 		}
-		else{
-		    $userinfoentry['varusersmaxtotaloctets']=0;
+		else {
+			$vouchernumber = $_POST['createusernumber'];
 		}
-		$userinfoentry['varusersmaxtotaloctetstimerange']=$_POST['createsuerquotaperiod'];
-		$userinfoentry['varuserspointoftime']=$_POST['createsuerquotaperiod'];
-		$userinfoentry['varusersmodified']='create';
-		if(!isset($config['installedpackages']['freeradius']['config'])){
-			$config["installedpackages"]["freeradius"]=["config"=>[""]];
-			array_push($config["installedpackages"]["freeradius"]["config"][0]=$userinfoentry);
-		}
-		else{
-			array_push($config["installedpackages"]["freeradius"]["config"], $userinfoentry);
+		for ($i=1;$i<=$vouchernumber;$i++){
+			if($_POST['createusernumber']==''){
+				$username = $_POST['createusername'];
+			}
+			else{
+				$username = $_POST['createusername'].str_pad($i, 5, '0', STR_PAD_LEFT);
+			}
+			$userexist = false;
+			foreach($config['installedpackages']['freeradius']['config'] as $item){
+				if($username === $item['varusersusername']){
+					$userexist = true;
+					break;
+				}
+			}
+			if($userexist){
+				header("Location: /");
+				continue;
+			}
+			$userinfoentry = array(
+				"sortable"=>"",
+				"varusersusername"=>"",
+				"varuserspassword"=>"",
+				"varuserspasswordencryption"=>"Cleartext-Password",
+				"varusersmotpenable"=>"",
+				"varusersauthmethod"=>"motp",
+				"varusersmotpinitsecret"=>"",
+				"varusersmotppin"=>"",
+				"varusersmotpoffset"=>"",
+				"qrcodetext"=>"",
+				"varuserswisprredirectionurl"=>"",
+				"varuserssimultaneousconnect"=>"",
+				"description"=>"",
+				"varusersframedipaddress"=>"",
+				"varusersframedipnetmask"=>"",
+				"varusersframedroute"=>"",
+				"varusersframedip6address"=>"",
+				"varusersframedip6route"=>"",
+				"varusersvlanid"=>"",
+				"varusersexpiration"=>"",
+				"varuserssessiontimeout"=>"",
+				"varuserslogintime"=>"",
+				"varusersamountoftime"=>"",
+				"varuserspointoftime"=>"Monthly",
+				"varusersmaxtotaloctets"=>"1",
+				"varusersmaxtotaloctetstimerange"=>"monthly",
+				"varusersmaxbandwidthdown"=>"",
+				"varusersmaxbandwidthup"=>"",
+				"varusersacctinteriminterval"=>"600",
+				"varuserstopadditionaloptions"=>"",
+				"varuserscheckitemsadditionaloptions"=>"",
+				"varusersreplyitemsadditionaloptions"=>"",
+				"varuserslastreceivedata"=>0,
+				"varuserslastsentdata"=>0,
+				"varuserslastbasedata"=>0,
+				"varusersterminaltype"=>"",
+				"varusersresetquota"=>"true",
+			);
+			$userinfoentry['varusersusername']=$username;
+			$userinfoentry['varuserspassword']=$_POST['createuserpassword'];
+			if(is_numeric($_POST['createuserquota'])){
+				$userinfoentry['varusersmaxtotaloctets']=$_POST['createuserquota'];
+			}
+			else{
+				$userinfoentry['varusersmaxtotaloctets']=0;
+			}
+			$terminaltype= "";
+			if($_POST['createuserterminaltype'] != ""){
+				foreach ($config['interfaces'] as $gwname => $gwitem){
+					if(is_array($gwitem) && $gwname == $_POST['createuserterminaltype']) {
+						$terminaltype=$gwitem['descr'];
+						break;
+					}
+				}
+			}
+			$userinfoentry['varusersterminaltype']=$terminaltype;
+			$userinfoentry['varusersmaxtotaloctetstimerange']=$_POST['createsuerquotaperiod'];
+			$userinfoentry['varuserspointoftime']=$_POST['createsuerquotaperiod'];
+			$userinfoentry['varusersmodified']='create';
+			if(!isset($config['installedpackages']['freeradius']['config'])){
+				$config["installedpackages"]["freeradius"]=["config"=>[""]];
+				array_push($config["installedpackages"]["freeradius"]["config"][0]=$userinfoentry);
+			}
+			else{
+				array_push($config["installedpackages"]["freeradius"]["config"], $userinfoentry);
+			}
 		}
 	}
 	write_config("Modifed freeradius user");
@@ -170,54 +209,58 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 ?>
 <style>
 
-.btn-square-little-rich {
-  position: relative;
-  display: inline-block;
-  padding: 0.25em 0.5em;
-  text-decoration: none;
-  color: #FFF;
-  background: #03A9F4;/*��*/
-  border: solid 1px #0f9ada;/*����*/
-  border-radius: 4px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
-  text-shadow: 0 1px 0 rgba(0,0,0,0.2);
-}
+	.btn-square-little-rich {
+		position: relative;
+		display: inline-block;
+		padding: 0.25em 0.5em;
+		text-decoration: none;
+		color: #FFF;
+		background: #03A9F4;/*��*/
+		border: solid 1px #0f9ada;/*����*/
+		border-radius: 4px;
+		box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+		text-shadow: 0 1px 0 rgba(0,0,0,0.2);
+	}
 
-.btn-square-little-rich:active {
-  /*�㪷���Ȫ�*/
-  border: solid 1px #03A9F4;
-  box-shadow: none;
-  text-shadow: none;
-}
+	.btn-square-little-rich:active {
+		/*�㪷���Ȫ�*/
+		border: solid 1px #03A9F4;
+		box-shadow: none;
+		text-shadow: none;
+	}
 </style>
 <script>
-function checkForm(){
-    if(registeruser.createusername.value==""|| registeruser.createuserpassword.value==""){
-        alert("ID or password is blank");
-        return false;
-    }
-    if(isNaN(registeruser.createuserquota.value)){
-        alert("Wrong datacount, input Number only");
-        return false;
-    }
-}
+	function approval(){
+		return window.confirm('This will reset all private data usage and not to be recoverd!\n Are you sure to continue?');
+	}
+	function checkForm(){
+		if(registeruser.createusername.value==""|| registeruser.createuserpassword.value==""){
+			alert("ID or password is blank");
+			return false;
+		}
+		if(isNaN(registeruser.createuserquota.value)){
+			alert("Wrong datacount, input Number only");
+			return false;
+		}
+	}
 
-function confirm_resetPw(username){
-   return window.confirm(`${username} password will be reset  '1111' for this user. Ok to continue`);
-}
-function confirm_resetData(username){
-   return window.confirm(`${username} data usage will be reset, OK to continue.`);
-}
-function confirm_delUser(username){
-   return window.confirm(`ID ${username} will be deleted, OK to continue.`);
-}
+	function confirm_resetPw(username){
+		return window.confirm(`${username} password will be reset  '1111' for this user. Ok to continue`);
+	}
+	function confirm_resetData(username){
+		return window.confirm(`${username} data usage will be reset, OK to continue.`);
+	}
+	function confirm_delUser(username){
+		return window.confirm(`ID ${username} will be deleted, OK to continue.`);
+	}
 </script>
 <div class="table-responsive">
 	<table class="table table-striped table-hover table-condensed">
 		<thead>
 		<tr>
 			<th center><center><?=gettext("ID");?></center></th>
-			<th><center><?=gettext("Update Period");?></center></th>
+			<th><center><?=gettext("Type");?></center></th>
+			<th><center><?=gettext("Update");?></center></th>
 			<th><center><?=gettext("# MB Allowed");?></center></th>
 			<th><center><?=gettext("# MB Used");?></center></th>
 			<th><center><?=gettext("Password");?></center></th>
@@ -227,30 +270,68 @@ function confirm_delUser(username){
 		</tr>
 		</thead>
 		<tbody id="<?=htmlspecialchars($widgetkey)?>-manage_freeradiususer">
-<?php
+		<?php
 		print(compose_manage_freeradiususer_contents($widgetkey));
-?>
+		?>
 		</tbody>
 	</table>
 </div>
-	<!-- close the body we're wrapped in and add a configuration-panel -->
-	</div><div id="<?=$widget_panel_footer_id?>" class="panel-footer collapse"><form name=registeruser action="/widgets/widgets/manage_freeradiususer.widget.php" method="post" class="form-horizontal" onSubmit="return checkForm()"><div class="form-group">
-	<label class="col-sm-4 control-label"><?=gettext("Input User Information")?></label><div class="col-sm-6"><div class="radio"><label>User Name <input name="createusername" type="text"  value></label><label>Password <input name="createuserpassword" type="text"  value></label>
-	<label>Allow data <input name="createuserquota" type="text"  value></label></div></div>
-	<label class="col-sm-4 control-label"><?=gettext("Reset Period")?></label><div class="col-sm-6"><div class="radio"><select name="createsuerquotaperiod" size="1"><option value="monthly">Monthly </option><option value="daily">Daily </option>
-	</select></div></div><br/><input type="hidden" name="widgetkey" value="<?=htmlspecialchars($widgetkey); ?>"><div>
-	<button <? if(strpos(get_config_user(), "admin") !== false) {} else {?>disabled="disabled" <?}?>type="submit" class="btn btn-primary">
-	<i class="fa fa-save icon-embed-btn"></i>
-	<?=gettext("Apply")?>
-	</button></div></div></form>
+</div>
+<!-- close the body we're wrapped in and add a configuration-panel -->
 
+<?php
+global $config;
+if(strpos(get_config_user(), "admin") !== false){
+	$echostr .= '<div id='.$widget_panel_footer_id.' class="panel-footer collapse">';
+	$echostr .= '<form name=registeruser action="/widgets/widgets/manage_freeradiususer.widget.php" method="post" class="form-horizontal" onSubmit="return checkForm()">';
+	$echostr .= '<div class="form-group">';
+	$echostr .= '<label class="col-sm-4 control-label">"Input User Information"</label>';
+	$echostr .= '<div class="col-sm-6"><div class="radio"><label>User Name <input name="createusername" type="text"  value></label>';
+	$echostr .= '<label>Password <input name="createuserpassword" type="text"  value></label>';
+	$echostr .= '<label>Allow data <input name="createuserquota" type="text"  value></label>';
+	$echostr .= '<label># of Vouchers <input name="createusernumber" type="number"  value></label>';
+	$echostr .= '</div></div>';
+	$echostr .= '<label class="col-sm-4 control-label">"Reset/Terminal Type"</label>';
+	$echostr .= '<div class="col-sm-6">';
+	$echostr .= '<div class="radio"><class>';
+	$echostr .= '<select name="createsuerquotaperiod" size="1">';
+	$echostr .= '<option value="monthly">Monthly </option>';
+	$echostr .= '<option value="forever">Forever </option>';
+	$echostr .= '<option value="daily">Daily </option></select>';
+	$echostr .= '<class="radio"></class>';
+	$echostr .= '<select name="createuserterminaltype" size="1">';
+	$echostr .= '<option value="">Auto </option>';
+	foreach ($config['interfaces'] as $gwname => $gwitem) {
+		if (is_array($gwitem) && isset($gwitem['alias-subnet'])) {
+			$echostr .= '<option value='.$gwname.'> '.$gwitem["descr"]. '</option>';
+		}
+	}
+	$echostr .= '</select></div></div></br>';
+	$echostr .= '<input type="hidden" name="widgetkey" value='.$widgetkey.'><div>';
+	$echostr .= '<button type="submit" class="btn btn-primary">';
+	$echostr .= '<i class="fa fa-save icon-embed-btn"></i>';
+	$echostr .= 'Apply';
+	$echostr .= '</button>';
+	$echostr .= '</div></div></form>';
+	$echostr .= '<form name=resetalldata action="/widgets/widgets/manage_freeradiususer.widget.php" method="post" class="form-horizontal" onSubmit="return approval()">';
+	$echostr .= '<div>Reset all user data usage</div>';
+	$echostr .= '<input type="hidden" name="widgetkey" value='.$widgetkey.'><div>';
+	$echostr .= '<input type="hidden" name="resetalluser" value="resetalluser"><div>';
+	$echostr .= '<button type="submit" class="btn btn-primary">';
+	$echostr .= '<i class="fa fa-save icon-embed-btn"></i>';
+	$echostr .= 'Reset';
+	$echostr .= '</button></form>';
+	echo $echostr;
+
+}
+?>
 <script type="text/javascript">
-events.push(function(){
-	// --------------------- Centralized widget refresh system ------------------------------
+	/*events.push(function(){
+        // --------------------- Centralized widget refresh system ------------------------------
 
-	// Callback function called by refresh system when data is retrieved
-	function manage_freeradiususer_callback(s) {
-		$(<?= json_encode('#' . $widgetkey .'-manage_freeradiususer')?>).html(s);
+        // Callback function called by refresh system when data is retrieved
+        function manage_freeradiususer_callback(s) {
+            $(<?= json_encode('#' . $widgetkey .'-manage_freeradiususer')?>).html(s);
 	}
 
 	// POST data to send via AJAX
@@ -270,5 +351,5 @@ events.push(function(){
 	register_ajax(manage_freeradiususerObject);
 
 	// ---------------------------------------------------------------------------------------------------
-});
+});*/
 </script>

@@ -44,11 +44,6 @@ class APISystemSendPing extends APIModel {
 		    				$gwList = array("168.126.63.2", "8.8.4.4","149.112.112.112","9.9.9.9","1.0.0.1","208.67.222.222");
 		    			}
 						$randgw = $gwList[rand(0, count($gwList) - 1)];
-						/*mwexec('route add -host '.$randgw.' '.$gw['monitorip']);
-						sleep(1);
-						$gw['choosed_destination']=$randgw;
-						$gw["pingresult"] = mwexec('ping -c1 -t '.$gw['check_timeout'].' -S '.$gw['srcip'].' '.$randgw.' > /dev/null')==0 ? "online": "offline";
-						mwexec('route del -host '.$randgw.' '.$gw['monitorip']);*/
 						mwexec('/bin/sh /etc/inc/ping_check.sh '.$gw['check_timeout'].' '.$gw['srcip'].' '.$gw['monitorip'].' '.$randgw.' > /dev/null &');
 						if(file_exists("/etc/inc/".$gw['srcip'].".log")){
 							$fp=fopen ("/etc/inc/".$gw['srcip'].".log", "r");
@@ -68,10 +63,6 @@ class APISystemSendPing extends APIModel {
 						$randgw = $gwList[rand(0, count($gwList) - 1)];
 						$randgw_ip = explode(":", $randgw)[0];
 						$randgw_port = explode(":", $randgw)[1];
-						/*mwexec('route add -host '.$randgw_ip.' '.$gw['monitorip']);
-						$gw['choosed_destination']=$randgw;
-						$gw["pingresult"] = mwexec('nc -z -w'.$gw['check_timeout'].' '.$randgw_ip.' '.$randgw_port.' > /dev/null')==0 ? "online": "offline";
-						mwexec('route del -host '.$randgw_ip.' '.$gw['monitorip'].' > /dev/null');*/
 						mwexec('/bin/sh /etc/inc/nmap_check.sh '.$gw['check_timeout'].' '.$gw['srcip'].' '.$randgw_ip.' '.$randgw_port.' > /dev/null &');
 						if(file_exists("/etc/inc/".$gw['srcip'].".log")){
 							$fp=fopen ("/etc/inc/".$gw['srcip'].".log", "r");
@@ -98,10 +89,7 @@ class APISystemSendPing extends APIModel {
 			else{
 				$gw["pingresult"]="online";
 			}
-			$config['gatewaystatus'][$gw['name']]['pingresult']=$gw['pingresult'];
         }
-		//setup_gateways_monitor();
-		write_config("Write ping result");
         return APIResponse\get(0,$gw_metrics);
 
 	}

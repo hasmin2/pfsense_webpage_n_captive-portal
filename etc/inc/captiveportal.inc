@@ -2382,7 +2382,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             }
             if(isset($userindex)){
                 $allocated = $config['installedpackages']['freeradius']['config'][$userindex]['varusersmaxtotaloctets'];
-                $curoctets=check_quota($username);
+                $curoctets=check_quota($username, $config['installedpackages']['freeradius']['config'][$userindex]['varusersmaxtotaloctetstimerange'], $clientip);
                 $ratio = ($curoctets/$allocated)*100;
                 $message="Allocated {$allocated}MB.\n{$curoctets}MB used";
                 $portalbtnmessage= "Tap here to back home...";
@@ -2554,6 +2554,7 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
             } else {
                 captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], "CONCURRENT LOGIN - REUSING IP {$cpentry[2]} WITH DIFFERENT MAC ADDRESS {$cpentry[3]}");
             }
+//////////////////////// no need add firewall rule///////////////////////
             $sessionid = $cpentry[5];
             break;
         } elseif (($attributes['voucher']) && ($username != 'unauthenticated') && ($cpentry[4] == $username)) {
@@ -2584,6 +2585,7 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
                 /* 'noconcurrentlogins' not set : accept login 'username' creating multiple sessions. */
                 captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], "config['captiveportal'][$cpzone]['noconcurrentlogins'] 3 does not exists = NOT set");
                 captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], "CONCURRENT LOGIN - NOT TERMINATING EXISTING SESSION(S)");
+//////////////////////// add (multiple) firewall rule here on next time///////////////////////
             } elseif ($config['captiveportal'][$cpzone]['noconcurrentlogins'] == "last") {
                 /* Classic situation : accept the new login, disconnect the old - present - connection */
                 if (isset($config['captiveportal'][$cpzone]['noconcurrentlogins'])) {
@@ -2591,9 +2593,9 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
                 } else {
                     captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], "config['captiveportal'][$cpzone]['noconcurrentlogins'] 4 does not exists = NOT set");
                 }
-
                 captiveportal_disconnect($cpentry, 13);
                 captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], "CONCURRENT LOGIN - TERMINATING OLD SESSION");
+//////////////////////// renew firewall rule here on next time///////////////////////
                 $unsetindexes[] = $cpentry[5];
                 break;
             } else {
@@ -2610,6 +2612,9 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
                     captiveportal_disconnect($cpentry, 13);
                     captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], "CONCURRENT USER LOGIN - TERMINATING OLD SESSION");
                     $unsetindexes[] = $cpentry[5];
+//////////////////////// delete/add (renew) firewall rule here on next time///////////////////////
+                    //add_crew_linked_rule($clientip, $username);
+//////////////////////////////////////////////////////////////////////////////////////////////////
                     break;
                 }
             } else {
@@ -3029,16 +3034,22 @@ function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $use
         if (!is_int($start_time)) {
             $start_time = time();
         }
+        add_crew_linked_rule($clientip, $username);
+        write_config("{$username} crew wifi login");
     } elseif ($type === 'stop') {
         $racct = new Auth_RADIUS_Acct_Stop;
         if (!is_int($stop_time)) {
             $stop_time = time();
         }
+        del_crew_linked_rule($clientip, $username);
+        write_config("{$username} crew wifi log out");
     } elseif ($type === 'update') {
         $racct = new Auth_RADIUS_Acct_Update;
         if (!is_int($stop_time)) {
             $stop_time = time(); // "top time" here will be used only for calculating session time.
         }
+        //add_crew_linked_rule($clientip, $username);
+        //write_config("voucher changed");
     } else {
         return null;
     }
@@ -3193,24 +3204,27 @@ function getcurquota($sessionid, $clientip){
         $basedata = number_format(abs($usagenum)/1048576, 2, '.',',');
         $rcv = number_format(abs(getVolume($clientip)['input_bytes'])/1048576, 2, '.',',');
         $sent = number_format(abs(getVolume($clientip)['output_bytes'])/1048576, 2, '.',',');
-        $config['installedpackages']['freeradius']['config'][$userindex]['varuserslastreceivedata']=$rcv;
+        /*$config['installedpackages']['freeradius']['config'][$userindex]['varuserslastreceivedata']=$rcv;
         $config['installedpackages']['freeradius']['config'][$userindex]['varuserslastsentdata']=$sent;
         $config['installedpackages']['freeradius']['config'][$userindex]['varuserslastbasedata']=$basedata;
-        write_config("update quota");
+        write_config("update quota");*/
     }
     return str_replace(",", "", $basedata) + str_replace(",", "", $rcv) + str_replace(",", "", $sent);
 }
-function check_quota($username){
+function check_quota($username, $timerange){
     global $config;
-    if ($username != "") {
-        foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
-            if($value['varusersusername']==$username){
-                $curquota=str_replace(",", "", $value['varuserslastbasedata'])+ str_replace(",", "", $value['varuserslastsentdata'])+ str_replace(",", "", $value['varuserslastreceivedata']);
-            }
-        }
+    $filepath = "/var/log/radacct/datacounter/$timerange/used-octets-$username";
+    if(file_exists($filepath) && ($use_file = fopen($filepath, "r"))!==false ){
+        $usagenum = fgets($use_file);
+        fclose($use_file);
     }
-    return $curquota;
+    else {
+        $usagenum = 0;
+    }
+    $basedata = number_format(abs($usagenum)/1048576, 2, '.',',');
+    return str_replace(",", "", $basedata);
 }
+
 function getmaxquota($sessionid){
     global $config;
     $username=getusername($sessionid);
@@ -3224,6 +3238,101 @@ function getmaxquota($sessionid){
         $result = 0;
     }
     return $result;
+}
+function is_using_fx(){
+    global $config;
+    $result = "";
+    foreach($config['gateways']['gateway_item'] as $key => $value){
+        if($config['gateways']['defaultgw4'] == $value['name'] && $value['terminal_type']=='vsat_pri'){
+            $isusingvsat = true;
+            break;
+        }
+    }
+    if($isusingvsat){
+        foreach($config['gateways']['gateway_item'] as $key => $value){
+            if($value['terminal_type']=='vsat_sec'){
+                $result=$value['name'];
+                break;
+            }
+        }
+    }
+    return $result;
+}
+
+function del_crew_linked_rule($sourceip, $userid){
+    global $config;
+    $result = false;
+    if ($sourceip != "") {
+        foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
+            if($value['varusersusername']==$userid){
+                if($value['varusersterminaltype']=="" && is_using_fx()!=''){ //Auto and FX system (or dual VSAT)
+                    $terminaltype = is_using_fx();
+                }
+                else {
+                    $terminaltype = $value['varusersterminaltype'];
+                }
+            }
+        }
+
+        foreach($config['filter']['rule'] as $key => $value){
+            if($value['interface']==$config['captiveportal']['crew']['interface']
+               && $value['source']['address']==$sourceip
+               && $value['gateway']==$terminaltype){
+		        unset ($config['filter']['rule'][$key]);
+                $result = true;
+            }
+        }
+    }
+    return $result;
+}
+
+function add_crew_linked_rule($sourceip, $userid){
+    global $config;
+    del_crew_linked_rule($sourceip, $userid);
+    $gwset = false;
+    $userindex = 0;
+    foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
+        if($value['varusersusername']==$userid){
+            if(isset($value['varusersterminaltype'])){
+                $terminaltype=$value['varusersterminaltype'];
+                $userindex = $item;
+            }
+            else{
+                $value['varusersterminaltype']="";
+                $terminaltype="";
+            }
+            break;
+        }
+    }
+    if($terminaltype=="" && is_using_fx()!=''){ //Auto and FX system (or dual VSAT)
+        $terminaltype = is_using_fx();
+    }
+
+    $newrule = array();
+    $newrule['id'] = '';
+    $newrule['tracker']=time();
+    $newrule['type']='pass';
+    $newrule['interface']=$config['captiveportal']['crew']['interface'];
+    $newrule['ipprotocol']='inet';
+    $newrule['tag'] = '';
+    $newrule['tagged'] = '';
+    $newrule['max'] = '200';
+    $newrule['max-src-nodes'] = '';
+    $newrule['max-src-conn'] = '';
+    $newrule['max-src-states'] = '';
+    $newrule['statetimeout'] = '';
+    $newrule['statetype'] = 'keep state';
+    $newrule['os'] = '';
+    $newrule['source']['address']=$sourceip;
+    $newrule['destination']['network']='(self)';
+    $newrule['destination']['not']='';
+    $newrule['descr']="[User Rule] ${userid} auto generated rule";
+    $newrule['gateway']=$terminaltype;
+    $newrule['updated']['time']=time();
+    $newrule['updated']['username']='${userid}@${sourceip}';
+    $newrule['created']['time']=time();
+    $newrule['created']['username']='${userid}@${sourceip}';
+    array_push($config['filter']['rule'], $newrule);
 }
 
 ?>

@@ -167,15 +167,28 @@ if (!function_exists('compose_manual_routing_contents')) {
 				$bgcolor = "info";  // lightblue
 			}
 			if ($gateways_status[$gname]) {
-				$pingresult = $config['gatewaystatus'][strtolower($gname)]['pingresult'];
-				if($pingresult == 'online'){
-					$pingresult = "Online";
-					$pingcolor = "success";
+				if($gateways_status[$gname]['check_method'] == 'none') {
+					$pingcolor="success";
+					$pingresult="Online";
 				}
-
 				else{
-                    			$pingcolor = "danger";
-                    			$pingresult = "Offline";
+					if(file_exists("/etc/inc/".$gateways_status[$gname]['srcip'].".log")) {
+						$fp = fopen("/etc/inc/" . $gateways_status[$gname]['srcip'] . ".log", "r");
+						$online_status = preg_replace('/\r\n|\r|\n/', '', fgets($fp));
+						fclose($fp);
+						$pingresult = $online_status;
+						if ($pingresult == 'online') {
+							$pingresult = "Online";
+							$pingcolor = "success";
+						} else {
+							$pingcolor = "danger";
+							$pingresult = "Offline";
+						}
+					}
+					else {
+						$pingcolor="warning";
+						$pingresult = 'Init';
+					}
 				}
 			}
 			else {

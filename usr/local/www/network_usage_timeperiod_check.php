@@ -66,9 +66,9 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
         }
 	}
 }
+$datastring .= 'core_status='.get_module_status();
 $datastring = rtrim($datastring, ',');
 $datastring .= " " .$timestamp;
-
 $ch = curl_init();
 curl_setopt_array($ch, array(
 CURLOPT_URL => "http://192.168.209.210:8086/write?db=acustatus&precision=m",
@@ -87,4 +87,67 @@ curl_close($ch);
 sleep (1);
 write_config("networkusage update");
 
+
+function send_api($url, $method, $postdata) {
+	$ch = curl_init();
+	curl_setopt_array($ch, array(
+		CURLOPT_URL => $url,
+		CURLOPT_TIMEOUT => 10,
+		CURLOPT_MAXREDIRS => 10,
+		CURLOPT_CUSTOMREQUEST => $method,
+		CURLOPT_RETURNTRANSFER => TRUE,
+		CURLOPT_POSTFIELDS => $postdata,
+		CURLOPT_HTTPHEADER => array(
+			'Content-Type: application/json',
+			'X-requested-by: sdc',
+			'x-sdc-application-id: servercommand',
+			'Authorization: Basic YWRtaW46YWRtaW4='
+		)
+	));
+	$response = curl_exec($ch);
+	$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+	$error = curl_error($ch);
+	curl_close($ch);
+	return array($response, $code);
+}
+
+function get_module_status(){
+	$pipelines_result = send_api('http://192.168.209.210:18630/rest/v1/pipelines', 'GET', '');
+	$pipelines_status_result = send_api('http://192.168.209.210:18630/rest/v1/pipelines/status', 'GET', '');
+    if($pipelines_result[1] === 200 && $pipelines_status_result[1] === 200) {
+		$core_status = 0;
+	}
+	else{
+		$core_status = 1;
+	}
+	$noc_status = '<font color=green>ONLINE';
+	$pipelines = json_decode($pipelines_result[0], true);
+	$status = json_decode($pipelines_status_result[0], true);
+	foreach($pipelines as $item){
+		if(substr($item['title'],0,16)=== '[System Pipeline'){
+			foreach($status as $statusitem){
+				if($statusitem['pipelineId'] === $item['pipelineId']&&
+				   $statusitem['status'] === 'EDITED' ||
+				   $statusitem['status'] === 'RUN_ERROR' ||
+				   $statusitem['status'] === 'STOPPED' ||
+				   $statusitem['status'] === 'START_ERROR' ||
+				   $statusitem['status'] === 'STOP_ERROR' ||
+				   $statusitem['status'] === 'DISCONNECTED' ||
+				   $statusitem['status'] === 'RUNNING_ERROR' ||
+				   $statusitem['status'] === 'STARTING_ERROR' ||
+				   $statusitem['status'] === 'STOPPING' ||
+				   $statusitem['status'] === 'STOPPING_ERROR'
+				   ) {
+					$core_module_status = 2;
+					break;
+				}
+			}
+			if($core_module_status === 2){
+				break;
+			}
+		}
+	}
+
+	return $core_status;
+}
 ?>
