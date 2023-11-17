@@ -3279,6 +3279,7 @@ function del_crew_linked_rule($sourceip, $userid){
                && $value['source']['address']==$sourceip
                && $value['gateway']==$terminaltype){
 		        unset ($config['filter']['rule'][$key]);
+		        filter_configure();
                 $result = true;
             }
         }
@@ -3333,6 +3334,7 @@ function add_crew_linked_rule($sourceip, $userid){
     $newrule['created']['time']=time();
     $newrule['created']['username']='${userid}@${sourceip}';
     array_push($config['filter']['rule'], $newrule);
+    filter_configure();
 }
 
 ?>
