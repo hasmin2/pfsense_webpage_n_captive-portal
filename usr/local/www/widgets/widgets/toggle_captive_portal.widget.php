@@ -111,7 +111,8 @@ function del_linked_rule($serverip, $clientip){
         foreach ($config['filter']['rule'] as $key => $rule) {
             if ($rule['type']=='pass'
                 && $rule['interface']==$interface
-                && $rule['source']['address']==$clientip){
+                && $rule['source']['address']==$clientip
+                && $rule['descr']=="[User Rule] {$clientip} allow only 'this' PC"){
                 unset($config['filter']['rule'][$key]);
             }
             if ($rule['type']=='block'
@@ -119,15 +120,11 @@ function del_linked_rule($serverip, $clientip){
                 && $rule['source']['network']==$interface
                 && $rule['destination']['network']=='(self)'
                 && $rule['destination']['not']==''
-                && startsWith($rule['descr'], "[User Rule] {$clientip}")){
+                && $rule['descr']=="[User Rule] {$clientip} ban-all-rule"){
                 unset($config['filter']['rule'][$key]);
             }
         }
     }
-}
-function startsWith($haystack, $needle) {
-    // search backwards starting from haystack length characters from the end
-    return $needle === "" || strrpos($haystack, $needle, -strlen($haystack)) !== false;
 }
 function add_linked_rule($serverip, $clientip){
     global $config;
