@@ -118,11 +118,16 @@ function del_linked_rule($serverip, $clientip){
                 && $rule['interface']==$interface
                 && $rule['source']['network']==$interface
                 && $rule['destination']['network']=='(self)'
-                && $rule['destination']['not']==''){
+                && $rule['destination']['not']==''
+                && startsWith($rule['descr'], "[User Rule] {$clientip}")){
                 unset($config['filter']['rule'][$key]);
             }
         }
     }
+}
+function startsWith($haystack, $needle) {
+    // search backwards starting from haystack length characters from the end
+    return $needle === "" || strrpos($haystack, $needle, -strlen($haystack)) !== false;
 }
 function add_linked_rule($serverip, $clientip){
     global $config;
