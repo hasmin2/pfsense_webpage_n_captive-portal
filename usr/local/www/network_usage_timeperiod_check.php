@@ -51,7 +51,7 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
 	if(strpos($value['name'], "vtnet")!== false || strpos($value['name'], "ovpn")!==false){
         //$datestring = $value["traffic"]["fiveminute"][0]["date"]["year"] . "-" . $value["traffic"]["fiveminute"][0]["date"]["month"] . "-" . $value["traffic"]["fiveminute"][0]["date"]["day"] . " " . $value["traffic"]["fiveminute"][0]["time"]["hour"] . ":" . $value["traffic"]["fiveminute"][0]["time"]["minute"] . ":00";
         //$timestamp = strtotime($datestring)/60;
-        $timestamp = (floor(time()/300))*300;
+        $timestamp = (floor(time()/300))*5;
         $alias = $value['alias']==='' ? "none" : $value['alias'];
         $datastring .= $value['name']. "_rx=" . $value["traffic"]["fiveminute"][0]["rx"].",".$value['name']. "_tx=" . $value["traffic"]["fiveminute"][0]["tx"].",";
 	}
