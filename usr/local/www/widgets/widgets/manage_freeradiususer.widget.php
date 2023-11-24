@@ -320,7 +320,7 @@ if(strpos(get_config_user(), "admin") !== false){
 	$echostr .= '<button type="submit" class="btn btn-primary">';
 	$echostr .= '<i class="fa fa-save icon-embed-btn"></i>';
 	$echostr .= 'Reset';
-	$echostr .= '</button></form>';
+	$echostr .= '</button></form></div></div>';
 	echo $echostr;
 
 }

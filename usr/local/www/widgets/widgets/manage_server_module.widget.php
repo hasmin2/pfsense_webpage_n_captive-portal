@@ -397,38 +397,6 @@ function confirm_rebootsvr(){
     				</center></a>
     			</td>
     		</tr>
-				<form action='/widgets/widgets/manage_server_module.widget.php' method='post' class='form-horizontal'>
-				<td>
-					<a><center><font color=white>VSAT IP:
-							<input type='text' value=
-							<?
-								if($config['terminalinfo']['vsat_ip'])
-									echo $config['terminalinfo']['vsat_ip'];
-								else
-									echo "192.168.2.1";
-							?> name=vsatip>
-					</center></a>
-				</td>
-				<td>
-					<a><center><font color=white>FBB IP:
-							<input type='text' value=
-							<?
-								if($config['terminalinfo']['fbb_ip'])
-									echo $config['terminalinfo']['fbb_ip'];
-								else
-									echo "192.168.1.35";
-							?> name=fbbip>
-					</center></a>
-				</td>
-				<td>
-					<input type='hidden' value={$widgetkey_html} name=widgetkey>
-					<input type='hidden' value=configdef name=configdef>
-					<button type="submit" class="btn btn-primary">
-						<i class="fa fa-save icon-embed-btn"></i>
-						<?=gettext("Apply")?>
-					</button>
-				</td>
-				</form>
     		</tr>
 
 

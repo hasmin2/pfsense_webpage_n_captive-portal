@@ -15,6 +15,8 @@
 
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
+require_once("auth.inc");
+require_once("certs.inc");
 
 class APISystemUpdateVesselInfo extends APIModel {
     # Create our method constructor
@@ -25,17 +27,24 @@ class APISystemUpdateVesselInfo extends APIModel {
         $this->validated_data = $this->config["system"];
     }
     public function action() {
-        $isSet = false;
         if (is_array($this->initial_data)) {
 		    $this->config['system']['vesselinfo'] = $this->initial_data['vesselinfo'];
-
+            if(isset($this->initial_data['accountinfo']['new_id']) && isset($this->initial_data['accountinfo']['new_pw'])){
+                foreach($this->config['system']['user'] as $index => $user){
+                    if($user['name'] == $this->initial_data['accountinfo']['new_id']){
+                        $userent = $index;
+                        break;
+                    }
+                }
+		        local_user_set_password($this->config['system']['user'][$userent], $this->initial_data['accountinfo']['new_pw']);
+            }
             write_config("Updated vessel info");
+
             return APIResponse\get(0,$this->config['system']['vesselinfo']);
         }
         else{
             $this->errors[] = APIResponse\get(5001);
 	        return APIResponse\get(0,"Input failed you may input proper data or tagname.");
         }
-
-	}
+    }
 }
