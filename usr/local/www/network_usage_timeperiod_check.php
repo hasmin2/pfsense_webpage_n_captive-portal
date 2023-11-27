@@ -53,16 +53,29 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
         //$timestamp = strtotime($datestring)/60;
         $timestamp = (floor(time()/300))*5;
         $alias = $value['alias']==='' ? "none" : $value['alias'];
-        $datastring .= $value['name']. "_rx=" . $value["traffic"]["fiveminute"][0]["rx"].",".$value['name']. "_tx=" . $value["traffic"]["fiveminute"][0]["tx"].",";
-	}
+
+        if($value["traffic"]["fiveminute"][0]["rx"]){
+            $rxdata = $value["traffic"]["fiveminute"][0]["rx"];
+        }
+        else {
+            $rxdata = 0;
+        }
+        if($value["traffic"]["fiveminute"][0]["tx"]){
+            $txdata = $value["traffic"]["fiveminute"][0]["tx"];
+        }
+        else {
+            $txdata = 0;
+        }
+        $datastring .= $value['name']. "_rx=" . $rxdata.",".$value['name']. "_tx=" .$txdata.",";
+    }
 	foreach ($interface as $key => $item) {
-	    if($value['name'] == $item['rootinterface']){
-	        $config['gateways']['gateway_item'][$key]['speedtx']=round ($value['traffic']['fiveminute'][0]['tx']/38400,0);
+        if($value['name'] == $item['rootinterface']){
+            $config['gateways']['gateway_item'][$key]['speedtx']=round ($value['traffic']['fiveminute'][0]['tx']/38400,0);
             $config['gateways']['gateway_item'][$key]['speedrx']=round ($value['traffic']['fiveminute'][0]['rx']/38400,0);
-		    $currentusagegb = floatval($config['gateways']['gateway_item'][$key]['currentusage']);
+            $currentusagegb = floatval($config['gateways']['gateway_item'][$key]['currentusage']);
             $currentusagegb += floatval(round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6));
-	        echo ("time:".$timestamp."  CurrentUsage : ".$currentusagegb."  Usage: ".round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6)." LastUsage:".$config['gateways']['gateway_item'][$key]['currentusage']."\n");
-	        $config['gateways']['gateway_item'][$key]['currentusage'] = $currentusagegb;
+            echo ("time:".$timestamp."  CurrentUsage : ".$currentusagegb."  Usage: ".round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6)." LastUsage:".$config['gateways']['gateway_item'][$key]['currentusage']."\n");
+            $config['gateways']['gateway_item'][$key]['currentusage'] = $currentusagegb;
         }
 	}
 }
