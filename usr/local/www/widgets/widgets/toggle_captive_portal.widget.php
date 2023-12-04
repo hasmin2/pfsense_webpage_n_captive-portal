@@ -61,7 +61,9 @@ if ($_POST['widgetkey']) {//변경할때이므로
         add_linked_rule($serverip, $clientip);
     }
     else{
-        unset($config['interface']['ban_all']);
+        if($config['interface']['ban_all']){
+            unset($config['interface']['ban_all']);
+        }
         del_linked_rule($serverip, $clientip);
     }
 
