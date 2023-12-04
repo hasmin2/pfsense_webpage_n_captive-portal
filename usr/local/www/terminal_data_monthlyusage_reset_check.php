@@ -2,9 +2,10 @@
 require_once("status_traffic_totals.inc");
 
 global $config;
-foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
-    $config['installedpackages']['freeradius']['config'][$item]['varusersresetquota']="true";
-    $config['installedpackages']['freeradius']['config'][$item]['varusersmodified']="update";
+$terminalcount = count ($config['gateways']['gateway_item']);
+for ($i=0; $i < $terminalcount; $i++){
+	$config['gateways']['gateway_item'][$i]['currentusage']=0;
 }
+sleep(3);
 write_config("Reset terminal usage");
 ?>
