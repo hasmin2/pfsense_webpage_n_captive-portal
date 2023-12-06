@@ -3243,7 +3243,7 @@ function is_using_fx(){
     global $config;
     $result = "";
     foreach($config['gateways']['gateway_item'] as $key => $value){
-        if($config['gateways']['defaultgw4'] == $value['name'] && $value['terminal_type']=='vsat_pri'){
+        if($config['gateways']['defaultgw4'] == $value['name'] &&  strpos( $value['terminal_type'], 'vsat') !== false){
             $isusingvsat = true;
             break;
         }
@@ -3276,7 +3276,7 @@ function del_crew_linked_rule($sourceip, $userid){
 
         foreach($config['filter']['rule'] as $key => $value){
             if($value['interface']==$config['captiveportal']['crew']['interface']
-               && $value['source']['address']==$sourceip
+             //  && $value['source']['address']==$sourceip
                && $value['gateway']==$terminaltype){
 		        unset ($config['filter']['rule'][$key]);
 		        filter_configure();
