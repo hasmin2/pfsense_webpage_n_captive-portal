@@ -56,9 +56,11 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
 					$rtnstr .= "<td><a></a></td>";
 				}
 				else {
+					$rtnstr .= "<td>";
 					foreach ($cpdb as $cpent) {
-						$eachuser['varusersusername'] === $cpent[4] ? $rtnstr .= "<td><center><font color='#adff2f'>Login</center></td>" : $rtnstr .= "<td><a></a></td>";
+						$eachuser['varusersusername'] === $cpent[4] ? $rtnstr .= "<center><font color='#adff2f'>Login</center>" : $rtnstr .= "<a></a>";
 					}
+					$rtnstr .= "</td>";
 				}
 				$widgetkey_html = htmlspecialchars($widgetkey);
 			}
