@@ -36,13 +36,12 @@ require_once("/usr/local/www/widgets/include/manage_freeradiususer.inc");
 
 if (!function_exists('compose_manage_freeradiususer_contents')) {
 	function compose_manage_freeradiususer_contents($widgetkey) {
-		$rtnstr = '';
 		global $config;
 		if(isset($config['installedpackages']['freeradius']['config'])){
 			$radiususers = &$config['installedpackages']['freeradius']['config'];
 			foreach ($radiususers as $eachuser) {
 				$rtnstr .= "<tr>";
-				$rtnstr .= "<td><center><input type=checkbox id={$eachuser['varusersusername']} name=userlist[] value={$eachuser['varusersusername']} /></center></td>";
+				$rtnstr .= "<td><center><input type=checkbox class=userlist id={$eachuser['varusersusername']} name=userlist[] value={$eachuser['varusersusername']} /></center></td>";
 				$rtnstr .= "<td><center>{$eachuser['varusersusername']}</center></td>";
 				$terminaltype = $eachuser['varusersterminaltype']=='' ?  'Auto' : $eachuser['varusersterminaltype'];
 				$rtnstr .= "<td><center>".$terminaltype ."</center></td>";
@@ -134,7 +133,6 @@ if ($_POST['widgetkey']) {//???????????
 		$userpostfix++;
 		for ($i=$userpostfix;$i<$userpostfix+$vouchernumber;$i++){
 			$username = $userprefix.str_pad($i, 5, '0', STR_PAD_LEFT);
-			captiveportal_syslog(" !!!!!!!!!!!!!!!".$username);
 			$userexist = false;
 			foreach($config['installedpackages']['freeradius']['config'] as $item){
 				if($username === $item['varusersusername']){
@@ -269,18 +267,13 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 	<table class="table table-striped table-hover table-condensed">
 		<thead>
 		<tr>
-			<th center><center><input type="checkbox" id="alluser_select" name="userlist" value="alluser_select" onclick="selectAll(this)" /></center></th>
+			<th center><center><input class="alluser_selected" type="checkbox" id="alluser_select" name="userlist" value="alluser_select" onclick="selectAll(this)" /></center></th>
 			<th center><center><?=gettext("ID");?></center></th>
-
 			<th><center><?=gettext("Type");?></center></th>
 			<th><center><?=gettext("Update");?></center></th>
 			<th><center><?=gettext("# MB Allowed");?></center></th>
 			<th><center><?=gettext("# MB Used");?></center></th>
 			<th><center><?=gettext("Online");?></center></th>
-			<!--th><center><?=gettext("Password");?></center></th>
-			<th><center><?=gettext("Data");?></center></th>
-			<th><center><?=gettext("Remove");?></center></th-->
-
 		</tr>
 		</thead>
 		<tbody id="<?=htmlspecialchars($widgetkey)?>-manage_freeradiususer">
@@ -316,11 +309,8 @@ if(strpos(get_config_user(), "admin") !== false){
 	$echostr .= '<div id='.$widget_panel_footer_id.' class="panel-footer collapse">';
 	$echostr .= '<form name=registeruser action="/widgets/widgets/manage_freeradiususer.widget.php" method="post" class="form-horizontal">';
 	$echostr .= '<div><div class="form-group">';
-	//$echostr .= '<label class="col-sm-4 control-label">"Input User Information"</label>';
-	//$echostr .= '<div class="col-sm-6"><div class="radio"><label>User Name <input name="createusername" type="text"  value></label>';
-	//$echostr .= '<label>Password <input name="createuserpassword" type="text"  value></label>';
-	$echostr .= '<label>Allow data(MB)<input name="createuserquota" type="number"  value></label>';
-	$echostr .= '<label># of Vouchers <input name="createusernumber" type="number"  value></label>';
+	$echostr .= '<label>..          Allow data(MB)<input name="createuserquota" type="number"  value></label><p>';
+	$echostr .= '<label>..         # of Vouchers <input name="createusernumber" type="number"  value></label>';
 	$echostr .= '</div></div>';
 	$echostr .= '<label class="col-sm-4 control-label">"Reset/Terminal Type"</label>';
 	$echostr .= '<div class="col-sm-6">';
@@ -343,8 +333,7 @@ if(strpos(get_config_user(), "admin") !== false){
 	$echostr .= '<i class="fa fa-save icon-embed-btn"></i>';
 	$echostr .= 'Apply';
 	$echostr .= '</button>';
-	$echostr .= '</div></div></form>';
-	$echostr .= '</div></div>';
+	$echostr .= '</div></form>';
 }
 else{
 	$echostr .= '<div class="form-group">';
@@ -353,7 +342,7 @@ else{
 	$echostr .= '<i class="fa fa-save icon-embed-btn"></i>';
 	$echostr .= 'Reset Password';
 	$echostr .= '</button>';
-	$echostr .= '</form></div>';
+	$echostr .= '</form>';
 
 
 }
@@ -361,30 +350,25 @@ echo $echostr;
 
 ?>
 <script type="text/javascript">
-	/*events.push(function(){
-        // --------------------- Centralized widget refresh system ------------------------------
+	const checkboxes = document.querySelectorAll('.userlist', 'input[type="checkbox"]');
+	checkboxes.forEach(checkbox => {
+		checkbox.addEventListener('click', handleCheck);
+	});
+	let lastChecked;
+	function handleCheck(e) {
+		let inBetween = false;
+		if (e.shiftKey && this.checked) {
+			checkboxes.forEach(checkbox => {
+				if (checkbox === this || checkbox === lastChecked) {
+					inBetween = !inBetween;
+				}
 
-        // Callback function called by refresh system when data is retrieved
-        function manage_freeradiususer_callback(s) {
-            $(<?= json_encode('#' . $widgetkey .'-manage_freeradiususer')?>).html(s);
+				if (inBetween) {
+					checkbox.checked = true;
+				}
+			});
+		}
+
+		lastChecked = this;
 	}
-
-	// POST data to send via AJAX
-	var postdata = {
-		ajax: "ajax",
-		widgetkey : <?=json_encode($widgetkey)?>
-	 };
-	// Create an object defining the widget refresh AJAX call
-	var manage_freeradiususerObject= new Object();
-	manage_freeradiususerObject.name = "manage_freeradiususer";
-	manage_freeradiususerObject.url = "/widgets/widgets/manage_freeradiususer.widget.php";
-	manage_freeradiususerObject.callback = manage_freeradiususer_callback;
-	manage_freeradiususerObject.parms = postdata;
-	manage_freeradiususerObject.freq = 60;
-
-	// Register the AJAX object
-	register_ajax(manage_freeradiususerObject);
-
-	// ---------------------------------------------------------------------------------------------------
-});*/
 </script>
