@@ -338,7 +338,7 @@ if(strpos(get_config_user(), "admin") !== false){
 else{
 	$echostr .= '<div class="form-group">';
 	$echostr .= '<input type="hidden" name="widgetkey" value='.$widgetkey.'>';
-	$echostr .= '<button type="submit" onclick="confirm_resetPw();" class="btn btn-primary"  value="resetpw">';
+	$echostr .= '<button type="submit" onclick="confirm_resetPw();" class="btn btn-primary" name="resetpw" value="resetpw">';
 	$echostr .= '<i class="fa fa-save icon-embed-btn"></i>';
 	$echostr .= 'Reset Password';
 	$echostr .= '</button>';
