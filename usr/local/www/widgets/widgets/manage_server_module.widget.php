@@ -193,7 +193,7 @@ function send_api($url, $method, $postdata) {
 	$ch = curl_init();
 	curl_setopt_array($ch, array(
 		CURLOPT_URL => $url,
-		CURLOPT_TIMEOUT => 1,
+		CURLOPT_TIMEOUT => 5,
 		CURLOPT_MAXREDIRS => 10,
 		CURLOPT_CUSTOMREQUEST => $method,
 		CURLOPT_RETURNTRANSFER => TRUE,
