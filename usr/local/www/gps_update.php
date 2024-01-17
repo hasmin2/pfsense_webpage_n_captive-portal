@@ -55,7 +55,13 @@ $ch = curl_init();
 				break;
 		}
 	}
-	$heading = $decoded['results'][0]['series'][0]['values'][0][$headingIdx];
+    $headingstring = $decoded['results'][0]['series'][0]['values'][0][$headingIdx];
+	if(is_numeric($headingstring)){
+        $heading = $headingstring;
+    }
+    else{
+        $heading = 0;
+    }
 	$lat = $decoded['results'][0]['series'][0]['values'][0][$latIdx];
 	$lon = $decoded['results'][0]['series'][0]['values'][0][$lonIdx];
 	$latDir = $decoded['results'][0]['series'][0]['values'][0][$latDirIdx];
@@ -86,9 +92,13 @@ $ch = curl_init();
 		$checksum ^= ord($gpsdata_Array[$i]);
 	}
 	$current_gpsdata="\$". $current_gpsdata ."*" . dechex($checksum);
-	if($current_gpsdata!==$config['gpsdata']){
+	/*if($current_gpsdata!==$config['gpsdata']){
 		$config['gpsdata']= $current_gpsdata;
 		write_config("GPS_WRITE");
-	}
-
+	}*/
+    $filepath="/etc/inc/";
+    if(!file_exists($filepath."/gps_position.txt") || ($gps_file = fopen($filepath."/gps_position.txt", "w"))===false ){
+        touch($filepath."/gps_position.txt");
+    }
+    fwrite($gps_file, $current_gpsdata);
 ?>

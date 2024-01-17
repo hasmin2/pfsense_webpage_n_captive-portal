@@ -1767,10 +1767,12 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                 if ($result === true) {
                     $val = 3;
                     if (isset($config['captiveportal'][$cpzone]['terminate_duration'])){
-                        $result = false;
-                        $date = new DateTime();
-                        $timeduration = $config['captiveportal'][$cpzone]['terminate_timestamp']+ $config['captiveportal'][$cpzone]['terminate_duration']- round($date->getTimestamp()/60,0);
-                        $msg = "Portal has shutdown by ADMIN, wait for ". $timeduration." minutes.";
+                        if(strpos( $login, '00001') === false) {
+                            $result = false;
+                            $date = new DateTime();
+                            $timeduration = $config['captiveportal'][$cpzone]['terminate_timestamp'] + $config['captiveportal'][$cpzone]['terminate_duration'] - round($date->getTimestamp() / 60, 0);
+                            $msg = "Portal has shutdown by ADMIN, wait for " . $timeduration . " minutes.";
+                        }
                     }
                 }
 
@@ -2338,7 +2340,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
                 $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
                 captiveportal_disconnect_client($sessionid);
             } else {//사용량 확인함.
-                if (isset($config['captiveportal'][$cpzone]['terminate_duration'])){
+                if (isset($config['captiveportal'][$cpzone]['terminate_duration']) && (strpos( $username, '00001') === false)){
                     $title = "Disconnected by Admin!";
                     $portalbtnmessage="Click here to back home";
                     $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");

@@ -63,7 +63,16 @@ if (isset($id) && $a_gateways[$id]) {
 	$pconfig['terminal_type'] = $a_gateways[$id]['terminal_type'];
 	$pconfig['check_method'] = $a_gateways[$id]['check_method'];
 	$pconfig['rootinterface'] = $a_gateways[$id]['rootinterface'];
-	$pconfig['currentusage'] = $a_gateways[$id]['currentusage'];
+
+    $filepath= "/etc/inc/";
+    if(file_exists($filepath."/".$a_gateways[$id]['rootinterface']."_cumulative") && ($cumulative_file = fopen($filepath."/".$a_gateways[$id]['rootinterface']."_cumulative", "r"))!==false ){
+        $cur_usage = fgets($cumulative_file);
+        fclose($cumulative_file);
+    }
+    else {
+        $cur_usage = 0;
+    }
+    $pconfig['currentusage'] = $cur_usage;
 	$pconfig['allowance'] = $a_gateways[$id]['allowance'];
 	$pconfig['destinationip'] = $a_gateways[$id]['destinationip'];
 	$pconfig['check_timeout'] = $a_gateways[$id]['check_timeout'];

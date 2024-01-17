@@ -42,15 +42,13 @@ while (!feof($fd)) {
 		break;
 	}
 }
-sleep (10);
+#sleep (10);
 pclose($fd);
 $datastring="traffic ";
 global $config;
 $interface = $config['gateways']['gateway_item'];
 foreach (json_decode($json_string, true)["interfaces"] as $value) {
 	if(strpos($value['name'], "vtnet")!== false || strpos($value['name'], "ovpn")!==false){
-        //$datestring = $value["traffic"]["fiveminute"][0]["date"]["year"] . "-" . $value["traffic"]["fiveminute"][0]["date"]["month"] . "-" . $value["traffic"]["fiveminute"][0]["date"]["day"] . " " . $value["traffic"]["fiveminute"][0]["time"]["hour"] . ":" . $value["traffic"]["fiveminute"][0]["time"]["minute"] . ":00";
-        //$timestamp = strtotime($datestring)/60;
         $timestamp = (floor(time()/300))*5;
         $alias = $value['alias']==='' ? "none" : $value['alias'];
 
@@ -68,14 +66,50 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
         }
         $datastring .= $value['name']. "_rx=" . $rxdata.",".$value['name']. "_tx=" .$txdata.",";
     }
+    $filepath="/etc/inc/";
 	foreach ($interface as $key => $item) {
         if($value['name'] == $item['rootinterface']){
+            if(file_exists($filepath."/".$item['rootinterface']."_cumulative") && ($cumulative_file = fopen($filepath."/".$item['rootinterface']."_cumulative", "r"))!==false ){
+                $cur_usage = fgets($cumulative_file);
+            }
+            else {
+                touch($filepath."/".$item['rootinterface']."_cumulative");
+                $cur_usage=0;
+            }
+            fclose($cumulative_file);
+            if(file_exists($filepath."/".$item['rootinterface']."_tx") && ($use_file = fopen($filepath."/".$item['rootinterface']."_tx", "w"))!==false ){
+                $fivemintx = $value['traffic']['fiveminute'][0]['tx'];
+                fwrite ($use_file, round ($fivemintx/38400,0));
+            }
+            else {
+                $fivemintx=0;
+                touch($filepath."/".$item['rootinterface']."_tx");
+                fwrite ($use_file, 0);
+            }
+            fclose($use_file);
+            if(file_exists($filepath."/".$item['rootinterface']."_rx") && ($use_file = fopen($filepath."/".$item['rootinterface']."_rx", "w"))!==false ){
+                $fiveminrx = $value['traffic']['fiveminute'][0]['rx'];
+                fwrite ($use_file, round ($value['traffic']['fiveminute'][0]['rx']/38400,0));
+            }
+            else {
+                $fiveminrx=0;
+                touch($filepath."/".$item['rootinterface']."_rx");
+                fwrite ($use_file, 0);
+            }
+            fclose($use_file);
+
+            $currentusagegb = floatval($cur_usage) + round(($fivemintx + $fiveminrx)/1000000000, 6);
+            $cumulative_file = fopen($filepath."/".$item['rootinterface']."_cumulative", "w");
+            fwrite($cumulative_file, sprintf('%.6f',$currentusagegb));
+            fclose($cumulative_file);
+            echo $item['rootinterface'].":".$currentusagegb.",   tx".$fivemintx.",      rx".$fiveminrx."\n";
+            /*
             $config['gateways']['gateway_item'][$key]['speedtx']=round ($value['traffic']['fiveminute'][0]['tx']/38400,0);
             $config['gateways']['gateway_item'][$key]['speedrx']=round ($value['traffic']['fiveminute'][0]['rx']/38400,0);
             $currentusagegb = floatval($config['gateways']['gateway_item'][$key]['currentusage']);
             $currentusagegb += floatval(round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6));
             echo ("time:".$timestamp."  CurrentUsage : ".$currentusagegb."  Usage: ".round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6)." LastUsage:".$config['gateways']['gateway_item'][$key]['currentusage']."\n");
-            $config['gateways']['gateway_item'][$key]['currentusage'] = $currentusagegb;
+            $config['gateways']['gateway_item'][$key]['currentusage'] = $currentusagegb;*/
         }
 	}
 }
@@ -97,8 +131,8 @@ $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $error = curl_error($ch);
 curl_close($ch);
 
-sleep (1);
-write_config("networkusage update");
+//sleep (1);
+//write_config("networkusage update");
 
 
 function send_api($url, $method, $postdata) {

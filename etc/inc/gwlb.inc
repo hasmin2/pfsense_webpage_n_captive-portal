@@ -438,7 +438,7 @@ function get_dpinger_status($gwname, $gways = false, $action_disable = false) {
 /* return the status of the dpinger targets as an array */
 function return_gateways_status($byname = false, $gways = false) {
     global $config, $g;
-
+    $filepath="/etc/inc";
     $dpinger_gws = running_dpinger_processes();
     $status = array();
 
@@ -484,6 +484,7 @@ function return_gateways_status($byname = false, $gways = false) {
             : round($dpinger_status['loss'], 1) . "%";
         $status[$target]['status'] = $dpinger_status['status'];
         $status[$target]['substatus'] = $dpinger_status['substatus'];
+
         foreach($config['gateways']['gateway_item'] as $item){
             if($item['name'] === $gwname){
                 if($item['terminal_type']){
@@ -504,9 +505,6 @@ function return_gateways_status($byname = false, $gways = false) {
                 if($item['rootinterface']){
                     $status[$target]['rootinterface']=$item['rootinterface'];
                 }
-                if($item['currentusage']){
-                    $status[$target]['currentusage']=$item['currentusage'];
-                }
                 if($item['allowance']){
                     $status[$target]['allowance']=$item['allowance'];
                 }
@@ -519,7 +517,6 @@ function return_gateways_status($byname = false, $gways = false) {
             }
         }
         $gateway['descr'] = $gateway_settings['descr'];
-
     }
 
     /* tack on any gateways that have monitoring disabled
@@ -563,37 +560,33 @@ function return_gateways_status($byname = false, $gways = false) {
             $status[$target]['status'] = "online";
             $status[$target]['substatus'] = "none";
         }
-        foreach($config['gateways']['gateway_item'] as $item){
-            if($item['name'] === $gwname){
-               if($item['terminal_type']){
-                    $status[$target]['terminal_type']=$item['terminal_type'];
+        foreach($config['gateways']['gateway_item'] as $item) {
+            if ($item['name'] === $gwname) {
+                if ($item['terminal_type']) {
+                    $status[$target]['terminal_type'] = $item['terminal_type'];
+                } else {
+                    $status[$target]['terminal_type'] = 'tcp';
                 }
-                else{
-                    $status[$target]['terminal_type']='tcp';
+                if ($item['check_method']) {
+                    $status[$target]['check_method'] = $item['check_method'];
+                } else {
+                    $status[$target]['check_method'] = 'none';
                 }
-                if($item['check_method']){
-                    $status[$target]['check_method']=$item['check_method'];
+                if ($item['destinationip']) {
+                    $status[$target]['destinationip'] = $item['destinationip'];
                 }
-                else{
-                    $status[$target]['check_method']='none';
+                if ($item['rootinterface']) {
+                    $status[$target]['rootinterface'] = $item['rootinterface'];
+                    $rootinterface = $item['rootinterface'];
                 }
-                if($item['destinationip']){
-                    $status[$target]['destinationip']=$item['destinationip'];
+
+                if ($item['allowance']) {
+                    $status[$target]['allowance'] = $item['allowance'];
+                } else {
+                    $status[$target]['allowance'] = '0';
                 }
-                if($item['rootinterface']){
-                    $status[$target]['rootinterface']=$item['rootinterface'];
-                }
-                if($item['currentusage']){
-                    $status[$target]['currentusage']=$item['currentusage'];
-                }
-                if($item['allowance']){
-                    $status[$target]['allowance']=$item['allowance'];
-                }
-                else{
-                    $status[$target]['allowance']='0';
-                }
-                if($item['check_timeout']){
-                    $status[$target]['check_timeout']=$item['check_timeout'];
+                if ($item['check_timeout']) {
+                    $status[$target]['check_timeout'] = $item['check_timeout'];
                 }
             }
         }
@@ -683,14 +676,12 @@ function order_gateways_as_configured($gateways_arr) {
 */
 function return_gateways_array($disabled = false, $localhost = false, $inactive = false, $integer_index = false) {
     global $config, $g;
-
     $gateways_arr = array();
     $gateways_arr_temp = array();
     $cgw4 = route_get_default('inet');
     $cgw6 = route_get_default('inet6');
     $found_defaultv4 = 0;
     $found_defaultv6 = 0;
-
     // Ensure the interface cache is up to date first
     $interfaces = get_interface_arr(true);
 
@@ -2125,7 +2116,15 @@ function save_gateway($gateway_settings, $realid = "") {
     $gateway['destinationip'] = $gateway_settings['destinationip'];
     $gateway['allowance'] = $gateway_settings['allowance'];
     $gateway['rootinterface'] = $gateway_settings['rootinterface'];
-    $gateway['currentusage'] = $gateway_settings['currentusage'];
+    //$gateway['currentusage'] = $gateway_settings['currentusage'];
+    $filepath="/etc/inc";
+    $cumulative_file = fopen($filepath."/".$gateway_settings['rootinterface']."_cumulative", "w");
+    fwrite($cumulative_file, $gateway_settings['currentusage']);
+    fclose($cumulative_file);
+
+
+
+
     $gateway['check_timeout'] = $gateway_settings['check_timeout'];
 
     $gateway['descr'] = $gateway_settings['descr'];

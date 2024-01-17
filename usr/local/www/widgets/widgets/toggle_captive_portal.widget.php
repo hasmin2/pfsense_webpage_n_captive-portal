@@ -299,7 +299,7 @@ function add_linked_rule($serverip, $clientip){
                             </div>
                         </li>
                         <li class="list-group-item">
-                            Terminate private internet usage for  &nbsp;
+                            Terminate private internet usage except '00001' during &nbsp;
                             <select name="terminate_duration" size="1" <?echo($disabled);?>>
                                 <option value="5">5 minutes </option>
                                 <option value="30">30 minutes </option>

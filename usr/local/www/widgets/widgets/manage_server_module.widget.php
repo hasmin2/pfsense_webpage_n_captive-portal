@@ -162,8 +162,14 @@ function check_vsat_status_influxdb(){
 						break;
 				}
 			}
-			$heading = $decoded['results'][0]['series'][0]['values'][0][$headingIdx];
-			$lat = $decoded['results'][0]['series'][0]['values'][0][$latIdx];
+            $headingstring = $decoded['results'][0]['series'][0]['values'][0][$headingIdx];
+            if(is_numeric($headingstring)){
+                $heading = $headingstring;
+            }
+            else{
+                $heading = 0;
+            }
+            $lat = $decoded['results'][0]['series'][0]['values'][0][$latIdx];
 			$lon = $decoded['results'][0]['series'][0]['values'][0][$lonIdx];
 			$latDir = $decoded['results'][0]['series'][0]['values'][0][$latDirIdx];
 			$lonDir = $decoded['results'][0]['series'][0]['values'][0][$lonDirIdx];
