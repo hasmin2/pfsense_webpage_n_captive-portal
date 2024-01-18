@@ -65,7 +65,7 @@ if (isset($id) && $a_gateways[$id]) {
 	$pconfig['rootinterface'] = $a_gateways[$id]['rootinterface'];
 
     $filepath= "/etc/inc/";
-    if(file_exists($filepath."/".$a_gateways[$id]['rootinterface']."_cumulative") && ($cumulative_file = fopen($filepath."/".$a_gateways[$id]['rootinterface']."_cumulative", "r"))!==false ){
+    if(file_exists($filepath.$a_gateways[$id]['rootinterface']."_cumulative") && ($cumulative_file = fopen($filepath.$a_gateways[$id]['rootinterface']."_cumulative", "r"))!==false ){
         $cur_usage = fgets($cumulative_file);
         fclose($cumulative_file);
     }

@@ -438,7 +438,6 @@ function get_dpinger_status($gwname, $gways = false, $action_disable = false) {
 /* return the status of the dpinger targets as an array */
 function return_gateways_status($byname = false, $gways = false) {
     global $config, $g;
-    $filepath="/etc/inc";
     $dpinger_gws = running_dpinger_processes();
     $status = array();
 
@@ -2117,8 +2116,8 @@ function save_gateway($gateway_settings, $realid = "") {
     $gateway['allowance'] = $gateway_settings['allowance'];
     $gateway['rootinterface'] = $gateway_settings['rootinterface'];
     //$gateway['currentusage'] = $gateway_settings['currentusage'];
-    $filepath="/etc/inc";
-    $cumulative_file = fopen($filepath."/".$gateway_settings['rootinterface']."_cumulative", "w");
+    $filepath="/etc/inc/";
+    $cumulative_file = fopen($filepath.$gateway_settings['rootinterface']."_cumulative", "w");
     fwrite($cumulative_file, $gateway_settings['currentusage']);
     fclose($cumulative_file);
 

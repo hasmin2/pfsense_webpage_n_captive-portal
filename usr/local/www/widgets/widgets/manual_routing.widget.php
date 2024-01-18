@@ -271,7 +271,7 @@ if (!function_exists('compose_manual_routing_contents')) {
 			$signal_description = "title='Signal Level, below 70 is normally unable to make internet connection.&#10;70~120 may able to internet with similar speed with FB250/500.&#10;110~170 may surfing with average speed, Datausage can be calculated by sum of each terminal TX/RX usage'";
 			if($gateway['allowance'] && $gateway['allowance'] != ''){//once we have that metered gateway
                 $filepath = "/etc/inc/";
-                if(file_exists($filepath."/".$gateway['rootinterface']."_cumulative") && ($cumulative_file = fopen($filepath."/".$gateway['rootinterface']."_cumulative", "r"))!==false ){
+                if(file_exists($filepath.$gateway['rootinterface']."_cumulative") && ($cumulative_file = fopen($filepath.$gateway['rootinterface']."_cumulative", "r"))!==false ){
                     $cur_usage = fgets($cumulative_file);
                     fclose($cumulative_file);
                 }
@@ -284,14 +284,14 @@ if (!function_exists('compose_manual_routing_contents')) {
                 $quotausage = '<font color="gray">Unlimited</font>';
             }
             if ($gateway['rootinterface'] && $gateway['rootinterface'] != ''){
-                if(file_exists($filepath."/".$gateway['rootinterface']."_tx") && ($open_file = fopen($filepath."/".$gateway['rootinterface']."_tx", "r"))!==false ){
+                if(file_exists($filepath.$gateway['rootinterface']."_tx") && ($open_file = fopen($filepath.$gateway['rootinterface']."_tx", "r"))!==false ){
                     $txspeed = fgets($open_file);
                     fclose($open_file);
                 }
                 else {
                     $txspeed = 0;
                 }
-                if(file_exists($filepath."/".$gateway['rootinterface']."_rx") && ($open_file = fopen($filepath."/".$gateway['rootinterface']."_rx", "r"))!==false ){
+                if(file_exists($filepath.$gateway['rootinterface']."_rx") && ($open_file = fopen($filepath.$gateway['rootinterface']."_rx", "r"))!==false ){
                     $rxspeed = fgets($open_file);
                     fclose($open_file);
                 }
