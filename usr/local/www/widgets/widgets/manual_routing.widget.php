@@ -41,6 +41,7 @@ if (!function_exists('compose_manual_routing_contents')) {
 	function compose_manual_routing_contents($widgetkey) {
 		global $user_settings;
 		global $config;
+        $filepath = "/etc/inc/";
 		$rtnstr = '';
 
 		$a_gateways = return_gateways_array();
@@ -284,7 +285,6 @@ if (!function_exists('compose_manual_routing_contents')) {
                 $quotausage = '<font color="gray">Unlimited</font>';
             }
             if ($gateway['rootinterface'] && $gateway['rootinterface'] != ''){
-                $filepath = "/etc/inc/";
                 if(file_exists($filepath.$gateway['rootinterface']."_tx") && ($open_file = fopen($filepath.$gateway['rootinterface']."_tx", "r"))!==false ){
                     $txspeed = fgets($open_file);
                     fclose($open_file);
