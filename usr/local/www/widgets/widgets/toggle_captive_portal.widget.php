@@ -58,9 +58,9 @@ if ($_POST['widgetkey']) {//변경할때이므로
     if(isset($_POST['ipaddr'])){
         $config['interface']['ban_all_ip']=$_POST['ipaddr'];
     }
-    if(!isset($config['interface']['ban_all_ip'])){
+    /*if(!isset($config['interface']['ban_all_ip'])){
         $config['interface']['ban_all_ip']="";
-    }
+    }*/
     if($config['interface']['ban_all_ip']!=""){
         if(isset($_POST['ban_all'])){
             $config['interface']['ban_all']='';

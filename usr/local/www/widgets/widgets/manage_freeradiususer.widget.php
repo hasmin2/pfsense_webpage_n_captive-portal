@@ -40,28 +40,30 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
 		if(isset($config['installedpackages']['freeradius']['config'])){
 			$radiususers = &$config['installedpackages']['freeradius']['config'];
 			foreach ($radiususers as $eachuser) {
-				$rtnstr .= "<tr>";
-				$rtnstr .= "<td><center><input type=checkbox class=userlist id={$eachuser['varusersusername']} name=userlist[] value={$eachuser['varusersusername']} /></center></td>";
-				$rtnstr .= "<td><center>{$eachuser['varusersusername']}</center></td>";
-				$terminaltype = $eachuser['varusersterminaltype']=='' ?  'Auto' : $eachuser['varusersterminaltype'];
-				$rtnstr .= "<td><center>".$terminaltype ."</center></td>";
-				$rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctetstimerange']}</center></td>";
-				$rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctets']}&nbsp;MBytes</center></td>";
-				$used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
-				if($eachuser['varusersmodified']=="update"){$rtnstr .= "<td><center>Wait for logon</center></td>";}
-				else{$rtnstr .="<td><center>".number_format($used_quota,2,'.',',')." MBytes</center></td>";}
-				$cpdb = captiveportal_read_db();
-				if(count ($cpdb) == 0){
-					$rtnstr .= "<td><a></a></td>";
-				}
-				else {
-					$rtnstr .= "<td>";
-					foreach ($cpdb as $cpent) {
-						$eachuser['varusersusername'] === $cpent[4] ? $rtnstr .= "<center><font color='#adff2f'>Login</center>" : $rtnstr .= "<a></a>";
-					}
-					$rtnstr .= "</td>";
-				}
-				$widgetkey_html = htmlspecialchars($widgetkey);
+                if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername'])){
+                    $rtnstr .= "<tr>";
+                    $rtnstr .= "<td><center><input type=checkbox class=userlist id={$eachuser['varusersusername']} name=userlist[] value={$eachuser['varusersusername']} /></center></td>";
+                    $rtnstr .= "<td><center>{$eachuser['varusersusername']}</center></td>";
+                    $terminaltype = $eachuser['varusersterminaltype']=='' ?  'Auto' : $eachuser['varusersterminaltype'];
+                    $rtnstr .= "<td><center>".$terminaltype ."</center></td>";
+                    $rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctetstimerange']}</center></td>";
+                    $rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctets']}&nbsp;MBytes</center></td>";
+                    $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
+                    if($eachuser['varusersmodified']=="update"){$rtnstr .= "<td><center>Wait for logon</center></td>";}
+                    else{$rtnstr .="<td><center>".number_format($used_quota,2,'.',',')." MBytes</center></td>";}
+                    $cpdb = captiveportal_read_db();
+                    if(count ($cpdb) == 0){
+                        $rtnstr .= "<td><a></a></td>";
+                    }
+                    else {
+                        $rtnstr .= "<td>";
+                        foreach ($cpdb as $cpent) {
+                            $eachuser['varusersusername'] === $cpent[4] ? $rtnstr .= "<center><font color='#adff2f'>Login</center>" : $rtnstr .= "<a></a>";
+                        }
+                        $rtnstr .= "</td>";
+                    }
+                    $widgetkey_html = htmlspecialchars($widgetkey);
+                }
 			}
 		}
 		return($rtnstr);
