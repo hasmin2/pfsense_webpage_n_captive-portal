@@ -2298,11 +2298,10 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
     global $g, $config, $cpzone;
     $currentusercount=count(captiveportal_read_db());
     if($currentusercount==0){
-        $crewspeed = get_expected_speed()/($currentusercount+1);
+        $crewspeed = 0;
     } else {
-        $crewspeed = get_expected_speed()/$currentusercount;
+        $crewspeed = get_expected_speed()/($currentusercount);
     }
-
     $cpcfg = $config['captiveportal'][$cpzone];
     $ourhostname = portal_hostname_from_client_ip($clientip);
     $protocol = (isset($cpcfg['httpslogin'])) ? 'https://' : 'http://';
