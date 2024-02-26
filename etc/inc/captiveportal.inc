@@ -2296,6 +2296,12 @@ function portal_hostname_from_client_ip($cliip) {
 
 function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = null, $clientip = null, $username = null, $password = null, $voucher = null) {
     global $g, $config, $cpzone;
+    $currentusercount=count(captiveportal_read_db());
+    if($currentusercount==0){
+        $crewspeed = get_expected_speed()/($currentusercount+1);
+    } else {
+        $crewspeed = get_expected_speed()/$currentusercount;
+    }
 
     $cpcfg = $config['captiveportal'][$cpzone];
     $ourhostname = portal_hostname_from_client_ip($clientip);
@@ -2370,10 +2376,11 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             captiveportal_disconnect_client($sessionid);
             write_config("FreeRADIUS user change applied");
         }
-        $portalinfobtnmessage = "The page refresh every 30secs.";
+        $portalinfobtnmessage = "{$currentusercount}crew connected.Your spd is{$crewspeed}Kbps";
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     } else if ($type == "login") {
         $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal_{$cpzone}.html");
+        $portalinfobtnmessage = "{$currentusercount} crew connected. You may get {$crewspeed}Kbps";
     } else if ($type == "check_quota") {
         if(!empty($username)){
             foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
@@ -3278,10 +3285,10 @@ function del_crew_linked_rule($sourceip, $userid){
 
         foreach($config['filter']['rule'] as $key => $value){
             if($value['interface']==$config['captiveportal']['crew']['interface']
-               && $value['descr']=="[User Rule] ${userid} auto generated rule"
-               && $value['gateway']==$terminaltype){
-		        unset ($config['filter']['rule'][$key]);
-		        filter_configure();
+                && $value['descr']=="[User Rule] ${userid} auto generated rule"
+                && $value['gateway']==$terminaltype){
+                unset ($config['filter']['rule'][$key]);
+                filter_configure();
                 $result = true;
             }
         }
@@ -3338,5 +3345,22 @@ function add_crew_linked_rule($sourceip, $userid){
     array_push($config['filter']['rule'], $newrule);
     filter_configure();
 }
-
+function get_expected_speed(){
+    if(file_exists("/etc/inc/crew_rx") && ($crew_file = fopen("/etc/inc/crew_rx", "r"))!==false ){
+        $crew_rx = fgets($crew_file);
+    }
+    else {
+        $crew_rx = 0;
+    }
+    fclose($crew_file);
+    if(file_exists("/etc/inc/crew_tx") && ($crew_file = fopen("/etc/inc/crew_tx", "r"))!==false ){
+        $crew_tx = fgets($crew_file);
+    }
+    else {
+        $crew_tx = 0;
+    }
+    fclose($crew_file);
+    $result = $crew_tx+$crew_rx;
+    return $result;
+}
 ?>

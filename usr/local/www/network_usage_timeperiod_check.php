@@ -47,6 +47,7 @@ pclose($fd);
 $datastring="traffic ";
 global $config;
 $interface = $config['gateways']['gateway_item'];
+$filepath="/etc/inc/";
 foreach (json_decode($json_string, true)["interfaces"] as $value) {
 	if(strpos($value['name'], "vtnet")!== false || strpos($value['name'], "ovpn")!==false){
         $timestamp = (floor(time()/300))*5;
@@ -65,10 +66,39 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
             $txdata = 0;
         }
         $datastring .= $value['name']. "_rx=" . $rxdata.",".$value['name']. "_tx=" .$txdata.",";
+        $crew_interface = $config['captiveportal']['crew']['interface'];
+        foreach ($config['interfaces'] as $crew_key => $crew_value){
+            if($crew_key === $crew_interface){
+                $crew_rootinterface = $crew_value['if'];
+                break;
+            }
+        }
+        if($value['name']=== $crew_rootinterface){
+
+            if(file_exists($filepath."crew_tx") && ($crew_file = fopen($filepath."crew_tx", "w"))!==false ){
+                $fivemintx = $value['traffic']['fiveminute'][0]['tx'];
+                fwrite ($crew_file, round ($fivemintx/38400,0));
+            }
+            else {
+                touch($filepath."crew_tx");
+                fwrite ($crew_file, 0);
+            }
+            fclose($crew_file);
+            if(file_exists($filepath."crew_rx") && ($crew_file = fopen($filepath."crew_rx", "w"))!==false ){
+                $fiveminrx = $value['traffic']['fiveminute'][0]['rx'];
+                fwrite ($crew_file, round ($fiveminrx/38400,0));
+            }
+            else {
+                touch($filepath."crew_rx");
+                fwrite ($crew_file, 0);
+            }
+            fclose($crew_file);
+            echo "crew : tx".$fivemintx.",      rx".$fiveminrx."\n";
+        }
     }
-    $filepath="/etc/inc/";
+
 	foreach ($interface as $key => $item) {
-        if($value['name'] == $item['rootinterface']){
+        if($value['name'] === $item['rootinterface']){
             if(file_exists($filepath.$item['rootinterface']."_cumulative") && ($cumulative_file = fopen($filepath.$item['rootinterface']."_cumulative", "r"))!==false ){
                 $cur_usage = fgets($cumulative_file);
             }
@@ -103,13 +133,6 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
             fwrite($cumulative_file, sprintf('%.6f',$currentusagegb));
             fclose($cumulative_file);
             echo $item['rootinterface'].":".$currentusagegb.",   tx".$fivemintx.",      rx".$fiveminrx."\n";
-            /*
-            $config['gateways']['gateway_item'][$key]['speedtx']=round ($value['traffic']['fiveminute'][0]['tx']/38400,0);
-            $config['gateways']['gateway_item'][$key]['speedrx']=round ($value['traffic']['fiveminute'][0]['rx']/38400,0);
-            $currentusagegb = floatval($config['gateways']['gateway_item'][$key]['currentusage']);
-            $currentusagegb += floatval(round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6));
-            echo ("time:".$timestamp."  CurrentUsage : ".$currentusagegb."  Usage: ".round(($value['traffic']['fiveminute'][0]['rx'] + $value['traffic']['fiveminute'][0]['tx'])/1000000000, 6)." LastUsage:".$config['gateways']['gateway_item'][$key]['currentusage']."\n");
-            $config['gateways']['gateway_item'][$key]['currentusage'] = $currentusagegb;*/
         }
 	}
 }
@@ -185,11 +208,11 @@ function get_module_status(){
 				   $statusitem['status'] === 'STOPPING' ||
 				   $statusitem['status'] === 'STOPPING_ERROR'
 				   ) {
-					$core_module_status = 2;
+					$core_status = 2;
 					break;
 				}
 			}
-			if($core_module_status === 2){
+			if($core_status === 2){
 				break;
 			}
 		}

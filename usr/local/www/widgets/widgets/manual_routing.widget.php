@@ -340,7 +340,7 @@ if ($_REQUEST && $_REQUEST['ajax']) {
 	print(compose_manual_routing_contents($_REQUEST['widgetkey']));
 	exit;
 }
-if ($_POST['widgetkey']) {//     Ҷ  ̹Ƿ
+if ($_POST['widgetkey']) {
     global $config;
 	if($_POST['routing_radiobutton']){
 		if($_POST['routing_radiobutton']!="Automatic"){
@@ -348,7 +348,7 @@ if ($_POST['widgetkey']) {//     Ҷ  ̹Ƿ
                 foreach ($config['gateways']['gateway_item'] as $key => $gateway){//Both Rule and gateways item
                     if($ruleitem['gateway']==$config['gateways']['defaultgw4']){
                         //Old gateway rules disable if it is.
-                        $config['filter']['rule'][$index]['disabled']="";
+                        //$config['filter']['rule'][$index]['disabled']="";
                     }
                     if($ruleitem['gateway']==$_POST['routing_radiobutton']){
                         //renew gateway rules Enable if it is.
@@ -363,6 +363,45 @@ if ($_POST['widgetkey']) {//     Ҷ  ̹Ƿ
 			unset ($config['gateways']['manualrouteduration']);
 			unset ($config['gateways']['manualroutetimestamp']);
 		}
+        /*foreach($config['interfaces'] as $key => $interface){
+            if($interface['descr'] === 'BUSINESS'){
+                $ifname = $key;
+            }
+        }
+        foreach ($config['filter']['rule'] as $index => $ruleitem){
+            if($ruleitem['interface']==$ifname){
+                if($ruleitem['descr']=="[User Rule] $ifname routing auto generated rule"){
+                    unset($config['filter']['rule'][$index]);
+                }
+            }
+        }
+
+        $newrule = array();
+        $newrule['id'] = '';
+        $newrule['tracker']=time();
+        $newrule['type']='pass';
+        $newrule['interface']=$ifname;
+        $newrule['ipprotocol']='inet';
+        $newrule['tag'] = '';
+        $newrule['tagged'] = '';
+        $newrule['max'] = '200';
+        $newrule['max-src-nodes'] = '';
+        $newrule['max-src-conn'] = '';
+        $newrule['max-src-states'] = '';
+        $newrule['statetimeout'] = '';
+        $newrule['statetype'] = 'keep state';
+        $newrule['os'] = '';
+        $newrule['protocol'] = 'tcp';
+        $newrule['source']['network']=$ifname;
+        $newrule['destination']['any']='';
+        $newrule['destination']['port']='11111';
+        $newrule['descr']="[User Rule] $ifname routing auto generated rule";
+        $newrule['updated']['time']=time();
+        $newrule['updated']['username']='admin@$ifname';
+        $newrule['created']['time']=time();
+        $newrule['created']['username']='admin@$ifname';
+        array_push($config['filter']['rule'], $newrule);*/
+
 		$date = new DateTime();
 	    $config['gateways']['manualroutetimestamp']= round($date->getTimestamp()/60,0);
 	 	write_config("manual routing");
