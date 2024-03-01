@@ -114,12 +114,18 @@ if ($_POST['widgetkey']) {//???????????
 		$vouchernumber = $_POST['createusernumber'];
 		$terminaltype= "";
 		if($_POST['createuserterminaltype'] != ""){
-			foreach ($config['interfaces'] as $gwname => $gwitem){
+			/*foreach ($config['interfaces'] as $gwname => $gwitem){
 				if(is_array($gwitem) && $gwname == $_POST['createuserterminaltype']) {
 					$terminaltype=$gwitem['descr'];
 					break;
 				}
-			}
+			}*/
+            foreach ($config['gateways']['gateway_item'] as $key => $gwitem){
+                if(is_array($gwitem) && $gwitem['name'] == $_POST['createuserterminaltype']) {
+                    $terminaltype=$gwitem['name'];
+                    break;
+                }
+            }
 		}
 		$userprefix=strtolower($terminaltype).'user';
 		$userpostfix = 0;
@@ -324,11 +330,16 @@ if(strpos(get_config_user(), "admin") !== false){
 	$echostr .= '<class="radio"></class>';
 	$echostr .= '<select name="createuserterminaltype" size="1">';
 	$echostr .= '<option value="">Auto </option>';
-	foreach ($config['interfaces'] as $gwname => $gwitem) {
-		if (is_array($gwitem) && isset($gwitem['alias-subnet'])) {
-			$echostr .= '<option value='.$gwname.'> '.$gwitem["descr"]. '</option>';
+	foreach ($config['gateways']['gateway_item'] as $key => $gwitem) {
+		if (is_array($gwitem) && strpos($gwitem['name'], "VPN") !== true) {
+			$echostr .= '<option value='.$gwitem['name'].'> '.$gwitem["name"]. '</option>';
 		}
 	}
+    /*foreach ($config['interfaces'] as $gwname => $gwitem) {
+        if (is_array($gwitem) && isset($gwitem['alias-subnet'])) {
+            $echostr .= '<option value='.$gwname.'> '.$gwitem["descr"]. '</option>';
+        }
+    }*/
 	$echostr .= '</select></div></div></br>';
 	$echostr .= '<input type="hidden" name="widgetkey" value='.$widgetkey.'><div>';
 	$echostr .= '<button type="submit" class="btn btn-primary">';

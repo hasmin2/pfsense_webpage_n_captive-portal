@@ -3284,8 +3284,7 @@ function del_crew_linked_rule($sourceip, $userid){
 
         foreach($config['filter']['rule'] as $key => $value){
             if($value['interface']==$config['captiveportal']['crew']['interface']
-                && $value['descr']=="[User Rule] ${userid} auto generated rule"
-                && $value['gateway']==$terminaltype){
+                && $value['descr']=="[User Rule] ${userid} auto generated rule"){
                 unset ($config['filter']['rule'][$key]);
                 filter_configure();
                 $result = true;
