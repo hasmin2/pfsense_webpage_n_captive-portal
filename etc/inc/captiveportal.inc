@@ -1624,7 +1624,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
         return array('result'=> false, 'attributes'=>$reply_attributes, 'auth_method' =>$auth_method, 'login_status'=> $login_status, 'login_message' => "User doesn't exist.");
     } else { //사용자 확인됨. 넘어감 //사용량이 초과한건지 확인함
         //먼저 사용자 업데이트 상황이 있는지 확인
-        if($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified']){
+        if($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified'] && $login!==''){
             //첫번째로 사용량 리셋 있는지? 이건 다른것과 달리 파일을 지워야해서 따로 뺌
             unset($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified']);
             if($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']){
@@ -1636,14 +1636,6 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
             //다음으로 수정사항이 있으면 유저 리싱크 함.
             freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
         }
-        //사용량을 베이스 + 현재 사용량으로 재환산 해서 정해야 함.ㄴ
-        /*$sessioncfg = already_connected($clientip, $clientmac);//세션이 있는지 확인하고 현재 사용량을 확인한다.
-        $sessionid = $sessioncfg[5];
-        $currentquota=getcurquota($sessionid, $clientip);
-        $maxquota=getmaxquota($sessionid);
-        if($currentquota>$maxquota){
-            return array('result'=> false, 'attributes'=>$reply_attributes, 'auth_method' =>$auth_method, 'login_status'=> $login_status, 'login_message' => "Exceeded allocate Data usage.");
-        }*/
     }
     //////////////////////////////////////////////////////////////////////////////////////////////////    //////////////////////////////////////////////////////////////////////////////////////////////////    //////////////////////////////////////////////////////////////////////////////////////////////////
 
