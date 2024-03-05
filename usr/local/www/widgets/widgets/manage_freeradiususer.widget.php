@@ -46,7 +46,8 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
                     $rtnstr .= "<td><center>{$eachuser['varusersusername']}</center></td>";
                     $terminaltype = $eachuser['varusersterminaltype']=='' ?  'Auto' : $eachuser['varusersterminaltype'];
                     $rtnstr .= "<td><center>".$terminaltype ."</center></td>";
-                    $rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctetstimerange']}</center></td>";
+                    $usertimeperiod = $eachuser['varuserspointoftime'] == "forever" ? "one-time":$eachuser['varuserspointoftime'];
+                    $rtnstr .="<td><center>{$usertimeperiod}</center></td>";
                     $rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctets']}&nbsp;MBytes</center></td>";
                     $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
                     if($eachuser['varusersmodified']=="update"){$rtnstr .= "<td><center>Wait for logon</center></td>";}
@@ -325,7 +326,7 @@ if(strpos(get_config_user(), "admin") !== false){
 	$echostr .= '<div class="radio"><class>';
 	$echostr .= '<select name="createsuerquotaperiod" size="1">';
 	$echostr .= '<option value="monthly">Monthly </option>';
-	$echostr .= '<option value="forever">Forever </option>';
+	$echostr .= '<option value="forever">Onetime </option>';
 	$echostr .= '<option value="daily">Daily </option></select>';
 	$echostr .= '<class="radio"></class>';
 	$echostr .= '<select name="createuserterminaltype" size="1">';
