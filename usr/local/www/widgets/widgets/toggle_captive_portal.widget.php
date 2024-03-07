@@ -58,7 +58,7 @@ if ($_POST['widgetkey']) {//변경할때이므로
     if(isset($_POST['ipaddr'])){
         $config['ban_all_ip']=$_POST['ipaddr'];
     }
-    if($config[]['ban_all_ip']!=""){
+    if($config['ban_all_ip']!=""){
         if(isset($_POST['ban_all'])){
             $config['ban_all']='';
             add_linked_rule($serverip, $config['ban_all_ip']);
