@@ -56,19 +56,16 @@ if ($_POST['widgetkey']) {//변경할때이므로
         }
     }
     if(isset($_POST['ipaddr'])){
-        $config['interface']['ban_all_ip']=$_POST['ipaddr'];
+        $config['ban_all_ip']=$_POST['ipaddr'];
     }
-    /*if(!isset($config['interface']['ban_all_ip'])){
-        $config['interface']['ban_all_ip']="";
-    }*/
-    if($config['interface']['ban_all_ip']!=""){
+    if($config[]['ban_all_ip']!=""){
         if(isset($_POST['ban_all'])){
-            $config['interface']['ban_all']='';
-            add_linked_rule($serverip, $config['interface']['ban_all_ip']);
+            $config['ban_all']='';
+            add_linked_rule($serverip, $config['ban_all_ip']);
         }
         else{
-            unset($config['interface']['ban_all']);
-            del_linked_rule($serverip, $config['interface']['ban_all_ip']);
+            unset($config['ban_all']);
+            del_linked_rule($serverip, $config['ban_all_ip']);
         }
     }
     if($_POST['auto_portal_enable']){
@@ -265,8 +262,8 @@ function add_linked_rule($serverip, $clientip){
                         else{
                             $autoportal="";
                         }
-                        $ban_all_ip = $config['interface']['ban_all_ip'];
-                        if(isset($config['interface']['ban_all'])){
+                        $ban_all_ip = $config['ban_all_ip'];
+                        if(isset($config['ban_all'])){
                             $banned= "checked";
                         }
                         else{

@@ -1602,6 +1602,9 @@ function captiveportal_syslog($message) {
 
 /* Authenticate users using Authentication Backend */
 function captiveportal_authenticate_user(&$login = '', &$password = '', $clientmac = '', $clientip = '', $pipeno = 'null', $context = 'first') {
+    if($login===''){
+        return array('result'=> false, 'attributes'=>array(), 'auth_method' =>'', 'login_status'=> 'FAILURE', 'login_message' => "User doesn't exist.");
+    }
     global $g, $config, $cpzone;
     $cpcfg = $config['captiveportal'][$cpzone];
 
