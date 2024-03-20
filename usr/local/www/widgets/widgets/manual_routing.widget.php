@@ -34,6 +34,7 @@ require_once("guiconfig.inc");
 require_once("pfsense-utils.inc");
 require_once("functions.inc");
 require_once("openvpn.inc");
+require_once("captiveportal.inc");
 require_once("/usr/local/www/widgets/include/manual_routing.inc");
 
 
@@ -167,7 +168,7 @@ if (!function_exists('compose_manual_routing_contents')) {
 				$online = gettext("No Connection");
 				$bgcolor = "info";  // lightblue
 			}
-			if ($gateways_status[$gname]) {
+			if ($gateways_status[$gname] && stristr($gateways_status[$gname]['status'], "online")) {
 				if($gateways_status[$gname]['check_method'] == 'none') {
 					$pingcolor="success";
 					$pingresult="Online";
@@ -344,18 +345,6 @@ if ($_POST['widgetkey']) {
     global $config;
 	if($_POST['routing_radiobutton']){
 		if($_POST['routing_radiobutton']!="Automatic"){
-            foreach($config['filter']['rule'] as $index => $ruleitem){
-                foreach ($config['gateways']['gateway_item'] as $key => $gateway){//Both Rule and gateways item
-                    if($ruleitem['gateway']==$config['gateways']['defaultgw4']){
-                        //Old gateway rules disable if it is.
-                        //$config['filter']['rule'][$index]['disabled']="";
-                    }
-                    if($ruleitem['gateway']==$_POST['routing_radiobutton']){
-                        //renew gateway rules Enable if it is.
-                        unset ($config['filter']['rule'][$index]['disabled']);
-                    }
-                }
-            }
 		    $config['gateways']['defaultgw4']=$_POST['routing_radiobutton'];
 		    $config['gateways']['manualrouteduration']= $_POST['routeduration'];
 		}
@@ -363,45 +352,46 @@ if ($_POST['widgetkey']) {
 			unset ($config['gateways']['manualrouteduration']);
 			unset ($config['gateways']['manualroutetimestamp']);
 		}
-        /*foreach($config['interfaces'] as $key => $interface){
-            if($interface['descr'] === 'BUSINESS'){
-                $ifname = $key;
-            }
-        }
-        foreach ($config['filter']['rule'] as $index => $ruleitem){
-            if($ruleitem['interface']==$ifname){
-                if($ruleitem['descr']=="[User Rule] $ifname routing auto generated rule"){
-                    unset($config['filter']['rule'][$index]);
+
+        /*PRESET REQUIRED*/
+        if(isset($config['gagteway_profile'])){
+            foreach ($config['gateway_profile'] as $item) {
+                foreach ($config['filter']['rule'] as $index => $ruleitem) {
+                    if ($item['desc'] === $ruleitem['desc'] &&
+                        $config['gateways']['defaultgw4'] !== $config['gateways_profile']['gateway']) {
+                        unset ($config['filter']['rule'][$index]);
+                    }
+                    if ($config['gateways']['defaultgw4'] === $item['gateway']) {
+                        //add the profile to rules.
+                        /*$newrule = array();
+                        $newrule['id'] = '';
+                        $newrule['tracker']=time();
+                        $newrule['type']='pass';
+                        $newrule['interface']=$ifname;
+                        $newrule['ipprotocol']='inet';
+                        $newrule['tag'] = '';
+                        $newrule['tagged'] = '';
+                        $newrule['max'] = '200';
+                        $newrule['max-src-nodes'] = '';
+                        $newrule['max-src-conn'] = '';
+                        $newrule['max-src-states'] = '';
+                        $newrule['statetimeout'] = '';
+                        $newrule['statetype'] = 'keep state';
+                        $newrule['os'] = '';
+                        $newrule['protocol'] = $item['protocol'];
+                        $newrule['source']['network'];
+                        $newrule['destination']['any']='';
+                        $newrule['destination']['port']='11111';
+                        $newrule['descr']="[User Rule] $ifname routing auto generated rule";
+                        $newrule['updated']['time']=time();
+                        $newrule['updated']['username']='admin@$ifname';
+                        $newrule['created']['time']=time();
+                        $newrule['created']['username']='admin@$ifname';*/
+                        array_push($config['filter']['rule'], $item);
+                    }
                 }
             }
         }
-
-        $newrule = array();
-        $newrule['id'] = '';
-        $newrule['tracker']=time();
-        $newrule['type']='pass';
-        $newrule['interface']=$ifname;
-        $newrule['ipprotocol']='inet';
-        $newrule['tag'] = '';
-        $newrule['tagged'] = '';
-        $newrule['max'] = '200';
-        $newrule['max-src-nodes'] = '';
-        $newrule['max-src-conn'] = '';
-        $newrule['max-src-states'] = '';
-        $newrule['statetimeout'] = '';
-        $newrule['statetype'] = 'keep state';
-        $newrule['os'] = '';
-        $newrule['protocol'] = 'tcp';
-        $newrule['source']['network']=$ifname;
-        $newrule['destination']['any']='';
-        $newrule['destination']['port']='11111';
-        $newrule['descr']="[User Rule] $ifname routing auto generated rule";
-        $newrule['updated']['time']=time();
-        $newrule['updated']['username']='admin@$ifname';
-        $newrule['created']['time']=time();
-        $newrule['created']['username']='admin@$ifname';
-        array_push($config['filter']['rule'], $newrule);*/
-
 		$date = new DateTime();
 	    $config['gateways']['manualroutetimestamp']= round($date->getTimestamp()/60,0);
 	 	write_config("manual routing");
@@ -417,7 +407,6 @@ if ($_POST['widgetkey']) {
                 unset($config['openvpn']['openvpnrestart']);
             }
             foreach($clients as $client){
-                openvpn_restart_by_vpnid('client', $client['vpnid']);
             }
         }
 		else{

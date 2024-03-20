@@ -32,7 +32,7 @@ require_once("freeradius.inc");
 require_once ("captiveportal.inc");
 require_once ("auth.inc");
 require_once("/usr/local/www/widgets/include/manage_freeradiususer.inc");
-
+$passwordlist;
 
 if (!function_exists('compose_manage_freeradiususer_contents')) {
 	function compose_manage_freeradiususer_contents($widgetkey) {
@@ -193,7 +193,19 @@ if ($_POST['widgetkey']) {//???????????
 				"varusersresetquota"=>"true",
 			);
 			$userinfoentry['varusersusername']=$username;
-			$userinfoentry['varuserspassword']='1111';
+            if($_POST['createsuerquotaperiod']==="forever"){
+                $alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
+                $pass = array(); //remember to declare $pass as an array
+                $alphaLength = strlen($alphabet) - 1; //put the length -1 in cache
+                for ($i = 0; $i < 8; $i++) {
+                    $n = rand(0, $alphaLength);
+                    $pass[] = $alphabet[$n];
+                }
+                $userinfoentry['varuserspassword']= implode($pass);
+            }
+            else{
+                $userinfoentry['varuserspassword']="1111";
+            }
 			if(is_numeric($_POST['createuserquota'])){
 				$userinfoentry['varusersmaxtotaloctets']=$_POST['createuserquota'];
 			}
@@ -264,6 +276,31 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 	function confirm_delUser(){
 		return window.confirm(`Selected user IDs are being deleted, OK to continue.`);
 	}
+    function confirm_checkPw(){
+        var pwlist = "<?php
+            $passwordlist = array();
+            foreach ($config['installedpackages']['freeradius']['config'] as $item=>$userentry) {
+                if($userentry['varusersusername']!=='synersat'){
+                    array_push($passwordlist, $userentry['varuserspassword']);
+                }
+            }
+            echo implode(", ", $passwordlist);
+        ?>";
+
+        var result="";
+        var resultlist = document.getElementsByName('userlist[]');
+        for(let i=0; i<resultlist.length; i++){
+            if(resultlist[i].checked){
+                result += "\n" + resultlist[i].value + " : " + pwlist.split(",")[i];
+            }
+        }
+        if(result===''){
+            return window.alert("No user selected");
+        }
+        else{
+            return window.alert(result);
+        }
+    }
 	function selectAll(selectAll)  {
 		const checkboxes
 			= document.getElementsByName('userlist[]');
@@ -304,7 +341,7 @@ if(strpos(get_config_user(), "admin") !== false){
 	$echostr .= '<input type="hidden" name="widgetkey" value='.$widgetkey.'>';
 	$echostr .= '<button type="submit" onclick="confirm_resetPw();" class="btn btn-primary" name="resetpw" value="resetpw">';
 	$echostr .= '<i class="fa fa-save icon-embed-btn"></i>';
-	$echostr .= 'Reset Password';
+	$echostr .= 'Reset PW';
 	$echostr .= '</button>';
 	$echostr .= '<button type="submit" onclick="confirm_resetData();" class="btn btn-primary" name="resetuser" value="resetuser">';
 	$echostr .= '<i class="fa fa-save icon-embed-btn"></i>';
@@ -314,8 +351,13 @@ if(strpos(get_config_user(), "admin") !== false){
 	$echostr .= '<i class="fa fa-save icon-embed-btn"></i>';
 	$echostr .= 'Delete';
 	$echostr .= '</button>';
-	$echostr .= '</form></div>';
-	$echostr .= '<div id='.$widget_panel_footer_id.' class="panel-footer collapse">';
+	$echostr .= '</form>';
+    $echostr .= '<button type="submit" onclick="confirm_checkPw();" class="btn btn-primary" name="checkpw" value="checkpw">';
+    $echostr .= '<i class="fa fa-save icon-embed-btn"></i>';
+    $echostr .= 'Check PW';
+    $echostr .= '</button>';
+    $echostr .= '</div>';
+    $echostr .= '<div id='.$widget_panel_footer_id.' class="panel-footer collapse">';
 	$echostr .= '<form name=registeruser action="/widgets/widgets/manage_freeradiususer.widget.php" method="post" class="form-horizontal">';
 	$echostr .= '<div><div class="form-group">';
 	$echostr .= '<label>..          Allow data(MB)<input name="createuserquota" type="number"  value></label><p>';

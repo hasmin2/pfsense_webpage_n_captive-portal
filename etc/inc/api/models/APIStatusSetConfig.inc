@@ -12,30 +12,27 @@
 //   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
+
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 
-class APISystemLanStateUpdate extends APIModel {
+class APIStatusSetConfig extends APIModel {
     # Create our method constructor
     public function __construct() {
         parent::__construct();
-        $this->privileges = ["page-all", "page-system-advanced-admin"];
-        $this->change_note = "Reset LANstate by operator lan connect/disconnect";
+        $this->privileges = ["page-all", "page-system-gateways"];
     }
-
     public function action() {
-        if(isset($this->initial_data['lanstate'])){
-            $lanstate["lanstate"] = $this->initial_data['lanstate'];
-            $this->config['interface']=$lanstate;
+	global $config;
+        if($this->initial_data['config']){
+            $this->config = $this->initial_data['config'];
             $this->write_config();
-            system_routing_configure();
-            system_resolvconf_generate();
-            filter_configure();
-            setup_gateways_monitor();
-            return APIResponse\get(0,($this->config['interface']['lanstate']));
+            return APIResponse\get(0, ("applied successful"));
         }
         else {
-            return APIResponse\get(0,("no lanstate defined, put 'lanstate' and input proper format as JSON MAP format"));
+            return APIResponse\get(0,("no config defined, put 'config' and input proper format as JSON MAP format"));
         }
     }
 }
+
+?>

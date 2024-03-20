@@ -32,6 +32,7 @@ require_once("Auth/RADIUS.php"); // required for radius accounting
 require_once("config.inc");
 require_once("functions.inc");
 require_once("filter.inc");
+require_once("gwlb.inc");
 include_once("freeradius.inc");
 require_once("voucher.inc");
 require_once("xmlrpc_client.inc");
@@ -2333,34 +2334,57 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             }
         }
         if (isset($userindex)){//사용자가 있을 때
-            if ($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified']=="update"){
-                $title="Updating..";
-                $portalbtnmessage= "Update received. Tap to re-login";
-                $portalinfobtnmessage = "Please login to apply changes";
-                $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
-                captiveportal_disconnect_client($sessionid);
-            } else {//사용량 확인함.
-                if (isset($config['captiveportal'][$cpzone]['terminate_duration']) && (strpos( $username, '00001') === false)){
-                    $title = "Disconnected by Admin!";
-                    $portalbtnmessage="Click here to back home";
-                    $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
-                }
-                else{
-                    $currentquota=getcurquota($sessionid, $clientip);
-                    $maxquota=getmaxquota($sessionid);
-                    if($currentquota<$maxquota){
-                        $title = "You are Online!";
-                        $portalbtnmessage="Click here to log out";
-                        $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
-                    } else {
-                        $title = "Login Failed!";
-                        $message="You reached allocated data amount.\nContact system admin";
-                        $portalbtnmessage="Click here to back home";
-                        $portalerrbtnmessage=$maxquota."MB limit reached.";
-                        captiveportal_disconnect_client($sessionid, "Usage-Exceed");
-                        $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
+            $isexist=false;//게이트웨이가 있는지 확인함.
+            if(isset($config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype'])){
+                $varusersterminaltype=$config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype'];
+                foreach(return_gateways_status(true) as $gwitem){
+                    if($varusersterminaltype===$gwitem['name']){
+                        $isexist = true;
+                        break;
                     }
                 }
+            }
+            else{
+                $isexist = true;//게이트웨이가 지정안되어있거나, 없는경우임.
+            }
+            if($isexist) {
+                if ($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified'] == "update") {
+                    $title = "Updating..";
+                    $portalbtnmessage = "Update received. Tap to re-login";
+                    $portalinfobtnmessage = "Please login to apply changes";
+                    $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
+                    captiveportal_disconnect_client($sessionid);
+                } else {//사용량 확인함.
+                    if (isset($config['captiveportal'][$cpzone]['terminate_duration']) && (strpos($username, '00001') === false)) {
+                        $title = "Disconnected by Admin!";
+                        $portalbtnmessage = "Click here to back home";
+                        $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
+                    } else {
+                        $currentquota = getcurquota($sessionid, $clientip);
+                        $maxquota = getmaxquota($sessionid);
+                        if ($currentquota < $maxquota) {
+                            $title = "You are Online!";
+                            $portalbtnmessage = "Click here to log out";
+                            $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
+                        } else {
+                            $title = "Login Failed!";
+                            $message = "You reached allocated data amount.\nContact system admin";
+                            $portalbtnmessage = "Click here to back home";
+                            $portalerrbtnmessage = $maxquota . "MB limit reached.";
+                            captiveportal_disconnect_client($sessionid, "Usage-Exceed");
+                            $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
+                        }
+                    }
+                }
+            }
+            else { //No gateway found
+                $title = "Antenna Offline";
+                $message = "Please try later.";
+                $portalbtnmessage = "Click here to back home";
+                $portalerrbtnmessage = "The connection is OFFLine";
+                captiveportal_disconnect_client($sessionid, "No-Gateway");
+                $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
+
             }
         } else {
             $title="Removing..";
@@ -2370,11 +2394,11 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             captiveportal_disconnect_client($sessionid);
             write_config("FreeRADIUS user change applied");
         }
-        $portalinfobtnmessage = "{$currentusercount}crew connected.Your spd is{$crewspeed}Kbps";
+        $portalinfobtnmessage = "{$currentusercount}crew @ {$crewspeed}Kbps";
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     } else if ($type == "login") {
         $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal_{$cpzone}.html");
-        $portalinfobtnmessage = "{$currentusercount} crew connected. You may get {$crewspeed}Kbps";
+        $portalinfobtnmessage = "{$currentusercount}crew @ {$crewspeed}Kbps";
     } else if ($type == "check_quota") {
         if(!empty($username)){
             foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
@@ -2408,7 +2432,6 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         $htmltext = str_replace("\$PORTAL_REDIRURL\$", "{$cpcfg['preauthurl']}", $htmltext);
         $htmltext = str_replace("#PORTAL_REDIRURL#", "{$cpcfg['preauthurl']}", $htmltext);
     }
-
     /* substitute other variables */
     $htmltext = str_replace("\$PORTAL_ACTION\$", $portal_url, $htmltext);
     $htmltext = str_replace("#PORTAL_ACTION#", $portal_url, $htmltext);
@@ -3185,6 +3208,26 @@ function getusername($sessionid) {
     return false;
 
 }
+function getsession($username) {
+    global $cpzone;
+    $cpdb = captiveportal_read_db();
+    /* Lookup the username*/
+    foreach ($cpdb as $cpentry) {
+        if ($cpentry[5] == $username){
+            return $cpentry[4];
+        }
+    }
+    return false;
+
+}
+function captiveportal_fxuser_disconnect(){
+    foreach ($this->config['installedpackages']['freeradius']['config'] as $value) {
+        if (!isset($value['varusersterminaltype']) || $value['varusersterminaltype'] === "") {
+            captiveportal_disconnect_client(getsession($value['varusersusername']));
+            captiveportal_syslog(getsession($value['varusersusername']));
+        }
+    }
+}
 
 function getcurquota($sessionid, $clientip){
     global $config;
@@ -3207,10 +3250,6 @@ function getcurquota($sessionid, $clientip){
         $basedata = number_format(abs($usagenum)/1048576, 2, '.',',');
         $rcv = number_format(abs(getVolume($clientip)['input_bytes'])/1048576, 2, '.',',');
         $sent = number_format(abs(getVolume($clientip)['output_bytes'])/1048576, 2, '.',',');
-        /*$config['installedpackages']['freeradius']['config'][$userindex]['varuserslastreceivedata']=$rcv;
-        $config['installedpackages']['freeradius']['config'][$userindex]['varuserslastsentdata']=$sent;
-        $config['installedpackages']['freeradius']['config'][$userindex]['varuserslastbasedata']=$basedata;
-        write_config("update quota");*/
     }
     return str_replace(",", "", $basedata) + str_replace(",", "", $rcv) + str_replace(",", "", $sent);
 }
