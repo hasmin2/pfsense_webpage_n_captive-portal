@@ -2335,7 +2335,8 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         }
         if (isset($userindex)){//사용자가 있을 때
             $isexist=false;//게이트웨이가 있는지 확인함.
-            if(isset($config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype'])){
+            if(isset($config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype']) &&
+                $config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype']!==''){
                 $varusersterminaltype=$config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype'];
                 foreach(return_gateways_status(true) as $gwitem){
                     if($varusersterminaltype===$gwitem['name']){
