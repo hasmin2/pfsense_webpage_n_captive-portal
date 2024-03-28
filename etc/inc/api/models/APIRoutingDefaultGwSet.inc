@@ -16,6 +16,7 @@
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 require_once("captiveportal.inc");
+require_once("firewallpreset.inc");
 require_once("gwlb.inc");
 
 class APIRoutingDefaultGwSet extends APIModel {
@@ -31,8 +32,23 @@ class APIRoutingDefaultGwSet extends APIModel {
             $date = new DateTime();
             $this->config['gateways']['manualroutetimestamp']= round($date->getTimestamp()/60,0);
         }
-
+        else{
+            if(isset($this->config['gateways']['manualroutetimestamp'])){
+                unset($this->config['gateways']['manualroutetimestamp']);
+            }
+            if(isset($this->config['gateways']['manualrouteduration'])){
+                unset($this->config['gateways']['manualrouteduration']);
+            }
+        }
+        destroy_firewall_preset();
+        build_firewall_preset($this->initial_data["defaultgw4"]);
         $this->write_config();
+        system_routing_configure();
+        system_resolvconf_generate();
+        filter_configure();
+        setup_gateways_monitor();
+        send_event("service reload dyndnsall");
+        clear_subsystem_dirty("staticroutes");
         $this->apply();
         $output = [];
         foreach ($this->config['gateways']['gateway_item'] as $gateway){

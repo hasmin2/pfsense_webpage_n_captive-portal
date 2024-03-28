@@ -35,6 +35,7 @@ require_once("pfsense-utils.inc");
 require_once("functions.inc");
 require_once("openvpn.inc");
 require_once("captiveportal.inc");
+require_once("firewallpreset.inc");
 require_once("/usr/local/www/widgets/include/manual_routing.inc");
 
 
@@ -121,19 +122,19 @@ if (!function_exists('compose_manual_routing_contents')) {
 				if (stristr($gateways_status[$gname]['status'], "online")) {
 					switch ($gateways_status[$gname]['substatus']) {
 						case "highloss":
-							$online = gettext("Danger, Packetloss");
+							$online = gettext("Danger, <br/>Packetloss");
 							$bgcolor = "danger";
 							break;
 						case "highdelay":
-							$online = gettext("Danger, Latency");
+							$online = gettext("Danger, <br/>Latency");
 							$bgcolor = "danger";
 							break;
 						case "loss":
-							$online = gettext("Warning, Packetloss");
+							$online = gettext("Warning <br/>Packetloss");
 							$bgcolor = "warning";
 							break;
 						case "delay":
-							$online = gettext("Warning, Latency");
+							$online = gettext("Warning, <br/>Latency");
 							$bgcolor = "warning";
 							break;
 						default:
@@ -148,13 +149,13 @@ if (!function_exists('compose_manual_routing_contents')) {
 					$bgcolor = "danger";
 					switch ($gateways_status[$gname]['substatus']) {
 						case "force_down":
-							$online = gettext("Offline (forced)");
+							$online = gettext("Offline <br/>(forced)");
 							break;
 						case "highloss":
-							$online = gettext("Offline, Packetloss");
+							$online = gettext("Offline, <br/>Packetloss");
 							break;
 						case "highdelay":
-							$online = gettext("Offline, Latency");
+							$online = gettext("Offline, <br/>Latency");
 							break;
 						default:
 							$online = gettext("Offline");
@@ -165,7 +166,7 @@ if (!function_exists('compose_manual_routing_contents')) {
 				}
 
 			} else {
-				$online = gettext("No Connection");
+				$online = gettext("No Conn");
 				$bgcolor = "info";  // lightblue
 			}
 			if ($gateways_status[$gname] && stristr($gateways_status[$gname]['status'], "online")) {
@@ -188,14 +189,14 @@ if (!function_exists('compose_manual_routing_contents')) {
 						}
 					}
 					else {
-						$pingcolor="warning";
+						$pingcolor="info";
 						$pingresult = 'Init';
 					}
 				}
 			}
 			else {
-			    $pingcolor="warning";
-            	$pingresult="Not Available";
+			    $pingcolor="";
+            	$pingresult="N/A";
 			}
 
 			$date = new DateTime();
@@ -352,46 +353,8 @@ if ($_POST['widgetkey']) {
 			unset ($config['gateways']['manualrouteduration']);
 			unset ($config['gateways']['manualroutetimestamp']);
 		}
-
-        /*PRESET REQUIRED*/
-        if(isset($config['gagteway_profile'])){
-            foreach ($config['gateway_profile'] as $item) {
-                foreach ($config['filter']['rule'] as $index => $ruleitem) {
-                    if ($item['desc'] === $ruleitem['desc'] &&
-                        $config['gateways']['defaultgw4'] !== $config['gateways_profile']['gateway']) {
-                        unset ($config['filter']['rule'][$index]);
-                    }
-                    if ($config['gateways']['defaultgw4'] === $item['gateway']) {
-                        //add the profile to rules.
-                        /*$newrule = array();
-                        $newrule['id'] = '';
-                        $newrule['tracker']=time();
-                        $newrule['type']='pass';
-                        $newrule['interface']=$ifname;
-                        $newrule['ipprotocol']='inet';
-                        $newrule['tag'] = '';
-                        $newrule['tagged'] = '';
-                        $newrule['max'] = '200';
-                        $newrule['max-src-nodes'] = '';
-                        $newrule['max-src-conn'] = '';
-                        $newrule['max-src-states'] = '';
-                        $newrule['statetimeout'] = '';
-                        $newrule['statetype'] = 'keep state';
-                        $newrule['os'] = '';
-                        $newrule['protocol'] = $item['protocol'];
-                        $newrule['source']['network'];
-                        $newrule['destination']['any']='';
-                        $newrule['destination']['port']='11111';
-                        $newrule['descr']="[User Rule] $ifname routing auto generated rule";
-                        $newrule['updated']['time']=time();
-                        $newrule['updated']['username']='admin@$ifname';
-                        $newrule['created']['time']=time();
-                        $newrule['created']['username']='admin@$ifname';*/
-                        array_push($config['filter']['rule'], $item);
-                    }
-                }
-            }
-        }
+        destroy_firewall_preset();
+        build_firewall_preset($_POST['routing_radiobutton']);
 		$date = new DateTime();
 	    $config['gateways']['manualroutetimestamp']= round($date->getTimestamp()/60,0);
 	 	write_config("manual routing");

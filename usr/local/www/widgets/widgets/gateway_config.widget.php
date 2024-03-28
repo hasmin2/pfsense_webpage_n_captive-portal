@@ -1,15 +1,14 @@
 <?php
 /*
- * captive_portal_status.widget.php
+ * firewall_aliases_edit.php
  *
  * part of pfSense (https://www.pfsense.org)
- * Copyright (c) 2007 Sam Wenham
  * Copyright (c) 2004-2013 BSD Perimeter
  * Copyright (c) 2013-2016 Electric Sheep Fencing
  * Copyright (c) 2014-2021 Rubicon Communications, LLC (Netgate)
  * All rights reserved.
  *
- * originally part of m0n0wall (http://m0n0.ch/wall)
+ * originally based on m0n0wall (http://m0n0.ch/wall)
  * Copyright (c) 2003-2004 Manuel Kasper <mk@neon1.net>.
  * All rights reserved.
  *
@@ -26,141 +25,414 @@
  * limitations under the License.
  */
 
-require_once("globals.inc");
+##|+PRIV
+##|*IDENT=page-firewall-alias-edit
+##|*NAME=Firewall: Alias: Edit
+##|*DESCR=Allow access to the 'Firewall: Alias: Edit' page.
+##|*MATCH=firewall_aliases_edit.php*
+##|-PRIV
+
 require_once("guiconfig.inc");
-require_once("pfsense-utils.inc");
-require_once("functions.inc");
+global $config;
 
 
+// Debugging
+$echostr= '';
 
-if ($_POST['widgetkey']) {//변경할때이므로
-//여기에 컨트롤 코드 넣음.
-    //이건 각 포탈별로 Enable/Disable 할 때
-    if($_POST['gw_list']){
-
+$singular_types = array();
+foreach ($config['interfaces'] as $gwname => $gwitem) {
+    if (is_array($gwitem) && isset($gwitem['alias-subnet'])) {
+        $singular_types[gettext($gwitem)] = gettext ($gwitem['alias-subnet']);
     }
-
-    if($_POST['auto_portal_enable']){
-        $config['captiveportal']['crew']['autoportal']='';
-    }
-    else {
-        unset($config['captiveportal']['crew']['autoportal']);
-    }
-
-    /*write_config("Toggle Portal");
-    captiveportal_configure();
-    filter_configure();*/
-
-    header("Location: /");
-    exit(0);
 }
 
+
+if (isset($_REQUEST['id']) && is_numericint($_REQUEST['id'])) {
+    $id = $_REQUEST['id'];
+}
+
+$dup = false;
+if (isset($_REQUEST['dup']) && is_numericint($_REQUEST['dup'])) {
+    $id = $_REQUEST['dup'];
+    $dup = true;
+}
+
+if (isset($id) && $a_aliases[$id]) {
+    $original_alias_name = $a_aliases[$id]['name'];
+    if (!$dup) {
+        $pconfig['name'] = $a_aliases[$id]['name'];
+    }
+    $pconfig['detail'] = $a_aliases[$id]['detail'];
+    $pconfig['address'] = $a_aliases[$id]['address'];
+    $pconfig['type'] = $a_aliases[$id]['type'];
+    $pconfig['descr'] = html_entity_decode($a_aliases[$id]['descr']);
+
+    if (preg_match("/urltable/i", $a_aliases[$id]['type'])) {
+        $pconfig['address'] = $a_aliases[$id]['url'];
+        $pconfig['updatefreq'] = $a_aliases[$id]['updatefreq'];
+    }
+    if ($a_aliases[$id]['aliasurl'] <> "") {
+        if (is_array($a_aliases[$id]['aliasurl'])) {
+            $pconfig['address'] = implode(" ", $a_aliases[$id]['aliasurl']);
+        } else {
+            $pconfig['address'] = $a_aliases[$id]['aliasurl'];
+        }
+    }
+}
+
+if ($dup) {
+    unset($id);
+}
+
+if ($_POST['save']) {
+    // Remember the original name on an attempt to save
+    $origname = $_POST['origname'];
+} else {
+    // Set the original name on edit (or add, when this will be blank)
+    $origname = $pconfig['name'];
+}
+
+if ($_REQUEST['exportaliases']) {
+    $expdata = explode(" ", $a_aliases[$id]['address']);
+    if ($a_aliases[$id]['type'] == 'host') {
+        $expdata = array_map('alias_idn_to_utf8', $expdata);
+    }
+    $expdata = implode("\n", $expdata);
+    $expdata .= "\n";
+    send_user_download('data', $expdata, "{$_POST['origname']}.txt");
+}
+
+$tab = $_REQUEST['tab'];
+
+if (empty($tab)) {
+    if (preg_match("/url/i", $pconfig['type'])) {
+        $tab = 'url';
+    } else if ($pconfig['type'] == 'host') {
+        $tab = 'ip';
+    } else {
+        $tab = $pconfig['type'];
+    }
+}
+
+if ($_POST['save']) {
+    $input_errors = saveAlias($_POST, $id);
+
+    if (!$input_errors) {
+        mark_subsystem_dirty('aliases');
+
+        if (!empty($tab)) {
+            header("Location: firewall_aliases.php?tab=" . htmlspecialchars ($tab));
+        } else {
+            header("Location: firewall_aliases.php");
+        }
+
+        exit;
+    }
+}
+
+$label_str = array(
+    'network' => gettext("Network or FQDN"),
+    'host'	=> gettext("IP or FQDN"),
+    'port' => gettext("Port"),
+    'url' => gettext("URL (IPs)"),
+    'url_ports' => gettext("URL (Ports)"),
+    'urltable' => gettext("URL Table (IPs)"),
+    'urltable_ports' => gettext("URL Table (Ports)")
+);
+
+$special_cidr_usage_text = gettext("The value after the \"/\" is the update frequency in days.");
+
+// Tab type specific patterns.
+// Intentionally loose (valid character check only, no pattern recognition).
+// Can be tightened up with pattern recognition as desired for each tab type.
+// Network and host types allow an optional CIDR following the address or an address range using dash separator,
+// and there may be multiple items separated by spaces - "192.168.1.0/24 192.168.2.4-192.168.2.19"
+// On submit, strings like that are parsed and expanded into the appropriate individual entries and then validated.
+$pattern_str = array(
+    'network'			=> '[a-zA-Z0-9_:.-]+(/[0-9]+)?( [a-zA-Z0-9_:.-]+(/[0-9]+)?)*',	// Alias Name, Host Name, IP Address, FQDN, Network or IP Address Range
+    'host'				=> '[\pL0-9_:.-]+(/[0-9]+)?( [a-zA-Z0-9_:.-]+(/[0-9]+)?)*',	// Alias Name, Host Name, IP Address, FQDN
+    'port'				=> '[a-zA-Z0-9_:]+',	// Alias Name, Port Number, or Port Number Range
+    'url'				=> '.*',				// Alias Name or URL
+    'url_ports'			=> '.*',				// Alias Name or URL
+    'urltable'			=> '.*',				// Alias Name or URL
+    'urltable_ports'	=> '.*'					// Alias Name or URL
+);
+
+$title_str = array(
+    'network'			=> 'An IPv4 network address like 1.2.3.0, an IPv6 network address like 1:2a:3b:ffff::0, IP address range, FQDN or an alias',
+    'host'				=> 'An IPv4 address like 1.2.3.4, an IPv6 address like 1:2a:3b:ffff::1, IP address range, FQDN or an alias',
+    'port'				=> 'A port number, port number range or an alias',
+    'url'				=> 'URL',
+    'url_ports'			=> 'URL',
+    'urltable'			=> 'URL',
+    'urltable_ports'	=> 'URL'
+);
+
+$placeholder_str = array(
+    'network'			=> 'Address',
+    'host'				=> 'Address',
+    'port'				=> 'Port',
+    'url'				=> 'URL',
+    'url_ports'			=> 'URL',
+    'urltable'			=> 'URL',
+    'urltable_ports'	=> 'URL'
+);
+
+$types = array();
+$section_str = array();
+$btn_str = array();
+$help= array();
+foreach ($config['gateways']['gateway_item'] as $index => $gwitem) {
+    if (is_array($gwitem) && !strpos($gwitem['name'], "VPN")) {
+        $types[$gwitem['interface']] = $gwitem['name'];
+        $section_str[$gwitem['interface']] = $gwitem['name'];
+        $btn_str[$gwitem['interface']] = "Add";
+    }
+}
+
+/*$types = array(
+    'host'	=> gettext("Host(s)"),
+    'network' => gettext("Network(s)"),
+    'port' => gettext("Port(s)"),
+    'url' => gettext("URL (IPs)"),
+    'url_ports' => gettext("URL (Ports)"),
+    'urltable' => gettext("URL Table (IPs)"),
+    'urltable_ports' => gettext("URL Table (Ports)"),
+);*/
+
+if ($input_errors) {
+    print_input_errors($input_errors);
+}
+
+$form = new Form;
+
+$form->addGlobal(new Form_Input(
+    'tab',
+    null,
+    'hidden',
+    $tab
+));
+
+$form->addGlobal(new Form_Input(
+    'origname',
+    null,
+    'hidden',
+    $origname
+));
+
+if (isset($id) && $a_aliases[$id]) {
+    $form->addGlobal(new Form_Input(
+        'id',
+        null,
+        'hidden',
+        $id
+    ));
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////
+$section = new Form_Section('');
+
+$section->addInput(new Form_Select(
+    'type',
+    '*Type',
+    isset($pconfig['type']) ? $pconfig['type'] : $tab,
+    $types
+));
+
+$form->add($section);
+
+$section = new Form_Section($section_str[$tab]);
+// Make somewhere to park the help text, and give it a class so we can update it later
+/*$section->addInput(new Form_StaticText(
+    'Hint',
+    '<span class="helptext">' . $help[$tab] . '</span>'
+));*/
+
+// If no addresses have been defined, we'll make up a blank set
+if ($pconfig['address'] == "") {
+    $pconfig['address'] = '';
+    $pconfig['address_subnet'] = '';
+    $pconfig['detail'] = '';
+}
+
+$counter = 0;
+$addresses = explode(" ", $pconfig['address']);
+$details = explode("||", $pconfig['detail']);
+
+while ($counter < count($addresses)) {
+    $group = new Form_Group($counter == 0 ? $label_str[$tab]:'');
+    $group->addClass('repeatable');
+
+    $group->add(new Form_IpAddress(
+        'source_address' . $counter,
+        'Source',
+        'text'
+    ))->setWidth(2);
+
+    $group->add(new Form_Input(
+        'dest_address' ,
+        'Destination',
+        'text'
+    ))->setWidth(2);
+
+    $group->add(new Form_Input(
+        'outgoing_port_from' . $counter,
+        'Port from',
+        'text'
+    ))->setWidth(2);
+    $group->add(new Form_Input(
+        'outgoing_port_to' . $counter,
+        'Port to',
+        'text'
+    ))->setWidth(2);
+    $group->add(new Form_Select(
+        'proto',
+        'Protocol',
+        $pconfig['proto'],
+        array(
+            'any' => gettext('Any'),
+            'tcp' => 'TCP',
+            'udp' => 'UDP',
+            'tcp/udp' => 'TCP/UDP',
+            'icmp' => 'ICMP',
+            'esp' => 'ESP',
+            'ah' => 'AH',
+            'gre' => 'GRE',
+            'etherip' => 'EoIP',
+            'ipv6' => 'IPV6',
+            'igmp' => 'IGMP',
+            'pim' => 'PIM',
+            'ospf' => 'OSPF',
+            'sctp' => 'SCTP',
+            'carp' => 'CARP',
+            'pfsync' => 'PFSYNC',
+        )
+    ))->setWidth(1);
+
+
+
+    $group->add(new Form_Button(
+        'deleterow' . $counter,
+        'Delete',
+        null,
+        'fa-trash'
+    ))->addClass('btn-warning');
+
+    $section->add($group);
+    $counter++;
+}
+
+
+$form->addGlobal(new Form_Button(
+    'addrow',
+    $btn_str[$tab],
+    null,
+    'fa-plus'
+))->addClass('btn-success addbtn');
+
+$form->add($section);
+
+print $form;
 ?>
 
-<script>
-    function ipAddressCheck(ipAddress)
-    {
-        var regEx = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-        if(ipAddress.value.match(regEx)||ipAddress.value=="")
-        {
-            return true;
+<script type="text/javascript">
+    //<![CDATA[
+    addressarray = <?= json_encode(array_exclude($pconfig['name'], get_alias_list($pconfig['type']))) ?>;
+
+    events.push(function() {
+
+        var disable_subnets;
+
+        function antennachange() {
+            var tab = $('#type').find('option:selected').val();
+
+            //disable_subnets = (tab == 'host') || (tab == 'port') || (tab == 'url') || (tab == 'url_ports');
+
+            // Enable/disable address_subnet so its value gets POSTed or not, as appropriate.
+            //$("[id^='address_subnet']").prop("disabled", disable_subnets);
+
+            // Show or hide the slash plus address_subnet field so the user does not even see it if it is not relevant.
+            //hideMask('address_subnet', disable_subnets);
+
+            // Set the help text to match the tab
+            //var helparray = <?=json_encode($help);?>;
+            //$('.helptext').html(helparray[tab]);
+
+            // Set the section heading by tab type
+            //var sectionstr = <?=json_encode($section_str);?>;
+            //$('.panel-title:last').text(sectionstr[tab]);
+
+            var buttonstr = <?=json_encode($btn_str);?>;
+            $('.btn-success').prop('value', buttonstr[tab]);
+            $('.btn-success').html('<i class="fa fa-plus icon-embed-btn"></i>' + buttonstr[tab]);
+
+            // Set the input field label by tab
+            var labelstr = <?=json_encode($label_str);?>;
+            $('.repeatable:first').find('label').text(labelstr[tab]);
+
+            // Set the input field pattern by tab type
+            var patternstr = <?=json_encode($pattern_str);?>;
+            var titlestr = <?=json_encode($title_str);?>;
+            var placeholderstr = <?=json_encode($placeholder_str);?>;
+            $("[id^='address']").each(function () {
+                if (/^address[0-9]+$/.test(this.id)) {
+                    $('#' + this.id).prop('pattern', patternstr[tab]);
+                    $('#' + this.id).prop('title', titlestr[tab]);
+                    $('#' + this.id).prop('placeholder', placeholderstr[tab]);
+                }
+            });
+
+            // Hide and disable rows other than the first
+            hideRowsAfter(1, (tab == 'urltable') || (tab == 'urltable_ports'));
+
         }
-        else
-        {
-            alert("Please enter a valid ip Address.");
-            return false;
+
+        // Hide and disable all rows >= that specified
+        function hideRowsAfter(row, hide) {
+            var idx = 0;
+
+            $('.repeatable').each(function(el) {
+                if (idx >= row) {
+                    hideRow(idx, hide);
+                }
+
+                idx++;
+            });
         }
-    }
+
+        function hideRow(row, hide) {
+            if (hide) {
+                $('#deleterow' + row).parent('div').parent().addClass('hidden');
+            } else {
+                $('#deleterow' + row).parent('div').parent().removeClass('hidden');
+            }
+
+            // We need to disable the elements so they are not submitted in the POST
+            $('#address' + row).prop("disabled", hide);
+            $('#address_subnet' + row).prop("disabled", hide || disable_subnets);
+            $('#detail' + row).prop("disabled", hide);
+            $('#deleterow' + row).prop("disabled", hide);
+        }
+
+        // On load . .
+        antennachange();
+
+        // Suppress "Delete row" button if there are fewer than two rows
+        checkLastRow();
+
+        // Autocomplete
+        $('[id^=address]').each(function() {
+            if (this.id.substring(0, 8) != "address_") {
+                $(this).autocomplete({
+                    source: addressarray
+                });
+            }
+        });
+
+        // on click . .
+        $('#type').on('change', function() {
+            antennachange();
+        });
+
+    });
+    //]]>
 </script>
-
-<style>
-    .material-switch > input[type="checkbox"] {
-        display: none;
-    }
-
-    .material-switch > label {
-        cursor: pointer;
-        height: 0px;
-        position: relative;
-        width: 40px;
-    }
-
-    .material-switch > label::before {
-        background: rgb(0, 0, 0);
-        box-shadow: inset 0px 0px 10px rgba(0, 0, 0, 0.5);
-        border-radius: 8px;
-        content: '';
-        height: 16px;
-        margin-top: -8px;
-        position:absolute;
-        opacity: 0.3;
-        transition: all 0.4s ease-in-out;
-        width: 40px;
-    }
-    .material-switch > label::after {
-        background: rgb(255, 255, 255);
-        border-radius: 16px;
-        box-shadow: 0px 0px 5px rgba(0, 0, 0, 0.3);
-        content: '';
-        height: 24px;
-        left: -4px;
-        margin-top: -8px;
-        position: absolute;
-        top: -4px;
-        transition: all 0.3s ease-in-out;
-        width: 24px;
-    }
-    .material-switch > input[type="checkbox"]:checked + label::before {
-        background: inherit;
-        opacity: 0.5;
-    }
-    .material-switch > input[type="checkbox"]:checked + label::after {
-        background: inherit;
-        left: 20px;
-    }
-</style>
-<form name=gw_selection action="/widgets/widgets/gateway_config.widget.php" method="post" class="form-horizontal">
-    <div class="container">
-        <div class="row">
-            <div class="col-xs-2 col-sm-10 col-md-5 col-sm-offset-0 col-md-offset-0">
-                <div class="panel panel-default">
-                    <ul class="list-group">
-                        <li class="list-group-item">
-                            <select name="gw_list" size="1" onchange="this.form.submit()">
-                        <?php
-                        $echostr= '';
-                        global $config;
-                        foreach ($config['interfaces'] as $gwname => $gwitem) {
-                            if (is_array($gwitem) && isset($gwitem['alias-subnet'])) {
-                                if($gwname == $_POST['gw_list'])
-                                    $echostr .= '<option value='.$gwname.' selected> '.$gwitem["descr"]. '</option>';
-                                else
-                                    $echostr .= '<option value='.$gwname.'> '.$gwitem["descr"]. '</option>';
-                                $echostr .= '<option value='.$gwname.'> '.$_POST['gw_list']. '</option>';
-                            }
-                        }
-                        echo($echostr);
-                        /*if(file_exists("/etc/inc/".$gateway['rootinterface']."_cumulative") && ($cumulative_file = fopen($filepath.$gateway['rootinterface']."_cumulative", "r"))!==false ){
-                            $cur_usage = fgets($cumulative_file);
-                            fclose($cumulative_file);
-                        }
-                        else {
-                            $cur_usage = 0;
-                        }*/
-
-                        ?>
-                        </select>
-                        <input type="hidden" name="widgetkey" value="<?=htmlspecialchars($widgetkey); ?>">
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </div>
-</form>
-
-
-    <div align="center">
-        <input type="hidden" name="widgetkey" value="<?=htmlspecialchars($widgetkey); ?>">
-        <button type="submit" onclick="ipAddressCheck(document.internet_control.ipaddr)" class="btn btn-primary"><i class="fa fa-save icon-embed-btn"></i><?=gettext('Apply')?>  </button>
-    </div>
-</form>

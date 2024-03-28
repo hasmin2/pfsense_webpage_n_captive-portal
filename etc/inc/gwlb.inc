@@ -504,6 +504,15 @@ function return_gateways_status($byname = false, $gways = false) {
                 if($item['rootinterface']){
                     $status[$target]['rootinterface']=$item['rootinterface'];
                 }
+                if($item['disablecrewinternet']){
+                    $status[$target]['disablecrewinternet']=$item['disablecrewinternet'];
+                }
+                if($item['blockall_bydefault']){
+                    $status[$target]['blockall_bydefault']=$item['blockall_bydefault'];
+                }
+                if ($item['source_address0']) {
+                    $status[$target]['source_address0'] = $item['source_address0'];
+                }
                 if($item['allowance']){
                     $status[$target]['allowance']=$item['allowance'];
                 }
@@ -576,9 +585,16 @@ function return_gateways_status($byname = false, $gways = false) {
                 }
                 if ($item['rootinterface']) {
                     $status[$target]['rootinterface'] = $item['rootinterface'];
-                    $rootinterface = $item['rootinterface'];
                 }
-
+                if ($item['source_address0']) {
+                    $status[$target]['source_address0'] = $item['source_address0'];
+                }
+                if($item['disablecrewinternet']){
+                    $status[$target]['disablecrewinternet']=$item['disablecrewinternet'];
+                }
+                if($item['blockall_bydefault']){
+                    $status[$target]['blockall_bydefault']=$item['blockall_bydefault'];
+                }
                 if ($item['allowance']) {
                     $status[$target]['allowance'] = $item['allowance'];
                 } else {
@@ -2115,7 +2131,45 @@ function save_gateway($gateway_settings, $realid = "") {
     $gateway['destinationip'] = $gateway_settings['destinationip'];
     $gateway['allowance'] = $gateway_settings['allowance'];
     $gateway['rootinterface'] = $gateway_settings['rootinterface'];
-    //$gateway['currentusage'] = $gateway_settings['currentusage'];
+    $counter=0;
+    $sourceaddresses="";
+    $destaddresses="";
+    $portsfrom="";
+    $portsto="";
+    $protos="";
+    while($counter<100){
+        if(!isset($gateway_settings['source_address'.$counter])
+            && !isset($gateway_settings['dest_address'.$counter])
+            && !isset($gateway_settings['port_from'.$counter])
+            && !isset($gateway_settings['port_to'.$counter])
+        ){
+            break;
+        }
+        else {
+            if($gateway_settings['source_address'.$counter]!==""
+                || $gateway_settings['dest_address'.$counter]!==""
+                || $gateway_settings['port_from'.$counter]!==""
+                || $gateway_settings['port_to'.$counter]!==""
+                || $gateway_settings['proto'.$counter] !=="any"
+            ){
+                $sourceaddresses.= $gateway_settings['source_address'.$counter].'||';
+                $destaddresses .= $gateway_settings['dest_address'.$counter].'||';
+                $portsfrom.= $gateway_settings['port_from'.$counter].'||';
+                $portsto.= $gateway_settings['port_to'.$counter].'||';
+                $protos.= $gateway_settings['proto'.$counter].'||';
+            }
+            $counter++;
+        }
+    }//end
+
+    $gateway['sourceaddresses']=$sourceaddresses;
+    $gateway['destaddresses']=$destaddresses;
+    $gateway['portsfrom']=$portsfrom;
+    $gateway['portsto']=$portsto;
+    $gateway['protos']=$protos;
+
+    $gateway['disablecrewinternet'] = $gateway_settings['disablecrewinternet'];
+    $gateway['blockall_bydefault'] = $gateway_settings['blockall_bydefault'];
     $filepath="/etc/inc/";
     $cumulative_file = fopen($filepath.$gateway_settings['rootinterface']."_cumulative", "w");
     fwrite($cumulative_file, $gateway_settings['currentusage']);

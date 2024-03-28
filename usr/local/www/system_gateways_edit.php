@@ -63,7 +63,13 @@ if (isset($id) && $a_gateways[$id]) {
 	$pconfig['terminal_type'] = $a_gateways[$id]['terminal_type'];
 	$pconfig['check_method'] = $a_gateways[$id]['check_method'];
 	$pconfig['rootinterface'] = $a_gateways[$id]['rootinterface'];
-
+    $pconfig['disablecrewinternet'] = $a_gateways[$id]['disablecrewinternet'];
+    $pconfig['blockall_bydefault'] = $a_gateways[$id]['blockall_bydefault'];
+    $pconfig['sourceaddresses'] = $a_gateways[$id]['sourceaddresses'];
+    $pconfig['destaddresses'] = $a_gateways[$id]['destaddresses'];
+    $pconfig['portsfrom'] = $a_gateways[$id]['portsfrom'];
+    $pconfig['portsto'] = $a_gateways[$id]['portsto'];
+    $pconfig['protos'] = $a_gateways[$id]['protos'];
     $filepath= "/etc/inc/";
     if(file_exists($filepath.$a_gateways[$id]['rootinterface']."_cumulative") && ($cumulative_file = fopen($filepath.$a_gateways[$id]['rootinterface']."_cumulative", "r"))!==false ){
         $cur_usage = fgets($cumulative_file);
@@ -323,6 +329,90 @@ $group->add(new Form_Select(
 ))->setHelp('Choose terminal online check Timeout');
 $section->add($group);
 
+$section->addInput(new Form_Checkbox(
+    'disablecrewinternet',
+    'Disable Crew Internet',
+    'Disable Crew Internet',
+    $pconfig['disablecrewinternet']
+))->setHelp('Disable Crew Internet when check during this gateway is selected.');
+
+$section->addInput(new Form_Checkbox(
+    'blockall_bydefault',
+    'Traffic Control',
+    'Block all traffic by default if checked',
+    $pconfig['blockall_bydefault']
+))->setHelp('Block all terminal by default if this gateway is selected, in case of limited usage, under FBB/Iridium. <br> ** NOTE : once this option unchecked, all firewall preset WILL NOT be applied');
+
+
+
+$counter=0;
+
+$source_addresses = explode("||", $pconfig['sourceaddresses']);
+$dest_addresses = explode("||", $pconfig['destaddresses']);
+$port_from = explode("||", $pconfig['portsfrom']);
+$port_to = explode("||", $pconfig['portsto']);
+$proto = explode("||", $pconfig['protos']);
+
+while ($counter < count($source_addresses)) {
+    $group = new Form_Group('Firewall Preset-'.$counter);
+    $group->addClass('repeatable');
+    $group->add(new Form_Input(
+        'source_address'.$counter,
+        'Src, IP only',
+        'text',
+        $source_addresses[$counter]
+    ))->setWidth(2);
+    $group->add(new Form_Input(
+        'dest_address' . $counter,
+        'Dest, IP only',
+        'text',
+        $dest_addresses[$counter]
+    ))->setWidth(2);
+    $group->add(new Form_Input(
+        'port_from' . $counter,
+        'Port from',
+        'text',
+        $port_from [$counter]
+    ))->setWidth(1);
+    $group->add(new Form_Input(
+        'port_to' . $counter,
+        'Port to',
+        'text',
+        $port_to [$counter]
+    ))->setWidth(1);
+    $group->add(new Form_Select(
+        'proto'.$counter,
+        'Protocol',
+        $proto [$counter],
+        array(
+            'any' => gettext('Any'),
+            'tcp' => 'TCP',
+            'udp' => 'UDP',
+            'tcp/udp' => 'TCP/UDP'
+        )
+    ))->setWidth(2);
+
+    $group->add(new Form_Button(
+        'deleterow' . $counter,
+        'Delete',
+        null,
+        'fa-trash'
+    ))->addClass('btn-warning');
+    $section->add($group);
+    $counter++;
+}
+//$form->add($section);
+
+$form->addGlobal(new Form_Button(
+    'addrow',
+    'Add rule',
+    null,
+    'fa-plus'
+))->addClass('btn-success addbtn');
+
+
+
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 $section->addInput(new Form_Input(
 	'descr',
@@ -543,7 +633,7 @@ events.push(function() {
 		$('#btnadvopts').html('<i class="fa fa-cog"></i> ' + text);
 	}
 
-	$('#btnadvopts').click(function(event) {
+	let click = $('#btnadvopts').click(function(event) {
 		show_advopts();
 	});
 
@@ -554,4 +644,4 @@ events.push(function() {
 //]]>
 </script>
 
-<?php include("foot.inc");
+<?php include("foot.inc");?>
