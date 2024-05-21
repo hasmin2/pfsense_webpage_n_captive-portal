@@ -41,36 +41,43 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
 			$radiususers = &$config['installedpackages']['freeradius']['config'];
 			foreach ($radiususers as $eachuser) {
                 $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
-                if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername']) && $used_quota <= $eachuser['varusersmaxtotaloctets'] || $eachuser['varuserspointoftime']!=='forever'){
-                    $rtnstr .= "<tr>";
-                    $rtnstr .= "<td><center><input type=checkbox class=userlist id={$eachuser['varusersusername']} name=userlist[] value={$eachuser['varusersusername']} /></center></td>";
-                    $rtnstr .= "<td><center>{$eachuser['varusersusername']}</center></td>";
-                    if($eachuser['varuserscreatedate']){
-                        $createDate = $eachuser['varuserscreatedate'];
-                    }
-                    else{
-                        $createDate = 'N/A';
-                    }
-                    $rtnstr .= "<td><center>$createDate</center></td>";
-                    $terminaltype = $eachuser['varusersterminaltype']=='' ?  'Auto' : $eachuser['varusersterminaltype'];
-                    $rtnstr .= "<td><center>".$terminaltype ."</center></td>";
-                    $usertimeperiod = $eachuser['varuserspointoftime'] == "forever" ? "one-time":$eachuser['varuserspointoftime'];
-                    $rtnstr .="<td><center>{$usertimeperiod}</center></td>";
-                    $rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctets']}&nbsp;MBytes</center></td>";
-                    if($eachuser['varusersmodified']=="update"){$rtnstr .= "<td><center>Wait for logon</center></td>";}
-                    else{$rtnstr .="<td><center>".number_format($used_quota,2,'.',',')." MBytes</center></td>";}
-                    $cpdb = captiveportal_read_db();
-                    if(count ($cpdb) == 0){
-                        $rtnstr .= "<td><a></a></td>";
-                    }
-                    else {
-                        $rtnstr .= "<td>";
-                        foreach ($cpdb as $cpent) {
-                            $eachuser['varusersusername'] === $cpent[4] ? $rtnstr .= "<center><font color='#adff2f'>Login</center>" : $rtnstr .= "<a></a>";
+                if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername'])){
+                    if($used_quota <= $eachuser['varusersmaxtotaloctets'] || $eachuser['varuserspointoftime']!=='forever'){
+                        $rtnstr .= "<tr>";
+                        $rtnstr .= "<td><center><input type=checkbox class=userlist id={$eachuser['varusersusername']} name=userlist[] value={$eachuser['varusersusername']} /></center></td>";
+                        if(strlen($eachuser['varusersusername'])>10){
+                            $rtnstr .= "<td><center>".substr($eachuser['varusersusername'], 0, -5)."<br>".substr($eachuser['varusersusername'], -5, 5)."</center></td>";
                         }
-                        $rtnstr .= "</td>";
+                        else{
+                            $rtnstr .= "<td><center>{$eachuser['varusersusername']}</center></td>";
+                        }
+                        if($eachuser['varuserscreatedate']){
+                            $createDate = $eachuser['varuserscreatedate'];
+                        }
+                        else{
+                            $createDate = 'N/A';
+                        }
+                        $rtnstr .= "<td><center>$createDate</center></td>";
+                        $terminaltype = $eachuser['varusersterminaltype']=='' ?  'Auto' : $eachuser['varusersterminaltype'];
+                        $rtnstr .= "<td><center>".$terminaltype ."</center></td>";
+                        $usertimeperiod = $eachuser['varuserspointoftime'] == "forever" ? "one-time":$eachuser['varuserspointoftime'];
+                        $rtnstr .="<td><center>{$usertimeperiod}</center></td>";
+                        $rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctets']}&nbsp;MBytes</center></td>";
+                        if($eachuser['varusersmodified']=="update"){$rtnstr .= "<td><center>Wait for logon</center></td>";}
+                        else{$rtnstr .="<td><center>".number_format($used_quota,2,'.',',')." MBytes</center></td>";}
+                        $cpdb = captiveportal_read_db();
+                        if(count ($cpdb) == 0){
+                            $rtnstr .= "<td><a></a></td>";
+                        }
+                        else {
+                            $rtnstr .= "<td>";
+                            foreach ($cpdb as $cpent) {
+                                $eachuser['varusersusername'] === $cpent[4] ? $rtnstr .= "<center><font color='#adff2f'>Login</center>" : $rtnstr .= "<a></a>";
+                            }
+                            $rtnstr .= "</td>";
+                        }
+                        $widgetkey_html = htmlspecialchars($widgetkey);
                     }
-                    $widgetkey_html = htmlspecialchars($widgetkey);
                 }
 			}
 		}
