@@ -40,16 +40,23 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
 		if(isset($config['installedpackages']['freeradius']['config'])){
 			$radiususers = &$config['installedpackages']['freeradius']['config'];
 			foreach ($radiususers as $eachuser) {
-                if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername'])){
+                $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
+                if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername']) && $used_quota <= $eachuser['varusersmaxtotaloctets'] || $eachuser['varuserspointoftime']!=='forever'){
                     $rtnstr .= "<tr>";
                     $rtnstr .= "<td><center><input type=checkbox class=userlist id={$eachuser['varusersusername']} name=userlist[] value={$eachuser['varusersusername']} /></center></td>";
                     $rtnstr .= "<td><center>{$eachuser['varusersusername']}</center></td>";
+                    if($eachuser['varuserscreatedate']){
+                        $createDate = $eachuser['varuserscreatedate'];
+                    }
+                    else{
+                        $createDate = 'N/A';
+                    }
+                    $rtnstr .= "<td><center>$createDate</center></td>";
                     $terminaltype = $eachuser['varusersterminaltype']=='' ?  'Auto' : $eachuser['varusersterminaltype'];
                     $rtnstr .= "<td><center>".$terminaltype ."</center></td>";
                     $usertimeperiod = $eachuser['varuserspointoftime'] == "forever" ? "one-time":$eachuser['varuserspointoftime'];
                     $rtnstr .="<td><center>{$usertimeperiod}</center></td>";
                     $rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctets']}&nbsp;MBytes</center></td>";
-                    $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
                     if($eachuser['varusersmodified']=="update"){$rtnstr .= "<td><center>Wait for logon</center></td>";}
                     else{$rtnstr .="<td><center>".number_format($used_quota,2,'.',',')." MBytes</center></td>";}
                     $cpdb = captiveportal_read_db();
@@ -153,6 +160,7 @@ if ($_POST['widgetkey']) {//???????????
 				header("Location: /");
 				continue;
 			}
+            $curdate = date('Y/m/d H:i:s');;
 			$userinfoentry = array(
 				"sortable"=>"",
 				"varusersusername"=>"",
@@ -191,6 +199,7 @@ if ($_POST['widgetkey']) {//???????????
 				"varuserslastbasedata"=>0,
 				"varusersterminaltype"=>"",
 				"varusersresetquota"=>"true",
+                "varuserscreatedate"=>$curdate,
 			);
 			$userinfoentry['varusersusername']=$username;
             if($_POST['createsuerquotaperiod']==="forever"){
@@ -218,7 +227,7 @@ if ($_POST['widgetkey']) {//???????????
 			$userinfoentry['varusersmodified']='create';
 			if(!isset($config['installedpackages']['freeradius']['config'])){
 				$config["installedpackages"]["freeradius"]=["config"=>[""]];
-				array_push($config["installedpackages"]["freeradius"]["config"][0]=$userinfoentry);
+                array_push($config["installedpackages"]["freeradius"]["config"][0]=$userinfoentry);
 			}
 			else{
 				array_push($config["installedpackages"]["freeradius"]["config"], $userinfoentry);
@@ -315,6 +324,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 		<tr>
 			<th center><center><input class="alluser_selected" type="checkbox" id="alluser_select" name="userlist" value="alluser_select" onclick="selectAll(this)" /></center></th>
 			<th center><center><?=gettext("ID");?></center></th>
+            <th center><center><?=gettext("Date create");?></center></th>
 			<th><center><?=gettext("Type");?></center></th>
 			<th><center><?=gettext("Update");?></center></th>
 			<th><center><?=gettext("# MB Allowed");?></center></th>
@@ -378,11 +388,6 @@ if(strpos(get_config_user(), "admin") !== false){
 			$echostr .= '<option value='.$gwitem['name'].'> '.$gwitem["name"]. '</option>';
 		}
 	}
-    /*foreach ($config['interfaces'] as $gwname => $gwitem) {
-        if (is_array($gwitem) && isset($gwitem['alias-subnet'])) {
-            $echostr .= '<option value='.$gwname.'> '.$gwitem["descr"]. '</option>';
-        }
-    }*/
 	$echostr .= '</select></div></div></br>';
 	$echostr .= '<input type="hidden" name="widgetkey" value='.$widgetkey.'><div>';
 	$echostr .= '<button type="submit" class="btn btn-primary">';

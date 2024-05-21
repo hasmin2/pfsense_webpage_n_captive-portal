@@ -46,13 +46,16 @@ if ($_POST['widgetkey']) {//변경할때이므로
     //이건 각 포탈별로 Enable/Disable 할 때
     if(isset($_POST['crew'])){
         $config['captiveportal']['crew']['enable']='';
+        disable_crew_freewifi();
     }
     else{
         if(isset($_POST['crewhidden'])){
             $config['captiveportal']['crew']['enable']='';
+            disable_crew_freewifi();
         }
         else{
             unset($config['captiveportal']['crew']['enable']);
+            enable_crew_freewifi();
         }
     }
     if(isset($_POST['ipaddr'])){
@@ -106,6 +109,17 @@ function get_interfacename(){
     }
     return $interface;
 }
+function get_crewinterface(){
+    global $config;
+    foreach($config['interfaces'] as $ifname => $ifitem){
+        if($ifitem['descr'] == 'CREW'){
+            $interface = $ifname;
+            break;
+        }
+    }
+    return $interface;
+}
+
 function del_linked_rule($serverip, $clientip){
     global $config;
     $interface = get_interfacename();
@@ -164,6 +178,52 @@ function add_linked_rule($serverip, $clientip){
         $newrule['source']['address']=$clientip;
         $newrule['destination']['any']='';
         $newrule['descr']="[User Rule] {$clientip} allow only 'this' PC";
+        array_unshift($config['filter']['rule'], $newrule);
+    }
+    return $interface;
+}
+
+function disable_crew_freewifi(){
+    global $config;
+    $interface = get_crewinterface();
+    if(isset($interface)) {
+        foreach ($config['filter']['rule'] as $key => $rule) {
+            if ($rule['type']=='pass'
+                && $rule['interface']==$interface
+                && $rule['descr']==="[User Rule] enable_crew_wifi"){
+                unset($config['filter']['rule'][$key]);
+            }
+        }
+    }
+}
+function enable_crew_freewifi(){
+    global $config;
+    $interface = get_crewinterface();
+    if(isset($interface)){
+        $newrule = array();
+        $newrule['id'] = '';
+        $newrule['tracker']=time();
+        $newrule['type']='pass';
+        $newrule['interface']=$interface;
+        $newrule['ipprotocol']='inet';
+        $newrule['tag'] = '';
+        $newrule['tagged'] = '';
+        $newrule['max'] = '';
+        $newrule['max-src-nodes'] = '';
+        $newrule['max-src-conn'] = '';
+        $newrule['max-src-states'] = '';
+        $newrule['statetimeout'] = '';
+        $newrule['statetype'] = 'keep state';
+        $newrule['os'] = '';
+        $newrule['source']['network']=$interface;
+        $newrule['destination']['network']='(self)';
+        $newrule['destination']['not']='';
+        $newrule['descr']="[User Rule] enable_crew_wifi";
+        $newrule['gateway']="";
+        $newrule['updated']['time']=time();
+        $newrule['updated']['username']='admin@{$clientip}';
+        $newrule['created']['time']=time();
+        $newrule['created']['username']='admin@{$clientip}';
         array_unshift($config['filter']['rule'], $newrule);
     }
     return $interface;
@@ -277,7 +337,7 @@ function add_linked_rule($serverip, $clientip){
                         }
                         ?>
                         <li class="list-group-item">
-                            Enable / Disable private internet<br> **If Disable, private internet will be transmitted without control**
+                            Enable / Disable CREW WIFI Portal<br> **If Disable, private internet will be transmitted without control**
                             <div class="material-switch pull-right">
                                 <input id="crew" name=crew type="checkbox" <?echo($checkbox);?> <?echo($toggledisable);?>/>
                                 <label for="crew" class="label-primary"></label>
@@ -288,13 +348,13 @@ function add_linked_rule($serverip, $clientip){
                             </div>
                         </li>
 
-                        <li class="list-group-item">
-                            Auto disable private internet on 4G/Landline
+                        <!--li class="list-group-item">
+                            Auto disable CREW WIFI Portal on 4G/Landline
                             <div class="material-switch pull-right">
                                 <input id="auto_portal_enable" name="auto_portal_enable" type="checkbox"<?echo($autoportal);?>/>
                                 <label for="auto_portal_enable" class="label-primary"></label>
                             </div>
-                        </li>
+                        </li-->
                         <li class="list-group-item">
                             Terminate private internet usage except '00001' during &nbsp;
                             <select name="terminate_duration" size="1" <?echo($disabled);?>>
