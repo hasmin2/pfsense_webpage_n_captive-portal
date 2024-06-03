@@ -1634,7 +1634,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
             if($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']){
                 unset($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']);
                 $timerange=strtolower($config['installedpackages']['freeradius']['config'][$userindex]['varuserspointoftime']);
-                unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$login}*");
+                unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$login}");
             }
             write_config("freeradius user update");
             //다음으로 수정사항이 있으면 유저 리싱크 함.
@@ -2410,7 +2410,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             }
             if(isset($userindex)){
                 $allocated = $config['installedpackages']['freeradius']['config'][$userindex]['varusersmaxtotaloctets'];
-                $curoctets=check_quota($username, $config['installedpackages']['freeradius']['config'][$userindex]['varusersmaxtotaloctetstimerange'], $clientip);
+                $curoctets=check_quota($username, $config['installedpackages']['freeradius']['config'][$userindex]['varusersmaxtotaloctetstimerange'], $sessionid);
                 $ratio = ($curoctets/$allocated)*100;
                 $message="Allocated {$allocated}MB.\n{$curoctets}MB used";
                 $portalbtnmessage= "Tap here to back home...";
@@ -3254,7 +3254,7 @@ function getcurquota($sessionid, $clientip){
     }
     return str_replace(",", "", $basedata) + str_replace(",", "", $rcv) + str_replace(",", "", $sent);
 }
-function check_quota($username, $timerange){
+function check_quota($username, $timerange, $sessionid){
     global $config;
     $filepath = "/var/log/radacct/datacounter/$timerange/used-octets-$username";
     if(file_exists($filepath) && ($use_file = fopen($filepath, "r"))!==false ){

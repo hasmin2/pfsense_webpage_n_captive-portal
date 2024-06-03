@@ -34,6 +34,13 @@ require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 require_once("/usr/local/www/widgets/include/manage_server_module.inc");
 
+function gps_degree($value){
+    $deg = intval($value);
+    $min = ($value - $deg) * 60;
+    $min = round($min, 3);
+    return $deg."&deg;".$min."'";
+}
+
 function haversineGreatCircleDistance($latitudeFrom, $longitudeFrom, $latitudeTo, $longitudeTo, $earthRadius = 6371000){
   // convert from degrees to radians
   $latFrom = deg2rad($latitudeFrom);
@@ -184,13 +191,14 @@ function check_vsat_status_influxdb(){
 			else { $lon_current = $lon; }
 			if($latDir_last == "S"){ $lat_last = $lat_last*-1; }
 			if($lonDir_last == "W"){ $lon_last = 360-$lon_last; }
-
 			$current_time= $decoded['results'][0]['series'][0]['values'][0][0];
 			$last_time= $decoded['results'][0]['series'][0]['values'][1][0];
 			$timegap= strtotime($current_time) - strtotime($last_time);
 			$distance = haversineGreatCircleDistance($lat_current, $lon_current, $lat_last, $lon_last, 6371);
 			$avrhrspeed= round($distance/$timegap*3600/1.852, 2);
-			return array("<font color=green>MONITORING</font>","{$lat}{$latDir},{$lon}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
+            $lat_deg = gps_degree($lat_current);
+            $lon_deg = gps_degree($lon_current);
+			return array("<font color=green>MONITORING</font>","{$lat_deg}{$latDir}<br>{$lon_deg}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
 		}
 	}
 }

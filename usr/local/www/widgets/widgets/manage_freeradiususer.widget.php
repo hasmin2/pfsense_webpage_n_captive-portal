@@ -59,12 +59,14 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
                         }
                         $rtnstr .= "<td><center>$createDate</center></td>";
                         $terminaltype = $eachuser['varusersterminaltype']=='' ?  'Auto' : $eachuser['varusersterminaltype'];
+                        if(strlen($terminaltype)>7){
+                            $terminaltype = substr($terminaltype, 0, 4)."...";
+                        }
                         $rtnstr .= "<td><center>".$terminaltype ."</center></td>";
                         $usertimeperiod = $eachuser['varuserspointoftime'] == "forever" ? "one-time":$eachuser['varuserspointoftime'];
                         $rtnstr .="<td><center>{$usertimeperiod}</center></td>";
-                        $rtnstr .="<td><center>{$eachuser['varusersmaxtotaloctets']}&nbsp;MBytes</center></td>";
-                        if($eachuser['varusersmodified']=="update"){$rtnstr .= "<td><center>Wait for logon</center></td>";}
-                        else{$rtnstr .="<td><center>".number_format($used_quota,2,'.',',')." MBytes</center></td>";}
+                        if($eachuser['varusersmodified']=="update"){$rtnstr .= "<td><center>Init / {$eachuser['varusersmaxtotaloctets']}MB</center></td>";}
+                        else{$rtnstr .="<td><center>".number_format($used_quota,2,'.',',')." / {$eachuser['varusersmaxtotaloctets']}MB</center></td>";}
                         $cpdb = captiveportal_read_db();
                         if(count ($cpdb) == 0){
                             $rtnstr .= "<td><a></a></td>";
@@ -129,12 +131,6 @@ if ($_POST['widgetkey']) {//???????????
 		$vouchernumber = $_POST['createusernumber'];
 		$terminaltype= "";
 		if($_POST['createuserterminaltype'] != ""){
-			/*foreach ($config['interfaces'] as $gwname => $gwitem){
-				if(is_array($gwitem) && $gwname == $_POST['createuserterminaltype']) {
-					$terminaltype=$gwitem['descr'];
-					break;
-				}
-			}*/
             foreach ($config['gateways']['gateway_item'] as $key => $gwitem){
                 if(is_array($gwitem) && $gwitem['name'] == $_POST['createuserterminaltype']) {
                     $terminaltype=$gwitem['name'];
@@ -144,7 +140,6 @@ if ($_POST['widgetkey']) {//???????????
 		}
 		$userprefix=strtolower($terminaltype).'user';
 		$userpostfix = 0;
-		$usercount = count();
 		foreach($config['installedpackages']['freeradius']['config'] as $item){
 			if(strpos($item['varusersusername'], $userprefix) !== false){
 				$curpostfix = intval(substr($item['varusersusername'], -strlen($item['varusersusername'])+strlen($userprefix)));
@@ -154,8 +149,8 @@ if ($_POST['widgetkey']) {//???????????
 			}
 		}
 		$userpostfix++;
-		for ($i=$userpostfix;$i<$userpostfix+$vouchernumber;$i++){
-			$username = $userprefix.str_pad($i, 5, '0', STR_PAD_LEFT);
+		for ($usercount=$userpostfix;$usercount<$userpostfix+$vouchernumber;$usercount++){
+			$username = $userprefix.str_pad($usercount, 5, '0', STR_PAD_LEFT);
 			$userexist = false;
 			foreach($config['installedpackages']['freeradius']['config'] as $item){
 				if($username === $item['varusersusername']){
@@ -213,7 +208,7 @@ if ($_POST['widgetkey']) {//???????????
                 $alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
                 $pass = array(); //remember to declare $pass as an array
                 $alphaLength = strlen($alphabet) - 1; //put the length -1 in cache
-                for ($i = 0; $i < 8; $i++) {
+                for ($passwordchar = 0; $passwordchar < 8; $passwordchar++) {
                     $n = rand(0, $alphaLength);
                     $pass[] = $alphabet[$n];
                 }
@@ -234,7 +229,7 @@ if ($_POST['widgetkey']) {//???????????
 			$userinfoentry['varusersmodified']='create';
 			if(!isset($config['installedpackages']['freeradius']['config'])){
 				$config["installedpackages"]["freeradius"]=["config"=>[""]];
-                array_push($config["installedpackages"]["freeradius"]["config"][0]=$userinfoentry);
+                array_push($config["installedpackages"]["freeradius"]["config"][0], $userinfoentry);
 			}
 			else{
 				array_push($config["installedpackages"]["freeradius"]["config"], $userinfoentry);
@@ -334,8 +329,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
             <th center><center><?=gettext("Date create");?></center></th>
 			<th><center><?=gettext("Type");?></center></th>
 			<th><center><?=gettext("Update");?></center></th>
-			<th><center><?=gettext("# MB Allowed");?></center></th>
-			<th><center><?=gettext("# MB Used");?></center></th>
+			<th><center><?=gettext("Usage state");?></center></th>
 			<th><center><?=gettext("Online");?></center></th>
 		</tr>
 		</thead>
