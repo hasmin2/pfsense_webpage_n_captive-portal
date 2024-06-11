@@ -66,6 +66,11 @@ if (!function_exists('compose_manage_server_module_contents')) {
 		$rtnstr .= "<td><center>{$core_status[0]}</center></td>";
 		$rtnstr .="<td><center>{$core_status[1]}-{$update_version}</center></td>";
 		$vsat_status = check_vsat_status_influxdb();
+        $fbb_status = check_fbb_status_influxdb();
+
+
+        $vesselposition=$vsat_status[1];
+
 		$vpn_clients = openvpn_get_active_clients();
 		$vpn_status = '<font color=green>ONLINE</font>';
 		foreach($vpn_clients as $vpn){
@@ -75,8 +80,8 @@ if (!function_exists('compose_manage_server_module_contents')) {
 			break;
 		}
 		$rtnstr .="<td><center>{$vsat_status[0]}</center></td>";
-		$rtnstr .="<td><center>N/I</center></td>";
-		$rtnstr .="<td><center>{$vsat_status[1]}</center></td>";
+		$rtnstr .="<td><center>{$fbb_status[0]}</center></td>";
+		$rtnstr .="<td><center>{$vesselposition}</center></td>";
 		$rtnstr .="<td><center>{$vpn_status}</center></td>";
 		$rtnstr .="<td><center><font color=green>OK</font></center></td>";
 		return($rtnstr);
@@ -135,7 +140,7 @@ function check_vsat_status_influxdb(){
 		return array ("<font color=red>STORE ERROR</font>", "N/A");
 	}
 	else {
-		$decoded = json_decode($response, true);
+        $decoded = json_decode($response, true);
 		$resultcount = count($decoded['results'][0]['series'][0]['values']);
 		$headingIdx = 0;
 		$latIdx = 0;
@@ -144,13 +149,31 @@ function check_vsat_status_influxdb(){
 		$lonDirIdx = 0;
 		$columncount= count($decoded['results'][0]['series'][0]['columns']);
 		if($resultcount <= 0){
-			return array ("<font color=red>NOT MONITORING</font>", "N/A");
+			return array ("<font color=red>N/A</font>", "N/A");
 		}
 		else if ($resultcount > 0 && $columncount <= 2){
-			return array("<font color=gray>AWAITING INFO</font>","N/A");
+			return array("<font color=gray>AWAITING</font>","N/A");
 		}
 		else{
-			for ($i = 0; $i < $columncount; $i++){
+            $ch = curl_init();
+            curl_setopt_array($ch, array(
+                CURLOPT_URL => 'http://192.168.209.210:8086/query?q=select%20Longitude,AGC/Signal%20from%20satstatus%20where%20time%20%3E%20now()%20-10m%20order%20by%20time%20desc&db=acustatus',
+                CURLOPT_TIMEOUT => 1,
+                CURLOPT_MAXREDIRS => 10,
+                CURLOPT_CUSTOMREQUEST => GET,
+                CURLOPT_RETURNTRANSFER => TRUE,
+                CURLOPT_HTTPHEADER => array(
+                    'Content-Type: application/json'
+                )
+            ));
+            $satelliteresponse = curl_exec($ch);
+            curl_close($ch);
+            $satellite_decoded = json_decode($satelliteresponse, true);
+            $satelliteid=0;
+            if($decoded['results'][0]['series'][0]['values'][0][1]){
+                $satelliteid=$satellite_decoded['results'][0]['series'][0]['values'][0][1];
+            }
+            for ($i = 0; $i < $columncount; $i++){
 				switch($decoded['results'][0]['series'][0]['columns'][$i]){
 					case "Heading":
 						$headingIdx = $i;
@@ -161,17 +184,17 @@ function check_vsat_status_influxdb(){
 					case "Longitude":
 						$lonIdx = $i;
 						break;
-					case "lat-direction":
+					case "lat_direction":
 						$latDirIdx = $i;
 						break;
-					case "lon-direction":
+					case "lon_direction":
 						$lonDirIdx = $i;
 						break;
 				}
 			}
             $headingstring = $decoded['results'][0]['series'][0]['values'][0][$headingIdx];
             if(is_numeric($headingstring)){
-                $heading = $headingstring;
+                $heading = round($headingstring, 1);
             }
             else{
                 $heading = 0;
@@ -187,10 +210,10 @@ function check_vsat_status_influxdb(){
 			$lonDir_last = $decoded['results'][0]['series'][0]['values'][1][$lonDirIdx];
 			if($latDir == "S"){ $lat_current = $lat*-1; }
 			else { $lat_current = $lat; }
-			if($lonDir == "W"){ $lon_current = 360 - $lon; }
+			if($lonDir == "W"){ $lon_current = $lon*-1; }
 			else { $lon_current = $lon; }
 			if($latDir_last == "S"){ $lat_last = $lat_last*-1; }
-			if($lonDir_last == "W"){ $lon_last = 360-$lon_last; }
+			if($lonDir_last == "W"){ $lon_last = $lon_last*-1; }
 			$current_time= $decoded['results'][0]['series'][0]['values'][0][0];
 			$last_time= $decoded['results'][0]['series'][0]['values'][1][0];
 			$timegap= strtotime($current_time) - strtotime($last_time);
@@ -198,9 +221,105 @@ function check_vsat_status_influxdb(){
 			$avrhrspeed= round($distance/$timegap*3600/1.852, 2);
             $lat_deg = gps_degree($lat_current);
             $lon_deg = gps_degree($lon_current);
-			return array("<font color=green>MONITORING</font>","{$lat_deg}{$latDir}<br>{$lon_deg}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
+            $color="green";
+            if($satelliteid=='0'){
+                $color="red";
+            }
+			return array("<font color={$color}>ID: {$satelliteid}</font>","{$lat_deg}{$latDir}<br>{$lon_deg}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
 		}
 	}
+}
+function check_fbb_status_influxdb(){
+    $ch = curl_init();
+    curl_setopt_array($ch, array(
+        CURLOPT_URL => 'http://192.168.209.210:8086/query?q=select%20*%20from%20satstatus%20where%20time%20%3E%20now()%20-10m%20order%20by%20time%20desc&db=fbbstatus',
+        CURLOPT_TIMEOUT => 1,
+        CURLOPT_MAXREDIRS => 10,
+        CURLOPT_CUSTOMREQUEST => GET,
+        CURLOPT_RETURNTRANSFER => TRUE,
+        CURLOPT_HTTPHEADER => array(
+            'Content-Type: application/json'
+        )
+    ));
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    if(!$response){
+        return array ("<font color=red>STORE ERROR</font>", "N/A");
+    }
+    else {
+        $decoded = json_decode($response, true);
+        $resultcount = count($decoded['results'][0]['series'][0]['values']);
+        $headingIdx = 0;
+        $latIdx = 0;
+        $lonIdx = 0;
+        $latDirIdx = 0;
+        $lonDirIdx = 0;
+        $columncount= count($decoded['results'][0]['series'][0]['columns']);
+        if($resultcount <= 0){
+            return array ("<font color=red>N/A</font>", "N/A");
+        }
+        else if ($resultcount > 0 && $columncount <= 2){
+            return array("<font color=gray>AWAITING</font>","N/A");
+        }
+        else{
+            for ($i = 0; $i < $columncount; $i++){
+                switch($decoded['results'][0]['series'][0]['columns'][$i]){
+                    case "Heading":
+                        $headingIdx = $i;
+                        break;
+                    case "Latitude":
+                        $latIdx = $i;
+                        break;
+                    case "Longitude":
+                        $lonIdx = $i;
+                        break;
+                    case "lat-direction":
+                        $latDirIdx = $i;
+                        break;
+                    case "lon-direction":
+                        $lonDirIdx = $i;
+                        break;
+                    case "Signal":
+                        $signalIdx = $i;
+                        break;
+                    case "Satellite":
+                        $satelliteIdx = $i;
+                        break;
+                }
+            }
+            $headingstring = $decoded['results'][0]['series'][0]['values'][0][$headingIdx];
+            if(is_numeric($headingstring)){
+                $heading = round($headingstring,1);
+            }
+            else{
+                $heading = 0;
+            }
+            $satelliteString = $decoded['results'][0]['series'][0]['values'][0][$satelliteIdx];
+            $signalString = round($decoded['results'][0]['series'][0]['values'][0][$signalIdx], 2);
+            $lat = $decoded['results'][0]['series'][0]['values'][0][$latIdx];
+            $lon = $decoded['results'][0]['series'][0]['values'][0][$lonIdx];
+            $latDir = $decoded['results'][0]['series'][0]['values'][0][$latDirIdx];
+            $lonDir = $decoded['results'][0]['series'][0]['values'][0][$lonDirIdx];
+
+            $lat_last = $decoded['results'][0]['series'][0]['values'][1][$latIdx];
+            $lon_last = $decoded['results'][0]['series'][0]['values'][1][$lonIdx];
+            $lat_current = $lat;
+            $lon_current = $lon;
+            $current_time= $decoded['results'][0]['series'][0]['values'][0][0];
+            $last_time= $decoded['results'][0]['series'][0]['values'][1][0];
+            $timegap= strtotime($current_time) - strtotime($last_time);
+            $distance = haversineGreatCircleDistance($lat_current, $lon_current, $lat_last, $lon_last, 6371);
+            $avrhrspeed= round($distance/$timegap*3600/1.852, 2);
+            $lat_deg = gps_degree($lat_current);
+            $lon_deg = gps_degree($lon_current);
+            $color="green";
+            if($satelliteString=='0'){
+                $color="red";
+            }
+            return array("<font color={$color}>{$satelliteString}<br>Sig: {$signalString}</font>","{$lat_deg}{$latDir}<br>{$lon_deg}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
+        }
+    }
 }
 
 function send_api($url, $method, $postdata) {
