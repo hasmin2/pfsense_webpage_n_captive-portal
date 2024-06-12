@@ -201,19 +201,26 @@ function check_vsat_status_influxdb(){
             }
             $lat = $decoded['results'][0]['series'][0]['values'][0][$latIdx];
 			$lon = $decoded['results'][0]['series'][0]['values'][0][$lonIdx];
-			$latDir = $decoded['results'][0]['series'][0]['values'][0][$latDirIdx];
-			$lonDir = $decoded['results'][0]['series'][0]['values'][0][$lonDirIdx];
-
 			$lat_last = $decoded['results'][0]['series'][0]['values'][1][$latIdx];
 			$lon_last = $decoded['results'][0]['series'][0]['values'][1][$lonIdx];
-			$latDir_last = $decoded['results'][0]['series'][0]['values'][1][$latDirIdx];
-			$lonDir_last = $decoded['results'][0]['series'][0]['values'][1][$lonDirIdx];
-			if($latDir == "S"){ $lat_current = $lat*-1; }
-			else { $lat_current = $lat; }
-			if($lonDir == "W"){ $lon_current = $lon*-1; }
-			else { $lon_current = $lon; }
-			if($latDir_last == "S"){ $lat_last = $lat_last*-1; }
-			if($lonDir_last == "W"){ $lon_last = $lon_last*-1; }
+            if($lat < 0){
+                $lat_current=$lat*-1;
+                $latDir="S";
+            }
+            else {
+                $lat_current = $lat;
+                $latDir="N";
+            }
+            if($lon < 0){
+                $lon_current=$lon*-1;
+                $lonDir="W";
+            }
+            else {
+                $lon_current = $lon;
+                $lonDir="E";
+            }
+            if($lat_last < 0){ $lat_last*=-1; }
+            if($lon_last < 0){ $lon_last*=-1; }
 			$current_time= $decoded['results'][0]['series'][0]['values'][0][0];
 			$last_time= $decoded['results'][0]['series'][0]['values'][1][0];
 			$timegap= strtotime($current_time) - strtotime($last_time);
@@ -304,8 +311,24 @@ function check_fbb_status_influxdb(){
 
             $lat_last = $decoded['results'][0]['series'][0]['values'][1][$latIdx];
             $lon_last = $decoded['results'][0]['series'][0]['values'][1][$lonIdx];
-            $lat_current = $lat;
-            $lon_current = $lon;
+            if($lat < 0){
+                $lat_current=$lat*-1;
+                $latDir="S";
+            }
+            else {
+                $lat_current = $lat;
+                $latDir="N";
+            }
+            if($lon < 0){
+                $lon_current=$lon*-1;
+                $lonDir="W";
+            }
+            else {
+                $lon_current = $lon;
+                $lonDir="E";
+            }
+            if($lat_last < 0){ $lat_last*=-1; }
+            if($lon_last < 0){ $lon_last*=-1; }
             $current_time= $decoded['results'][0]['series'][0]['values'][0][0];
             $last_time= $decoded['results'][0]['series'][0]['values'][1][0];
             $timegap= strtotime($current_time) - strtotime($last_time);
