@@ -40,6 +40,19 @@ function gps_degree($value){
     $min = round($min, 3);
     return $deg."&deg;".$min."'";
 }
+function calculateHeading($lat1, $lon1, $lat2, $lon2) {
+    $lat1 = deg2rad($lat1);
+    $lon1 = deg2rad($lon1);
+    $lat2 = deg2rad($lat2);
+    $lon2 = deg2rad($lon2);
+    $dLon = $lon2 - $lon1;
+    $y = sin($dLon) * cos($lat2);
+    $x = cos($lat1) * sin($lat2) - sin($lat1) * cos($lat2) * cos($dLon);
+    $initial_bearing = atan2($y, $x);
+    $initial_bearing = rad2deg($initial_bearing);
+    $compass_bearing = (fmod(($initial_bearing + 360), 360));
+    return $compass_bearing;
+}
 
 function haversineGreatCircleDistance($latitudeFrom, $longitudeFrom, $latitudeTo, $longitudeTo, $earthRadius = 6371000){
   // convert from degrees to radians
@@ -124,7 +137,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
 function check_vsat_status_influxdb(){
 	$ch = curl_init();
 	curl_setopt_array($ch, array(
-		CURLOPT_URL => 'http://192.168.209.210:8086/query?q=select%20*%20from%20vesselposition%20where%20time%20%3E%20now()%20-10m%20order%20by%20time%20desc&db=acustatus',
+		CURLOPT_URL => 'http://192.168.209.210:8086/query?q=select%20*%20from%20vesselposition%20where%20time%20%3E%20now()%20-60m%20order%20by%20time%20desc&db=acustatus',
 		CURLOPT_TIMEOUT => 1,
 		CURLOPT_MAXREDIRS => 10,
 		CURLOPT_CUSTOMREQUEST => GET,
@@ -145,8 +158,6 @@ function check_vsat_status_influxdb(){
 		$headingIdx = 0;
 		$latIdx = 0;
 		$lonIdx = 0;
-		$latDirIdx = 0;
-		$lonDirIdx = 0;
 		$columncount= count($decoded['results'][0]['series'][0]['columns']);
 		if($resultcount <= 0){
 			return array ("<font color=red>N/A</font>", "N/A");
@@ -199,10 +210,15 @@ function check_vsat_status_influxdb(){
             else{
                 $heading = 0;
             }
+
             $lat = $decoded['results'][0]['series'][0]['values'][0][$latIdx];
 			$lon = $decoded['results'][0]['series'][0]['values'][0][$lonIdx];
-			$lat_last = $decoded['results'][0]['series'][0]['values'][1][$latIdx];
-			$lon_last = $decoded['results'][0]['series'][0]['values'][1][$lonIdx];
+			$lat_last = end($decoded['results'][0]['series'][0]['values'])[$latIdx];
+			$lon_last = end($decoded['results'][0]['series'][0]['values'])[$lonIdx];
+            if($heading==0){
+                $heading = round(calculateHeading($lat_last, $lon_last, $lat, $lon),1);
+            }
+            $distance = haversineGreatCircleDistance($lat_last, $lon_last, $lat, $lon, 6371);
             if($lat < 0){
                 $lat_current=$lat*-1;
                 $latDir="S";
@@ -222,9 +238,8 @@ function check_vsat_status_influxdb(){
             if($lat_last < 0){ $lat_last*=-1; }
             if($lon_last < 0){ $lon_last*=-1; }
 			$current_time= $decoded['results'][0]['series'][0]['values'][0][0];
-			$last_time= $decoded['results'][0]['series'][0]['values'][1][0];
+			$last_time= end($decoded['results'][0]['series'][0]['values'])[0];
 			$timegap= strtotime($current_time) - strtotime($last_time);
-			$distance = haversineGreatCircleDistance($lat_current, $lon_current, $lat_last, $lon_last, 6371);
 			$avrhrspeed= round($distance/$timegap*3600/1.852, 2);
             $lat_deg = gps_degree($lat_current);
             $lon_deg = gps_degree($lon_current);
