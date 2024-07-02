@@ -209,6 +209,24 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
         }
     }
 }
+$defaultgw4 = $config['gateways']['defaultgw4'];
+$gateways = $config['gateways']['gateway_item'];
+foreach ($gateways as $eachgw){
+    if($eachgw['name'] === $defaultgw4){
+        $currentroute = $eachgw['interface'];
+        break;
+    }
+}
+if($currentroute!=""){
+    $routeinterface="";
+    foreach ($config['interfaces'] as $key => $item) {
+        if($key === $currentroute){
+            $routeinterface = str_replace(".", "_", $item['if']);
+            break;
+        }
+    }
+    $datastring .=  "currentroute=\"" .$routeinterface."\",";
+}
 $datastring .= 'core_status='.get_module_status();
 $datastring = rtrim($datastring, ',');
 $datastring .= " " .$timestamp;

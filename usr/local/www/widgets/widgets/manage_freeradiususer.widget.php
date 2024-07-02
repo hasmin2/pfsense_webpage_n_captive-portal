@@ -204,7 +204,7 @@ if ($_POST['widgetkey']) {//???????????
                 "varuserscreatedate"=>$curdate,
 			);
 			$userinfoentry['varusersusername']=$username;
-            if($_POST['createsuerquotaperiod']==="forever"){
+            /*if($_POST['createsuerquotaperiod']==="forever"){
                 $alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
                 $pass = array(); //remember to declare $pass as an array
                 $alphaLength = strlen($alphabet) - 1; //put the length -1 in cache
@@ -214,9 +214,9 @@ if ($_POST['widgetkey']) {//???????????
                 }
                 $userinfoentry['varuserspassword']= implode($pass);
             }
-            else{
+            else{*/
                 $userinfoentry['varuserspassword']="1111";
-            }
+            //}
 			if(is_numeric($_POST['createuserquota'])){
 				$userinfoentry['varusersmaxtotaloctets']=$_POST['createuserquota'];
 			}
