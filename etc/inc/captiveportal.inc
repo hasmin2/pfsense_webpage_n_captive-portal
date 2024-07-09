@@ -2318,7 +2318,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
     } else if ($type=="commit_change_pw"){
         foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
             if($username===$value['varusersusername']){
-                $config['installedpackages']['freeradius']['config'][$item][varuserspassword]=$password;
+                $config['installedpackages']['freeradius']['config'][$item]['varuserspassword']=$password;
             }
         }
         write_config("{$username} change password applied");
