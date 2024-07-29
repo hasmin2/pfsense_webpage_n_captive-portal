@@ -7,6 +7,7 @@
     <file url="file://$PROJECT_DIR$/firewall_updates/usr/local/www/widgets/widgets/toggle_captive_portal.widget.php" charset="x-windows-949" />
     <file url="file://$PROJECT_DIR$/usr/local/www/widgets/widgets/gateway_config.widget.php" charset="x-windows-949" />
     <file url="file://$PROJECT_DIR$/usr/local/www/widgets/widgets/manage_server_module.widget.php" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/usr/local/www/widgets/widgets/managed_switch_widget.php" charset="x-windows-949" />
     <file url="file://$PROJECT_DIR$/usr/local/www/widgets/widgets/toggle_captive_portal.widget.php" charset="x-windows-949" />
   </component>
 </project>

@@ -32,7 +32,6 @@ require_once("freeradius.inc");
 require_once ("captiveportal.inc");
 require_once ("auth.inc");
 require_once("/usr/local/www/widgets/include/manage_freeradiususer.inc");
-$passwordlist;
 
 if (!function_exists('compose_manage_freeradiususer_contents')) {
 	function compose_manage_freeradiususer_contents($widgetkey) {
@@ -204,7 +203,7 @@ if ($_POST['widgetkey']) {//???????????
                 "varuserscreatedate"=>$curdate,
 			);
 			$userinfoentry['varusersusername']=$username;
-            /*if($_POST['createsuerquotaperiod']==="forever"){
+            if($_POST['randpwd']==="randpwd"){
                 $alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
                 $pass = array(); //remember to declare $pass as an array
                 $alphaLength = strlen($alphabet) - 1; //put the length -1 in cache
@@ -214,9 +213,9 @@ if ($_POST['widgetkey']) {//???????????
                 }
                 $userinfoentry['varuserspassword']= implode($pass);
             }
-            else{*/
+            else{
                 $userinfoentry['varuserspassword']="1111";
-            //}
+            }
 			if(is_numeric($_POST['createuserquota'])){
 				$userinfoentry['varusersmaxtotaloctets']=$_POST['createuserquota'];
 			}
@@ -290,19 +289,22 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
     function confirm_checkPw(){
         var pwlist = "<?php
             $passwordlist = array();
-            foreach ($config['installedpackages']['freeradius']['config'] as $item=>$userentry) {
-                if($userentry['varusersusername']!=='synersat'){
-                    array_push($passwordlist, $userentry['varuserspassword']);
+            foreach ($config['installedpackages']['freeradius']['config'] as $eachuser) {
+                $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
+                if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername'])) {
+                    if ($used_quota <= $eachuser['varusersmaxtotaloctets'] || $eachuser['varuserspointoftime'] !== 'forever') {
+                        array_push($passwordlist, $eachuser['varuserspassword']);
+                    }
                 }
             }
-            echo implode(", ", $passwordlist);
+            echo implode("|||", $passwordlist);
         ?>";
 
         var result="";
         var resultlist = document.getElementsByName('userlist[]');
-        for(let i=0; i<resultlist.length; i++){
-            if(resultlist[i].checked){
-                result += "\n" + resultlist[i].value + " : " + pwlist.split(",")[i];
+        for(let idcount=0; idcount<resultlist.length; idcount++){
+            if(resultlist[idcount].checked){
+                result += "\n" + resultlist[idcount].value + " : " + pwlist.split("|||")[idcount];
             }
         }
         if(result===''){
@@ -373,7 +375,7 @@ if(strpos(get_config_user(), "admin") !== false){
 	$echostr .= '<div><div class="form-group">';
 	$echostr .= '<label>..          Allow data(MB)<input name="createuserquota" type="number"  value></label><p>';
 	$echostr .= '<label>..         # of Vouchers <input name="createusernumber" type="number"  value></label>';
-	$echostr .= '</div></div>';
+	$echostr .= '</div><input type="checkbox" name="randpwd" value="randpwd">Generate random password?<br></div>';
 	$echostr .= '<label class="col-sm-4 control-label">"Reset/Terminal Type"</label>';
 	$echostr .= '<div class="col-sm-6">';
 	$echostr .= '<div class="radio"><class>';
