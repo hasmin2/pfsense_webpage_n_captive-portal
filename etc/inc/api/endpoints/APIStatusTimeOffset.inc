@@ -13,21 +13,16 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-require_once("api/framework/APIModel.inc");
-require_once("api/framework/APIResponse.inc");
+require_once("api/framework/APIEndpoint.inc");
 
-class APIStatusGetGpsPosition extends APIModel {
-    # Create our method constructor
+class APIStatusTimeOffset extends APIEndpoint {
     public function __construct() {
-        parent::__construct();
-        $this->privileges = ["page-all", "page-system-gateways"];
+        $this->url = "/api/v1/status/timeoffset";
     }
-    public function action() {
-        $fd = fopen('/etc/inc/gps_position.txt', "r");
-        $gpsnmea = fgets($fd);
-        fclose($fd);
-        return APIResponse\get(0, $gpsnmea);
+    protected function get() {
+        return (new APIStatusGetTimeOffset())->call();
+    }
+    protected function post() {
+        return (new APIStatusSetTimeOffset())->call();
     }
 }
-
-?>

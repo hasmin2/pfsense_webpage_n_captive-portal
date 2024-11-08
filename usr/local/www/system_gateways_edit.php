@@ -257,9 +257,9 @@ $group->add(new Form_Select(
 	'*Terminal Type',
 	$pconfig['terminal_type'],
 	 array(
-		"vsat_pri" => "1st VSAT (or FX CORP)",
-		"vsat_sec" => "2nd VSAT (or FX CREW)",
-		"vsat_thi" => "3rd VSAT (or any third VSAT terminal)",
+		"vsat_pri" => "1st VSAT(or FX CORP)",
+		"vsat_sec" => "FX_CREW",
+		"vsat_thi" => "2nd VSAT (or any after second VSAT terminal)",
 		"tcp_other" => "Internet",
 		"vpn"=> "VPN Network",
 		"fbb_satlink"=> "SATLink FleetBroadband",

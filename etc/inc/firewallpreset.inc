@@ -1,5 +1,28 @@
 <?php
+/*
+ * firwallpreset.inc
+ *
+ * part of pfSense (https://www.pfsense.org)
+ * Copyright (c) 2008 Bill Marquette, Seth Mos
+ * Copyright (c) 2008-2013 BSD Perimeter
+ * Copyright (c) 2013-2016 Electric Sheep Fencing
+ * Copyright (c) 2014-2021 Rubicon Communications, LLC (Netgate)
+ * All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 //hasmin build
+
 require_once ("captiveportal.inc");
 function destroy_firewall_preset(){
     global $config;
@@ -16,7 +39,11 @@ function build_firewall_preset($defaultgw){
     openlog("logportalauth", LOG_PID, LOG_LOCAL4);
     $disablecrewinternet="";
     $blockall="";
+    $curgateway= "";
     foreach ($config['gateways']['gateway_item'] as $gatewayitem){
+        if( $defaultgw===$gatewayitem['name']){
+            $curgateway = $gatewayitem['interface'];
+        }
         if( $defaultgw===$gatewayitem['name'] && isset($gatewayitem['sourceaddresses'])){
             if($gatewayitem['sourceaddresses']!==''){
                 $source_addresses = explode("||", $gatewayitem['sourceaddresses']);
@@ -76,6 +103,32 @@ function build_firewall_preset($defaultgw){
                 $newrule['source']['any'] = '';
                 $newrule['destination']['network'] = '(self)';
                 $newrule['destination']['not'] = '';
+                $newrule['descr'] = '[System Rule] Auto generated rule for firewall-preset';
+                $newrule['created']['time'] = time();
+                $newrule['created']['username'] = 'sysadmin';
+                $newrule['updated']['time'] = time();
+                $newrule['updated']['username'] = 'sysadmin';
+                array_unshift($config['filter']['rule'], $newrule);
+                //2. 해당 gw WAN 을 허용토록 만듬 (floating rule
+                syslog(LOG_INFO, "firewall gateway : $curgateway");
+                $newrule = array();
+                $newrule['id'] = '';
+                $newrule['tracker'] = time();
+                $newrule['type'] = 'pass';
+                $newrule['interface'] = $lanitem;
+                $newrule['ipprotocol'] = 'inet';
+                $newrule['tag'] = '';
+                $newrule['tagged'] = '';
+                $newrule['direction'] = 'any';
+                $newrule['max'] = '';
+                $newrule['max-src-nodes'] = '';
+                $newrule['max-src-conn'] = '';
+                $newrule['max-src-states'] = '';
+                $newrule['statetimeout'] = '';
+                $newrule['statetype'] = 'keep state';
+                $newrule['os'] = '';
+                $newrule['source']['any'] = '';
+                $newrule['destination']['network'] = $curgateway;
                 $newrule['descr'] = '[System Rule] Auto generated rule for firewall-preset';
                 $newrule['created']['time'] = time();
                 $newrule['created']['username'] = 'sysadmin';

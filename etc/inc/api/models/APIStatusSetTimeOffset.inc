@@ -16,17 +16,24 @@
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 
-class APIStatusGetGpsPosition extends APIModel {
+class APIStatusSetTimeOffset extends APIModel {
     # Create our method constructor
     public function __construct() {
         parent::__construct();
         $this->privileges = ["page-all", "page-system-gateways"];
     }
     public function action() {
-        $fd = fopen('/etc/inc/gps_position.txt', "r");
-        $gpsnmea = fgets($fd);
-        fclose($fd);
-        return APIResponse\get(0, $gpsnmea);
+        if($this->initial_data['time_offset']){
+            $last_timeoffset = $this->config['time_offset'];
+            if($last_timeoffset!==$this->initial_data['time_offset']){
+                $this->config['time_offset'] = $this->initial_data['time_offset'];
+                $this->write_config();
+            }
+            return APIResponse\get(0, ("applied successful"));
+        }
+        else {
+            return APIResponse\get(0,("no Data to be applied"));
+        }
     }
 }
 

@@ -16,17 +16,14 @@
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 
-class APIStatusGetGpsPosition extends APIModel {
+class APIStatusGetTimeOffset extends APIModel {
     # Create our method constructor
     public function __construct() {
         parent::__construct();
         $this->privileges = ["page-all", "page-system-gateways"];
     }
     public function action() {
-        $fd = fopen('/etc/inc/gps_position.txt', "r");
-        $gpsnmea = fgets($fd);
-        fclose($fd);
-        return APIResponse\get(0, $gpsnmea);
+        return APIResponse\get(0, $this->config['time_offset']);
     }
 }
 
