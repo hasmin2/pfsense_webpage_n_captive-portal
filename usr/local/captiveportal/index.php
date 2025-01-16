@@ -177,12 +177,13 @@ if ($_POST['logout_id']) {//When User click logout button from './logout.php'
 		
 	}
 
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	$auth_result = captiveportal_authenticate_user($user, $passwd, $clientmac, $clientip, $pipeno, $context);
 	if ($auth_result['result']) {
 		captiveportal_logportalauth($user, $clientmac, $clientip, $auth_result['login_status']);
 		portal_allow($clientip, $clientmac, $user, $passwd, $redirurl, $auth_result['attributes'], $pipeno, $auth_result['auth_method'], $context);
-        portal_reply_page($loginurl, "connected", "You are Online!", $clientmac, $clientip);
+        portal_reply_page($loginurl, "connected", trim($_POST['auth_user'])." online", $clientmac, $clientip);
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	} else {
 		captiveportal_free_dn_ruleno($pipeno);
@@ -212,7 +213,7 @@ if ($_POST['logout_id']) {//When User click logout button from './logout.php'
 		portal_reply_page($redirurl, "login", "Welcome!", $clientmac, $clientip);
 	}
 	else {//is still connected
-		portal_reply_page($redirurl, "connected", "You are Online!", $clientmac, $clientip);
+		portal_reply_page($redirurl, "connected", trim($_POST['auth_user'])." online", $clientmac, $clientip);
 	}
 }
 

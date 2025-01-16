@@ -2364,7 +2364,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
                         $currentquota = getcurquota($sessionid, $clientip);
                         $maxquota = getmaxquota($sessionid);
                         if ($currentquota < $maxquota) {
-                            $title = "You are Online!";
+                            $title = $username." Online!";
                             $portalbtnmessage = "Click here to log out";
                             $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
                         } else {
@@ -2395,11 +2395,11 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             captiveportal_disconnect_client($sessionid);
             write_config("FreeRADIUS user change applied");
         }
-        $portalinfobtnmessage = "{$currentusercount}crew @ {$crewspeed}Kbps";
+        $portalinfobtnmessage = "{$currentusercount}crew @ ".round($crewspeed, 2)."Kbps";
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     } else if ($type == "login") {
         $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal_{$cpzone}.html");
-        $portalinfobtnmessage = "{$currentusercount}crew @ {$crewspeed}Kbps";
+        $portalinfobtnmessage = "{$currentusercount}crew @ ".round($crewspeed, 2)."Kbps";
     } else if ($type == "check_quota") {
         if(!empty($username)){
             foreach($config['installedpackages']['freeradius']['config'] as $item => $value){

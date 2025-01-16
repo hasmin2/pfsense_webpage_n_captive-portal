@@ -1,0 +1,99 @@
+@charset "utf-8";
+
+/*-------------------------------------------------------------------
+    파일정의 : 메인 스타일
+-------------------------------------------------------------------*/
+/* layout */
+#wrapper {display: flex; align-items: stretch; justify-content: flex-start; min-height: 100vh; background-color: #F1F3F5;}
+
+#wrapper #sidebar {flex: none; width: 320px; display: flex; flex-direction: column;}
+#wrapper #sidebar .brand {padding: 30px 0; background-color: #001621; border-bottom: 1px solid #495057; position: relative;}
+
+#wrapper #sidebar .brand .btn-menu-open {display: none;}
+
+#wrapper #sidebar .brand .logo {width: 156px; height: 28px; background: url('../img/common/logo.png') no-repeat center/100%; margin: 0 auto;}
+#wrapper #sidebar .brand .logo a {display: block; width: 100%; height: 100%; text-indent: -9999px; }
+
+#wrapper #sidebar .brand .location {margin: 40px auto 0; width: fit-content; padding-left: 34px; background: url('../img/icon/ic_location.png') no-repeat left center/24px; font-size: 18px; font-weight: 700; line-height: 1.334; color: #38D9A9;}
+
+#wrapper #sidebar .brand .gmt {margin: 10px auto 0; width: fit-content; padding-left: 20px; background: url('../img/icon/ic_gmt.png') no-repeat left center/16px; font-size: 14px; font-weight: 600; line-height: 1.429; color: #CED4DA;}
+
+#wrapper #sidebar #lnb {flex: 1 0; padding-top: 40px; padding-bottom: 40px; background: #001621 url('../img/common/bg_lnb.png') no-repeat bottom center/100%;}
+#wrapper #sidebar #lnb .depth01 > ul > li + li {margin-top: 16px;}
+#wrapper #sidebar #lnb .depth01 > ul > li > a {padding: 20px 30px; display: flex; align-items: center; gap: 0 8px; color: #CED4DA;}
+#wrapper #sidebar #lnb .depth01 > ul > li.on {background-color: #38D9A9;}
+#wrapper #sidebar #lnb .depth01 > ul > li.on > a {color: #FFFFFF;}
+#wrapper #sidebar #lnb .depth01 > ul > li.on > a > .ic-lnb01 {background-image: url('../img/icon/ic_lnb_on_01.png');}
+#wrapper #sidebar #lnb .depth01 > ul > li.on > a > .ic-lnb02 {background-image: url('../img/icon/ic_lnb_on_02.png');}
+#wrapper #sidebar #lnb .depth01 > ul > li.on > a > .ic-lnb03 {background-image: url('../img/icon/ic_lnb_on_03.png');}
+#wrapper #sidebar #lnb .depth01 > ul > li.on > a > .ic-lnb04 {background-image: url('../img/icon/ic_lnb_on_04.png');}
+#wrapper #sidebar #lnb .depth01 > ul > li.on > a > .ic-lnb05 {background-image: url('../img/icon/ic_lnb_on_05.png');}
+#wrapper #sidebar #lnb .btn-menu-close {display: none;}
+
+#wrapper #content {flex: 1 0; min-width: 0;}
+#wrapper #content .headline-wrap {display: flex; align-items: center; justify-content: space-between; background-color: #FFFFFF; height: 80px; padding: 0 40px;}
+#wrapper #content .headline-wrap .title-area .headline {font-size: 24px; font-weight: 600;}
+#wrapper #content .contents {padding: 40px 40px;}
+
+/* 섹션 */
+.private-wrap .tile-wrap {display: flex; gap: 20px 20px;}
+.private-wrap .tile-wrap .tile-area {background-color: #FFFFFF; padding: 40px 30px; flex: 1 0; min-width: 0;}
+.private-wrap .tile-wrap .tile-area dt img {width: 48px; display: block; margin: 0 auto;}
+.private-wrap .tile-wrap .tile-area dt p {text-align: center; font-size: 18px; font-weight: 600; line-height: 1.167; margin-top: 20px;}
+.private-wrap .tile-wrap .tile-area dd {margin-top: 40px; border-top: 1px solid #CED4DA; padding-top: 40px;}
+.private-wrap .tile-wrap .tile-area dd .switch {margin: 0 auto;}
+.private-wrap .tile-wrap .tile-area dd .text {font-size: 14px; line-height: 1.5; font-weight: 500; text-align: center; margin-top: 40px;}
+.private-wrap .tile-wrap .tile-area dd .txt-caution {text-align: center; margin-top: 4px;}
+.private-wrap .tile-wrap .tile-area dd .select.v1 {width: 160px; margin: 20px auto 0;}
+.private-wrap .tile-wrap .tile-area dd input[type="text"] {width: 160px; margin: 20px auto 0; text-align: center;}
+.private-wrap .green-label-wrap {background-color: lawngreen; padding: 10px 10px; flex: 1 0; min-width: 0;}
+.private-wrap .yellow-label-wrap {background-color: yellow; padding: 10px 10px; flex: 1 0; min-width: 0;}
+.private-wrap .blue-label-wrap {background-color: royalblue; padding: 10px 10px; flex: 1 0; min-width: 0;}
+.private-wrap .red-label-wrap {background-color: red; padding: 10px 10px; flex: 1 0; min-width: 0;}
+.private-wrap .gray-label-wrap {background-color: darkgray; padding: 10px 10px; flex: 1 0; min-width: 0;}
+.private-wrap .purple-label-wrap {background-color: rebeccapurple; padding: 10px 10px; flex: 1 0; min-width: 0;}
+.private-wrap .green-label-wrap .system-status-area {font-size: 30px; color:black; line-height: 1.5; font-weight: 700; text-align: center; vertical-align:middle;}
+.private-wrap .yellow-label-wrap .system-status-area {font-size: 30px; color:black; line-height: 1.5; font-weight: 700; text-align: center; vertical-align:middle;}
+.private-wrap .blue-label-wrap .system-status-area {font-size: 30px; color:white; line-height: 1.5; font-weight: 700; text-align: center; vertical-align:middle;}
+.private-wrap .gray-label-wrap .system-status-area {font-size: 30px; color:black; line-height: 1.5; font-weight: 700; text-align: center; vertical-align:middle;}
+.private-wrap .red-label-wrap .system-status-area {font-size: 30px; color:white; line-height: 1.5; font-weight: 700; text-align: center; vertical-align:middle;}
+.private-wrap .purple-label-wrap .system-status-area {font-size: 30px; color:white; line-height: 1.5; font-weight: 700; text-align: center; vertical-align:middle;}
+/* 팝업 */
+/* Terminal Setting */
+.pop-set-terminal {width: 400px;}
+.pop-set-terminal .override-list {height: 210px; background-color: #F8F9FA; margin-top: 10px;}
+.pop-set-terminal .override-list ul {padding: 16px 16px;}
+.pop-set-terminal .override-list ul li + li {margin-top: 10px;}
+
+/* Server Setting */
+.pop-set-server {width: 400px;}
+.pop-set-server .btn.lg {min-width: 240px; margin: 0 auto;}
+.pop-set-server .btn.lg + .btn.lg {margin-top: 10px;}
+
+/* Manage Setting */
+.pop-set-manage {width: 400px;}
+.pop-set-manage .btn.lg {min-width: 240px; margin: 0 auto;}
+.pop-set-manage .btn.lg + .btn.lg {margin-top: 10px;}
+/* login */
+.pop-login {width: 400px;}
+
+@media screen and (max-width: 1440px) {
+    #wrapper {flex-direction: column;}
+
+    #wrapper #sidebar {width: 100%; height: 142.68px;}
+    #wrapper #sidebar .brand {padding: 20px 0; position: fixed; z-index: 6; left: 0; top: 0; width: 100%;}
+
+    #wrapper #sidebar .brand .location {margin: 20px auto 0;}
+
+    #wrapper #sidebar .brand .btn-menu-open {display: block; position: absolute; left: 16px; top: 22px;}
+
+    #wrapper #sidebar #lnb {position: fixed; left: 0; top: 0; padding-top: 60px; padding-bottom: 60px; min-height: 100vh; z-index: 8; width: calc(100vw - 60px); max-width: 300px; display: none;}
+    #wrapper #sidebar #lnb.on {display: block;}
+    #wrapper #sidebar #lnb .btn-menu-close {display: block; position: absolute; right: -20px; top: 80px; transform: translateX(100%);}
+
+    #wrapper #content .headline-wrap {padding: 0 16px; position: sticky; top: 142.68px; left: 0; z-index: 1; box-shadow: 0px 4px 4px 0px #00000026; }
+    #wrapper #content .headline-wrap .title-area .headline {font-size: 20px; line-height: 1.2;}
+    #wrapper #content .contents {padding: 20px 16px;}
+
+    .private-wrap .tile-wrap {flex-direction: column;}
+}

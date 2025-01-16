@@ -147,7 +147,6 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
             }
         }
         if($value['name']=== $crew_rootinterface){
-
             if(file_exists($filepath."crew_tx") && ($crew_file = fopen($filepath."crew_tx", "w"))!==false ){
                 $fivemintx = $value['traffic']['fiveminute'][0]['tx'];
                 fwrite ($crew_file, round ($fivemintx/38400,0));
@@ -170,7 +169,7 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
         }
     }
     foreach ($interface as $key => $item) {
-        if($value['name'] === $item['rootinterface']){
+        //if($value['name'] === $item['rootinterface']){
             if(file_exists($filepath.$item['rootinterface']."_cumulative") && ($cumulative_file = fopen($filepath.$item['rootinterface']."_cumulative", "r"))!==false ){
                 $cur_usage = fgets($cumulative_file);
             }
@@ -205,7 +204,7 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
             fwrite($cumulative_file, sprintf('%.6f',$currentusagegb));
             fclose($cumulative_file);
             echo $item['rootinterface'].":".$currentusagegb.",   tx".$fivemintx.",      rx".$fiveminrx."\n";
-        }
+        //}
     }
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
