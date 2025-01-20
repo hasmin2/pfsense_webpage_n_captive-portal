@@ -70,7 +70,7 @@ function read_month_data($dataMetric) {
     $interval = $currentDateTime->diff($firstDayOfMonth);
     $elaspedminutes = ($interval->days * 24 * 60) + ($interval->h * 60) + $interval->i;
     curl_setopt_array($ch, array(
-        CURLOPT_URL => "http://192.168.209.210:8086/query?q=select%20sum%28".$dataMetric_rx."%29,sum%28".$dataMetric_tx."%29from%20traffic%20where%20time%20%3E%20now()%20-".$elaspedminutes."m&db=acustatus",
+        CURLOPT_URL => "http://192.168.209.210:8086/query?q=select%20sum%28%22".$dataMetric_rx."%22%29,sum%28%22".$dataMetric_tx."%22%29from%20traffic%20where%20time%20%3E%20now()%20-".$elaspedminutes."m&db=acustatus",
         CURLOPT_TIMEOUT => 1,
         CURLOPT_MAXREDIRS => 10,
         CURLOPT_CUSTOMREQUEST => "GET",

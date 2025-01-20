@@ -48,59 +48,66 @@ function return_gateways_label(){
     $iridium_online="";
     $tcp_online="";
     global $vsattx;
+    $isfx = false;
     foreach ($a_gateways as $gname => $gateway) {
         if ($gateways_status[$gname] && stristr($gateways_status[$gname]['status'], "online") && !stristr($gateway['terminal_type'],"vpn")) {
-            /*$gateway['terminal_type'];//FBB/VSAT 등등
-            $gateways_status[$gname]['status']; //VSAT FBB online
-            $$config['gatewaystatus'][$gname];*/
-            //echo ($gateway['terminal_type']);
+
             $system_status_color="red-label-wrap";
             $pingresult = get_extnet_status($gateways_status[$gname])[1];
             if(stristr($gateway['terminal_type'],"metered")) {
-                if($pingresult=="Online"){ $metered_online=true; }
+                if($pingresult==="Online"){ $metered_online=true; }
                 else{ $metered_online=false; }
             }
             if(stristr($gateway['terminal_type'],"iridium")) {
-                if($pingresult=="Online"){ $iridium_online=true; }
+                if($pingresult==="Online"){ $iridium_online=true; }
                 else{ $iridium_online=false; }
             }
-            if(stristr($gateway['terminal_type'],"fbb")) {
-                if($pingresult=="Online"){ $fbb_online=true; }
+            if(stristr($gateway['terminal_type'],"fbb") && !$isfx) {
+                if($pingresult==="Online"){ $fbb_online=true; }
                 else{ $fbb_online=false; }
             }
-            if(stristr($gateway['terminal_type'],"vsat") && $vsattx=="1") {
-                if($pingresult=="Online"){ $vsat_online=true; }
-                else{ $vsat_online=false; }
+            if(stristr($gateway['terminal_type'],"vsat")) {
+                if($vsattx=="1"||$vsattx=="" && $pingresult==='Online'){
+                    $vsat_online=true;
+                }
+                else if(($vsattx=="0") && $pingresult==="Online"){
+                    $vsat_online=false;
+                    $fbb_online=true;
+                    $isfx=true;
+                }
+                else{
+                    $vsat_online=false;
+                }
             }
             if(stristr($gateway['terminal_type'],"tcp")) {
-                if($pingresult=="Online"){ $tcp_online=true; }
+                if($pingresult==="Online"){ $tcp_online=true; }
                 else{ $tcp_online=false; }
             }
         }
     }
     $system_status_string="";
-    if($metered_online==true){
+    if($metered_online===true){
         $system_status_color="yellow-label-wrap";
         $system_status_string.="Metered ";
     }
-    if($iridium_online==true){
+    if($iridium_online===true){
         $system_status_color="blue-label-wrap";
         $system_status_string.="Iridium ";
     }
-    if($fbb_online==true){
+    if($fbb_online===true){
         $system_status_color="blue-label-wrap";
         $system_status_string.="FBB ";
     }
-    if($vsat_online==true){
+    if($vsat_online===true){
         $system_status_color="green-label-wrap";
         $system_status_string.="VSAT ";
     }
-    if($tcp_online==true){
+    if($tcp_online===true){
         $system_status_color="purple-label-wrap";
         $system_status_string.="LEO/4G ";
     }
     $system_status_string .='available';
-    if($system_status_string=='available'){
+    if($system_status_string==='available'){
         $system_status_string = 'Vessel network offline';
     }
     return array($system_status_color, $system_status_string);
@@ -308,5 +315,67 @@ function get_speed($gateway){
     }
     return $speedstring;
 }
+
+function get_datausage_from_db($dataMetric) {
+    $ch = curl_init();
+    $dataMetric_rx = $dataMetric."_rx";
+    $dataMetric_tx = $dataMetric."_tx";
+    $currentDateTime = new DateTime();
+    $firstDayOfMonth = new DateTime($currentDateTime->format('Y-m-01'));
+    $interval = $currentDateTime->diff($firstDayOfMonth);
+    $elaspedminutes = ($interval->days * 24 * 60) + ($interval->h * 60) + $interval->i;
+    curl_setopt_array($ch, array(
+        CURLOPT_URL => "http://192.168.209.210:8086/query?q=select%20sum%28%22".$dataMetric_rx."%22%29,sum%28%22".$dataMetric_tx."%22%29from%20traffic%20where%20time%20%3E%20now()%20-".$elaspedminutes."m&db=acustatus",
+        CURLOPT_TIMEOUT => 1,
+        CURLOPT_MAXREDIRS => 10,
+        CURLOPT_CUSTOMREQUEST => "GET",
+        CURLOPT_RETURNTRANSFER => TRUE,
+        CURLOPT_HTTPHEADER => array('Content-Type: text/plain')
+    ));
+    $response = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $responsejson = json_decode($response, true);
+    $totaldata = $responsejson['results'][0]['series'][0]['values'][0][1]+$responsejson['results'][0]['series'][0]['values'][0][2];
+    $totaldata = round($totaldata/1073741824, 2);
+    return $totaldata;
+}
+
+function get_speed_from_db($dataMetric){
+    $ch = curl_init();
+    $dataMetric_rx = $dataMetric."_rx";
+    $dataMetric_tx = $dataMetric."_tx";
+    $currentDateTime = new DateTime();
+    $firstDayOfMonth = new DateTime($currentDateTime->format('Y-m-01'));
+    $interval = $currentDateTime->diff($firstDayOfMonth);
+    $elaspedminutes = 10;
+    curl_setopt_array($ch, array(
+        CURLOPT_URL => "http://192.168.209.210:8086/query?q=select%20sum%28%22".$dataMetric_rx."%22%29,sum%28%22".$dataMetric_tx."%22%29from%20traffic%20where%20time%20%3E%20now()%20-".$elaspedminutes."m&db=acustatus",
+        CURLOPT_TIMEOUT => 1,
+        CURLOPT_MAXREDIRS => 10,
+        CURLOPT_CUSTOMREQUEST => "GET",
+        CURLOPT_RETURNTRANSFER => TRUE,
+        CURLOPT_HTTPHEADER => array('Content-Type: text/plain')
+    ));
+    $response = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $responsejson = json_decode($response, true);
+    $dn_data = $responsejson['results'][0]['series'][0]['values'][0][1];
+    $up_data = $responsejson['results'][0]['series'][0]['values'][0][2];
+    $up_speed = $up_data/600;
+    $dn_speed = $dn_data/600;
+    if ($up_speed <= 1024 && $dn_speed<=1024){
+        $avg_speed = round($up_speed, 2).'/'.round($dn_speed, 2)."B/s";
+    }
+    else if (($up_speed >= 1024 || $dn_speed >= 1024) && ($up_speed<=1048576 && $dn_speed<=1048576)){
+        $avg_speed = round($up_speed/1024, 2).'/'.round($dn_speed/1024, 2)."Kb/s";
+    }
+    else {
+        $avg_speed = round($up_speed/1048576, 2).'/'.round($dn_speed/1048576, 2)."Mb/s";
+    }
+    return $avg_speed;
+}
+
 
 ?>

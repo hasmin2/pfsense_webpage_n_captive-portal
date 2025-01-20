@@ -70,7 +70,7 @@ function check_vsat_status_influxdb(){
         else{
             $ch = curl_init();
             curl_setopt_array($ch, array(
-                CURLOPT_URL => 'http://192.168.209.210:8086/query?q=select%20Longitude,AGC/Signal,TX_Mode%20from%20satstatus%20where%20time%20%3E%20now()%20-10m%20order%20by%20time%20desc&db=acustatus',
+                CURLOPT_URL => 'http://192.168.209.210:8086/query?q=select%20Longitude,"AGC/Signal",TX_Mode%20from%20satstatus%20where%20time%20%3E%20now()%20-10m%20order%20by%20time%20desc&db=acustatus',
                 CURLOPT_TIMEOUT => 1,
                 CURLOPT_MAXREDIRS => 10,
                 CURLOPT_CUSTOMREQUEST => GET,
@@ -150,7 +150,7 @@ function check_vsat_status_influxdb(){
             $lat_deg = gps_degree($lat_current);
             $lon_deg = gps_degree($lon_current);
 
-            return array("{$satelliteid}","{$satellitesignal}","{$satellitetx}","{$lat_deg}{$latDir}<br>{$lon_deg}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
+            return array($satelliteid,$satellitesignal,$satellitetx,"{$lat_deg}{$latDir}<br>{$lon_deg}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
         }
     }
 }
@@ -222,43 +222,8 @@ function check_fbb_status_influxdb(){
             }
             $satelliteString = $decoded['results'][0]['series'][0]['values'][0][$satelliteIdx];
             $signalString = round($decoded['results'][0]['series'][0]['values'][0][$signalIdx], 2);
-            $lat = $decoded['results'][0]['series'][0]['values'][0][$latIdx];
-            $lon = $decoded['results'][0]['series'][0]['values'][0][$lonIdx];
-            $latDir = $decoded['results'][0]['series'][0]['values'][0][$latDirIdx];
-            $lonDir = $decoded['results'][0]['series'][0]['values'][0][$lonDirIdx];
 
-            $lat_last = $decoded['results'][0]['series'][0]['values'][1][$latIdx];
-            $lon_last = $decoded['results'][0]['series'][0]['values'][1][$lonIdx];
-            if($lat < 0){
-                $lat_current=$lat*-1;
-                $latDir="S";
-            }
-            else {
-                $lat_current = $lat;
-                $latDir="N";
-            }
-            if($lon < 0){
-                $lon_current=$lon*-1;
-                $lonDir="W";
-            }
-            else {
-                $lon_current = $lon;
-                $lonDir="E";
-            }
-            if($lat_last < 0){ $lat_last*=-1; }
-            if($lon_last < 0){ $lon_last*=-1; }
-            $current_time= $decoded['results'][0]['series'][0]['values'][0][0];
-            $last_time= $decoded['results'][0]['series'][0]['values'][1][0];
-            $timegap= strtotime($current_time) - strtotime($last_time);
-            $distance = haversineGreatCircleDistance($lat_current, $lon_current, $lat_last, $lon_last, 6371);
-            $avrhrspeed= round($distance/$timegap*3600/1.852, 2);
-            $lat_deg = gps_degree($lat_current);
-            $lon_deg = gps_degree($lon_current);
-            $color="green";
-            if($satelliteString=='0'){
-                $color="red";
-            }
-            return array("ID:{$satelliteString}<br>Sig: {$signalString}</font>","{$lat_deg}{$latDir}<br>{$lon_deg}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
+            return array($satelliteString,$signalString);
         }
     }
 }

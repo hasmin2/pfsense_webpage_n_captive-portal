@@ -5,27 +5,6 @@ include_once("common_ui.inc");
 include_once("terminal_status.inc");
 include_once("lan_status.inc");
 
-function print_crewwifi_timeduration(){
-    global $config;
-    $rtnstr = "";
-    if(isset($config['captiveportal']['crew']['terminate_duration'])){
-        $date = new DateTime();
-        $terminate_timeleft = $config['captiveportal']['crew']['terminate_duration']-(round($date->getTimestamp()/60,0) -$config['captiveportal']['crew']['terminate_timestamp']);
-        if($terminate_timeleft>1440){ $rtnstr .= "<p class='text'>". Fixed."</p>";}
-        else{ $rtnstr .= "<p class='text'>". $terminate_timeleft." minutes left</p>";}
-    }
-    else{
-        $rtnstr .= "<select name='terminate_duration' id='terminate_duration' class='select v1'>
-                                                <option value='5'>5 minutes</option>
-                                                <option value='30'>30 minutes</option>
-                                                <option value='60'>60 minutes</option>
-                                                <option value='300'>5 hours</option>
-                                                <option value='1440'>24 hours</option>
-                                                <option value='999999999'>Permanent</option></select>";
-    }
-    return $rtnstr;
-}
-
 global $config, $g;
 $totaldata = "N/A";
 foreach ($config['interfaces'] as $ifname => $ifcfg) {
@@ -42,15 +21,6 @@ $a_core_status_string = get_core_status();
 $vpnstatus = get_vpnstatus();
 $vpncolor = $vpnstatus == 'Online' ? 'green' : 'red';
 
-init_config_arr(array('captiveportal'));
-if(isset($_POST['crewcheckboxvalue'])){toggle_crew_wifi($_POST['crewcheckboxvalue']);}
-if(isset($_POST['terminate_crewinternetvalue'])){
-    terminate_crew_internet($_POST['terminate_crewinternetvalue'], $_POST['terminate_duration']);
-}
-if(isset($_POST['terminate_bizinternetvalue'])){
-    terminate_biz_internet($_POST['terminate_bizinternetvalue'], $_POST['ipaddr']);
-}
-
 $gateways = return_gateways_array();
 $gateways_status = return_gateways_status(true);
 
@@ -63,10 +33,17 @@ foreach ($gateways as $gname => $gateway){
     if (!startswith($gateway['terminal_type'], 'vpn')){
         $extnet_status = get_extnet_status($gateways_status[$gname]);
         $extnet_status[1]=="Online"? $extnet_color = "txt-green" : $extnet_color = "txt-red";
-        $wan_status .= $gname;
-        $wan_status .= get_speed($gateway);
-        $wan_status .= "&nbsp&nbsp&nbsp";
-        $wan_status .= get_datausage($gateway);
+        foreach ($config['interfaces'] as $ifname => $ifcfg) {
+            if ($gateways[$gname]['interface']===$ifcfg['if']) {
+                $wan_status .= $gname."<br>";
+                $wan_status .= get_speed_from_db($ifcfg['if']);
+                $wan_status .= "&nbsp&nbsp&nbsp";
+                if($gateway['allowance']=="" || $gateway['allowance']=="0"||$gateway['terminal_type']==='vsat_sec') $wan_status .= "";
+                else $wan_status .= "<br>".get_datausage_from_db($ifcfg['if']).'/'.$gateway['allowance']."GB";
+                break;
+            }
+        }
+        //$wan_status .= get_datausage($gateway);
         $wan_status .= "<br>";
         $drawing_table_label .= "<th>$gname</th>";
         $drawing_table_content .= '<td data-th="'.$gname.'" data-th-width="90" data-width="100" class="'.$extnet_color.'">'.$extnet_status[1].'</td>';
@@ -98,11 +75,6 @@ if($_POST['data_update']){
         'gps_info' => $a_terminal_state[2],
         'fbb_tracking_info' => $a_terminal_state[3],
         'fbb_signal_info' => $a_terminal_state[4],
-        'toggle_crew_wifi' => isset($config['captiveportal']['crew']['enable'])? "true" : "false",
-        'terminate_crew_internet' => isset($config['captiveportal']['crew']['terminate_duration'])? "true" : "false",
-        'print_crewwifi_duration' => print_crewwifi_timeduration(),
-        'terminate_biz_internet' => $terminate_biz_internet,
-        'ban_all_ip' => $config['ban_all_ip'],
         'wan_status' => $wan_status
         ));
     exit(0);
