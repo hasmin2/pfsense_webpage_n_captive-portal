@@ -29,6 +29,7 @@ $drawing_table_label = "<th>Core/Version</th><th>NOC</th>";
 $drawing_table_content = '<td id="core_status_string" data-th="Version" data-th-width="90" data-width="100" class="txt-'.$a_core_status_string[1].'">'.$a_core_status_string[0].'</td>';
 $drawing_table_content .='<td id="vpnstatus" data-th="NOC" data-th-width="90" data-width="100" class="txt-'. $vpncolor .'">'.$vpnstatus.'</td>';
 $antenna_columncount = 0;
+$defaultgw = $config['gateways']['defaultgw4'];
 foreach ($gateways as $gname => $gateway){
     if (!startswith($gateway['terminal_type'], 'vpn')){
         $extnet_status = get_extnet_status($gateways_status[$gname]);
@@ -45,17 +46,20 @@ foreach ($gateways as $gname => $gateway){
         }
         //$wan_status .= get_datausage($gateway);
         $wan_status .= "<br>";
+        $isselected ="";
+        if ($gateway['name']===$defaultgw){
+            $isselected ="Selected";
+        }
         $drawing_table_label .= "<th>$gname</th>";
-        $drawing_table_content .= '<td data-th="'.$gname.'" data-th-width="90" data-width="100" class="'.$extnet_color.'">'.$extnet_status[1].'</td>';
+        $drawing_table_content .= '<td data-th="'.$gname.'" data-th-width="90" data-width="100" class="'.$extnet_color.'">'.$extnet_status[1].'<br><strong>'.$isselected.'</strong></td>';
         $antenna_columncount++;
     }
     $wan_status .= "<br>";
 }
 $drawing_table_ratio = '<col style="width: calc(100% / '.($antenna_columncount+2).');">';
-
-
-
-
+$drawing_vsat_info=$a_terminal_state[0];
+$drawing_fbb_info=$a_terminal_state[2];
+$drawing_gps_info=$a_terminal_state[1];
 ////////////////////SIMPLE SELF API//////////////////////////
 
 if(isset($_POST['resetfw'])){reset_fw(); exit(0);}
@@ -70,11 +74,9 @@ if($_POST['data_update']){
         'drawing_table_label' => $drawing_table_label,
         'drawing_table_content' => $drawing_table_content,
         'drawing_table_ratio' => $drawing_table_ratio,
-        'vsat_tracking_info' => $a_terminal_state[0],
-        'vsat_signal_info' => $a_terminal_state[1],
-        'gps_info' => $a_terminal_state[2],
-        'fbb_tracking_info' => $a_terminal_state[3],
-        'fbb_signal_info' => $a_terminal_state[4],
+        'drawing_gps_info' => $drawing_gps_info,
+        'drawing_vsat_info' => $drawing_vsat_info,
+        'drawing_fbb_info' => $drawing_fbb_info,
         'wan_status' => $wan_status
         ));
     exit(0);
@@ -111,10 +113,9 @@ if($_POST['data_update']){
                                     <p>Satellite</p>
                                 </dt>
                                 <dd>
-                                    <p class="text" id="vsat_tracking_info"><?php echo $a_terminal_state[0];?></p>
-                                    <p class="text" id="vsat_signal_info"><?php echo $a_terminal_state[1];?></p>
-                                    <p class="text" id="fbb_tracking_info"><?php echo $a_terminal_state[3];?></p>
-                                    <p class="text" id="fbb_signal_info"> <?php echo $a_terminal_state[4];?> </p>
+                                    <p class="text" id="vsat_info"><?= $drawing_vsat_info;?></p>
+                                    <p class="text" id="fbb_info"><?= $drawing_fbb_info;?></p>
+
 
                                 </dd>
 
@@ -125,7 +126,7 @@ if($_POST['data_update']){
                                     <p>Position</p>
                                 </dt>
                                 <dd>
-                                    <p class="text" id="gps_info"><?php echo $a_terminal_state[2];?></p>
+                                    <p class="text" id="gps_info"><?= $drawing_gps_info;?></p>
                                 </dd>
                             </dl>
                             <dl class="tile-area">
@@ -221,11 +222,9 @@ if($_POST['data_update']){
                 $("#table_label").html(result.drawing_table_label);
                 $("#table_content").html(result.drawing_table_content);
                 $("#table_ratio").html(result.drawing_table_ratio);
-                $("#vsat_tracking_info").html(result.vsat_tracking_info);
-                $("#vsat_signal_info").html(result.vsat_signal_info);
-                $("#gps_info").html(result.gps_info);
-                $("#fbb_tracking_info").html(result.fbb_tracking_info);
-                $("#fbb_signal_info").html(result.fbb_signal_info);
+                $("#gps_info").html(result.drawing_gps_info);
+                $("#vsat_info").html(result.drawing_vsat_info);
+                $("#fbb_info").html(result.drawing_fbb_info);
                 $("#biz_total_data").html(result.biztotaldata);
                 $("#iot_total_data").html(result.iottotaldata);
                 if(result.toggle_crew_wifi === "true") { $("#crew").prop('checked', true); }

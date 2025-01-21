@@ -14,10 +14,17 @@ if($adminlogin) {
                             <button class="btn md line-gray" onclick="confirm_delUser()"><i class="ic-delete gray"></i>Delete</button>';
     $addbutton = '<button class="btn-setting" onclick="popOpenAndDim(\'pop-set-manage\', true)">Add Voucher</button>';
 }
+$cpzone='crew';
 
+if (isset($cpzone) && !empty($cpzone) && isset($a_cp[$cpzone]['zoneid'])) {
+	$cpzoneid = $a_cp[$cpzone]['zoneid'];
+}
 
+if (($_GET['act'] == "del") && !empty($cpzone)) {
+	captiveportal_disconnect_client($_GET['id'], 6);
+}
 
-$table_contetns = draw_wifi_contents();
+$table_contents = draw_wifi_contents();
 $gateways = return_gateways_array();
 $gateways_status = return_gateways_status(true);
 $terminaltypeoption='<option value="">Auto</option>';
@@ -35,6 +42,20 @@ if ($_POST['dataamount']){
     create_wifi_user($_POST['dataamount'], $_POST['vouchernumber'], $_POST['randpwd'], $_POST['terminaltype'], $_POST['timeperiod']);
     echo '<script> location.replace("crew_account_processing.php");</script>';
 }
+////////////////////SIMPLE SELF API//////////////////////////
+
+if(isset($_POST['resetfw'])){reset_fw(); exit(0);}
+if(isset($_POST['resetcore'])){reset_core(); exit(0);}
+if(isset($_POST['rebootsvr'])){reboot_svr(); exit(0);}
+
+$terminate_biz_internet = isset($config['ban_all'])? "true" : "false";
+if($_POST['data_update']){
+    echo json_encode(array(
+        'crew_wifi_table' => $table_contents,
+    ));
+    exit(0);
+}
+////////////////////SIMPLE SELF API//////////////////////////
 ?>
 <!DOCTYPE HTML>
 <html lang="ko">
@@ -108,8 +129,8 @@ if ($_POST['dataamount']){
                                 <!--th>Topup/Action<button class="btn-ic btn-sort"></button></th-->
                             </tr>
                             </thead>
-                            <tbody>
-                            <?php echo $table_contetns;?>
+                            <tbody id="crew_account_table">
+                            <?= $table_contents;?>
                             </tbody>
                         </table>
                     </div>
@@ -179,7 +200,23 @@ if ($_POST['dataamount']){
 </form>
 </body>
 <script type="text/javascript">
+    function refreshValue() {
+        $.ajax({
+            url: "./crew_account.php",
+            data: {data_update: "true"},
+            type: 'POST',
+            dataType: 'json',
+            success: function (result) {
 
+
+                $("#crew_account_table").html(result.crew_wifi_table);
+            },
+            error: function (request, status, error) {
+                alert(error);
+            }
+        })
+    }
+    setInterval(refreshValue, 10000); // 밀리초 단위이므로 5초는 5000밀리초
     function submit_registerusers(){
         popClose('pop-set-manage');
         $('#registerusers').submit();

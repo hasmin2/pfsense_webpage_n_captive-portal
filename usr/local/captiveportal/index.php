@@ -190,7 +190,7 @@ if ($_POST['logout_id']) {//When User click logout button from './logout.php'
 		$type = "error";
         $replymsg = $auth_result['login_message'];
 		captiveportal_logportalauth($user, $clientmac, $clientip, $auth_result['login_status'], $replymsg);
-        portal_reply_page($rediurl, $type, $replymsg, $clientmac, $clientip);
+        portal_reply_page($redirurl, $type, $replymsg, $clientmac, $clientip);
 	}
 } else { //anything else 
 	/* display captive portal page */

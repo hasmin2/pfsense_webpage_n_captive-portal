@@ -4,8 +4,12 @@ require_once ("captiveportal.inc");
 require_once ('functions.inc');
 
 function draw_wifi_contents(){
-    global $config;
+    global $config, $cpzone;
+    $cpzone="crew";
     $radiususers = &$config['installedpackages']['freeradius']['config'];
+    if (strpos($_SERVER["REMOTE_ADDR"], "10.8.128.1") !== false){
+        $radiususers=array_reverse($radiususers);
+    }
     $rtnstr='';
     foreach ($radiususers as $eachuser) {
         $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
@@ -27,9 +31,9 @@ function draw_wifi_contents(){
                 else{$state .=number_format($used_quota,2,'.',',')." / {$eachuser['varusersmaxtotaloctets']}MB";}
                 $rtnstr .= '<td data-th="Usage state" data-th-width="100" data-width="100">'.$state.'</td>';
                 $cpdb = captiveportal_read_db();
-                $isonline='';
                 foreach ($cpdb as $cpent) {
-                    $isonline = ($eachuser['varusersusername'] === $cpent[4] ? 'Login' : $rtnstr .= '');
+                    //$isonline = ($eachuser['varusersusername'] === $cpent[4] ? 'Login' : '');
+                    $isonline = ($eachuser['varusersusername'] === $cpent[4] ? '<a href="?'.$_GET['order'].'act=del&amp;zone=crew&amp;id='.$cpent[5].'">Logout</a>' : '');
                     break;
                 }
                 $rtnstr .= '<td data-th="Online" data-th-width="100" data-width="100" class="txt-green">'.$isonline.'</td>';
