@@ -10,8 +10,9 @@
     $gateways = return_gateways_array();
     $gateways_status = return_gateways_status(true);
     $rtnstr = '';
-    $defaultgw = get_defaultgw($gateway);
+
     foreach ($gateways as $gname => $gateway){
+        $defaultgw = get_defaultgw($gateway);
         if (!startswith($gateway['terminal_type'], 'vpn')){
             if($defaultgw==1){$rtnstr .= '<tr class="on">';}
             else{ $rtnstr .= '<tr>';}
