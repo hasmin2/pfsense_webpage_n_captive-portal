@@ -379,14 +379,14 @@ function get_speed_from_db($dataMetric){
     $up_data = $responsejson['results'][0]['series'][0]['values'][0][2];
     $up_speed = $up_data/600;
     $dn_speed = $dn_data/600;
-    if ($up_speed <= 1024 && $dn_speed<=1024){
-        $avg_speed = round($up_speed, 2).'/'.round($dn_speed, 2)."B/s";
+    if (($up_speed >= 1024 || $dn_speed >= 1024) && ($up_speed<=1048576 && $dn_speed<=1048576)){
+        $avg_speed = round($up_speed/1024, 2).'&nbsp/&nbsp'.round($dn_speed/1024, 2)."Kb/s";
     }
-    else if (($up_speed >= 1024 || $dn_speed >= 1024) && ($up_speed<=1048576 && $dn_speed<=1048576)){
-        $avg_speed = round($up_speed/1024, 2).'/'.round($dn_speed/1024, 2)."Kb/s";
+    else if($up_speed>=1048576 || $dn_speed >= 1048576){
+        $avg_speed = round($up_speed/1048576, 2).'&nbsp/&nbsp.'.round($dn_speed/1048576, 2)."Mb/s";
     }
     else {
-        $avg_speed = round($up_speed/1048576, 2).'/'.round($dn_speed/1048576, 2)."Mb/s";
+        $avg_speed = "0&nbsp/&nbsp0Kbps";
     }
     return $avg_speed;
 }

@@ -115,6 +115,12 @@ function print_sidebar($inputlink){
     else{
         $rtnstr.='<li><a href="/crew_account.php"><i class="ic-lnb05"></i><p>Crew Account</p></a></li>';
     }
+    if($inputlink=="download_center.php"){
+        $rtnstr.='<li class="on"><a href="/download_center.php"><i class="ic-lnb06"></i><p>Download Center</p></a></li>';
+    }
+    else{
+        $rtnstr.='<li><a href="/download_center.php"><i class="ic-lnb06"></i><p>Download Center</p></a></li>';
+    }
     $rtnstr.='</ul></div>';
 
     $rtnstr.='</div></div>';

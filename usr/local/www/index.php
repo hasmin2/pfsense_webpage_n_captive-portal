@@ -36,9 +36,9 @@ foreach ($gateways as $gname => $gateway){
         $extnet_status[1]=="Online"? $extnet_color = "txt-green" : $extnet_color = "txt-red";
         foreach ($config['interfaces'] as $ifname => $ifcfg) {
             if ($gateways[$gname]['interface']===$ifcfg['if']) {
-                $wan_status .= $gname."<br>";
-                $wan_status .= get_speed_from_db($ifcfg['if']);
-                $wan_status .= "&nbsp&nbsp&nbsp";
+                $wan_status .= $gname."";
+                //$wan_status .= get_speed_from_db($ifcfg['if']);
+                //$wan_status .= "&nbsp&nbsp&nbsp";
                 if($gateway['allowance']=="" || $gateway['allowance']=="0"||$gateway['terminal_type']==='vsat_sec') $wan_status .= "";
                 else $wan_status .= "<br>".get_datausage_from_db($ifcfg['if']).'/'.$gateway['allowance']."GB";
                 break;

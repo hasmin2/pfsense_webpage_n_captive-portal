@@ -45,6 +45,7 @@ i[class^='ic-'] {display: block; flex: none; background-repeat: no-repeat; backg
 .ic-lnb03 {background-image: url('../img/icon/ic_lnb_off_03.png');}
 .ic-lnb04 {background-image: url('../img/icon/ic_lnb_off_04.png');}
 .ic-lnb05 {background-image: url('../img/icon/ic_lnb_off_05.png');}
+.ic-lnb06 {background-image: url('../img/icon/ic_lnb_off_06.png');}
 .ic-submit {width: 16px; height: 16px; background-image: url('../img/icon/ic_submit.png');}
 .ic-cancel {width: 16px; height: 16px; background-image: url('../img/icon/ic_cancel.png');}
 .ic-down {background-image: url('../img/icon/ic_down.png');}
@@ -282,6 +283,7 @@ i[class^='ic-'] {display: block; flex: none; background-repeat: no-repeat; backg
 .ic-lnb03 {background-image: url('../img/icon/ic_lnb_off_03.png');}
 .ic-lnb04 {background-image: url('../img/icon/ic_lnb_off_04.png');}
 .ic-lnb05 {background-image: url('../img/icon/ic_lnb_off_05.png');}
+.ic-lnb06 {background-image: url('../img/icon/ic_lnb_off_06.png');}
 .ic-submit {width: 16px; height: 16px; background-image: url('../img/icon/ic_submit.png');}
 .ic-cancel {width: 16px; height: 16px; background-image: url('../img/icon/ic_cancel.png');}
 .ic-down {background-image: url('../img/icon/ic_down.png');}
