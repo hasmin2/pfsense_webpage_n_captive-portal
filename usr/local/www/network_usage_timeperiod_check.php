@@ -120,10 +120,9 @@ else{
     }
 }
 ///////////////////
-
+$timestamp = (floor(time()/300))*5;
 foreach (json_decode($json_string, true)["interfaces"] as $value) {
     if(strpos($value['name'], "vtnet")!== false || strpos($value['name'], "ovpn")!==false){
-        $timestamp = (floor(time()/300))*5;
         $alias = $value['alias']==='' ? "none" : $value['alias'];
 
         if($value["traffic"]["fiveminute"][0]["rx"]){
@@ -140,7 +139,7 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
         }
         $datastring .= $value['name']. "_rx=" . $rxdata.",".$value['name']. "_tx=" .$txdata.",";
         $crew_interface = $config['captiveportal']['crew']['interface'];
-        foreach ($config['interfaces'] as $crew_key => $crew_value){
+        /*foreach ($config['interfaces'] as $crew_key => $crew_value){
             if($crew_key === $crew_interface){
                 $crew_rootinterface = $crew_value['if'];
                 break;
@@ -203,7 +202,7 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
             $cumulative_file = fopen($filepath.$item['rootinterface']."_cumulative", "w");
             fwrite($cumulative_file, sprintf('%.6f',$currentusagegb));
             fclose($cumulative_file);
-            echo $item['rootinterface'].":".$currentusagegb.",   tx".$fivemintx.",      rx".$fiveminrx."\n";
+            echo $item['rootinterface'].":".$currentusagegb.",   tx".$fivemintx.",      rx".$fiveminrx."\n";*/
         //}
     }
 }

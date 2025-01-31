@@ -1,7 +1,7 @@
 <?php
 include_once ('auth.inc');
 include_once ('config.lib.inc');
-
+global $g;
 $adminlogin="";
 if(session_auth()){
     $adminlogin = true;

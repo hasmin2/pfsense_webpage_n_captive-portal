@@ -163,7 +163,7 @@ if($_POST['data_update']){
             </div>
 
             <div class="check v1 mt30">
-                <input type="checkbox" name="randpwd" id="randpwd">
+                <input type="checkbox" name="randpwd" id="randpwd" value="randpwd">
                 <label for="randpwd">
                     <p>Generate random password?</p>
                 </label>
