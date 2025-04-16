@@ -20,6 +20,8 @@ function print_download_link($title, $image, $filename){
 
 	$help_menu[] = array(gettext("TeamViewer Quick Support"), "TMV.DE.png", "TeamViewerQS.exe");
     array_push($help_menu, array(gettext("AnyDesk Remote Support"), "anydesk.png", "AnyDesk.exe"));
+    array_push($help_menu, array(gettext("WaveSync Guide - English"), "manual.png", "SmartBox User Guide-Kor.pdf"));
+    array_push($help_menu, array(gettext("WaveSync Guide - Korean"), "manual.png","SmartBox User Guide-Eng.pdf"));
 	array_push($help_menu, array(gettext("FX Guide Book - English"), "manual.png", "Fleet Xpress User guide latest-Eng.pdf"));
 	array_push($help_menu, array(gettext("FX Guide Book - Korean"), "manual.png","Fleet Xpress User guide latest-Kor.pdf"));
     array_push($help_menu, array(gettext("Bluewave Mail Guide Book - English"), "manual.png","Bluewave Mail User guide latest-Eng.pdf"));

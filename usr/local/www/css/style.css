@@ -12,6 +12,7 @@
 #wrapper #sidebar .brand .btn-menu-open {display: none;}
 
 #wrapper #sidebar .brand .logo {width: 156px; height: 28px; background: url('../img/common/logo.png') no-repeat center/100%; margin: 0 auto;}
+#wrapper #sidebar .brand .sklogo {width: 156px; height: 28px; background: url('../img/common/sklogo.png') no-repeat center/100%; margin: 0 auto;}
 #wrapper #sidebar .brand .logo a {display: block; width: 100%; height: 100%; text-indent: -9999px; }
 
 #wrapper #sidebar .brand .location {margin: 40px auto 0; width: fit-content; padding-left: 34px; background: url('../img/icon/ic_location.png') no-repeat left center/24px; font-size: 18px; font-weight: 700; line-height: 1.334; color: #38D9A9;}
