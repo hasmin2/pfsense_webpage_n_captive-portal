@@ -41,7 +41,7 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
 			foreach ($radiususers as $eachuser) {
                 $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
                 if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername'])){
-                    if($used_quota <= $eachuser['varusersmaxtotaloctets'] || $eachuser['varuserspointoftime']!=='forever'){
+                    if($used_quota <= $eachuser['varusersmaxtotaloctets'] || strtolower($eachuser['varuserspointoftime'])!=='forever'){
                         $rtnstr .= "<tr>";
                         $rtnstr .= "<td><center><input type=checkbox class=userlist id={$eachuser['varusersusername']} name=userlist[] value={$eachuser['varusersusername']} /></center></td>";
                         if(strlen($eachuser['varusersusername'])>10){
@@ -62,7 +62,7 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
                             $terminaltype = substr($terminaltype, 0, 4)."...";
                         }
                         $rtnstr .= "<td><center>".$terminaltype ."</center></td>";
-                        $usertimeperiod = $eachuser['varuserspointoftime'] == "forever" ? "one-time":$eachuser['varuserspointoftime'];
+                        $usertimeperiod = strtolower($eachuser['varuserspointoftime']) == "forever" ? "one-time":$eachuser['varuserspointoftime'];
                         $rtnstr .="<td><center>{$usertimeperiod}</center></td>";
                         if($eachuser['varusersmodified']=="update"){$rtnstr .= "<td><center>Init / {$eachuser['varusersmaxtotaloctets']}MB</center></td>";}
                         else{$rtnstr .="<td><center>".number_format($used_quota,2,'.',',')." / {$eachuser['varusersmaxtotaloctets']}MB</center></td>";}
@@ -292,7 +292,7 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
             foreach ($config['installedpackages']['freeradius']['config'] as $eachuser) {
                 $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
                 if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername'])) {
-                    if ($used_quota <= $eachuser['varusersmaxtotaloctets'] || $eachuser['varuserspointoftime'] !== 'forever') {
+                    if ($used_quota <= $eachuser['varusersmaxtotaloctets'] || strtolower($eachuser['varuserspointoftime']) !== 'forever') {
                         array_push($passwordlist, $eachuser['varuserspassword']);
                     }
                 }
@@ -380,9 +380,9 @@ if(strpos(get_config_user(), "admin") !== false){
 	$echostr .= '<div class="col-sm-6">';
 	$echostr .= '<div class="radio"><class>';
 	$echostr .= '<select name="createsuerquotaperiod" size="1">';
-	$echostr .= '<option value="monthly">Monthly </option>';
-	$echostr .= '<option value="forever">Onetime </option>';
-	$echostr .= '<option value="daily">Daily </option></select>';
+	$echostr .= '<option value="Monthly">Monthly </option>';
+	$echostr .= '<option value="Forever">Onetime </option>';
+	$echostr .= '<option value="Daily">Daily </option></select>';
 	$echostr .= '<class="radio"></class>';
 	$echostr .= '<select name="createuserterminaltype" size="1">';
 	$echostr .= '<option value="">Auto </option>';

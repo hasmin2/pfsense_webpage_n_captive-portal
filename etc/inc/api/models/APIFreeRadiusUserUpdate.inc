@@ -43,11 +43,17 @@ class APIFreeRADIUSUserUpdate extends APIModel {
             }
             # Set an error if no user was found
             if (!isset($this->validated_data["freeradius_username"])) {
-                if($this->initial_data['freeradius_username']==='updatealluser'){
+                if($this->initial_data['freeradius_username']==='usersreset'){
                     $usercount = count ($this->config["installedpackages"]["freeradius"]["config"]);
                     for ($i=0; $i < $usercount; $i++){
-                        $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersresetquota"]="true";
-                        $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersmodified"]="update";
+                        if($this->initial_data['terminaltype']==="Auto"){$terminaltype="";}
+                        else{$terminaltype=$this->initial_data['terminaltype'];}
+                        if(isset($this->initial_data['terminaltype']) &&
+                            $terminaltype===$this->config["installedpackages"]["freeradius"]["config"][$i]["varusersterminaltype"] &&
+                            strtolower($this->config["installedpackages"]["freeradius"]["config"][$i]["varusersmaxtotaloctetstimerange"]) !== 'forever'){
+                            $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersresetquota"] = "true";
+                            $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersmodified"] = "update";
+                        }
                     }
                     $this->write_config("Reset Crew wifi usage");
                 }

@@ -8,11 +8,18 @@ include_once("manage_crew_wifi_account.inc");
 global $adminlogin;
 $controldisplay="";
 $addbutton="";
-if($adminlogin) {
-    $controldisplay = '<button class="btn md line-gray" onclick="confirm_resetData()"><i class="ic-reset gray"></i>Reset Data</button>
+if($adminlogin==="admin") {
+    $controldisplay = '<button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>
+                       <button class="btn md line-gray" onclick="confirm_resetData()"><i class="ic-reset gray"></i>Reset Data</button>
                             <button class="btn md line-gray" onclick="confirm_checkPw()"><i class="ic-check gray"></i>Check PW</button>
                             <button class="btn md line-gray" onclick="confirm_delUser()"><i class="ic-delete gray"></i>Delete</button>';
     $addbutton = '<button class="btn-setting" onclick="popOpenAndDim(\'pop-set-manage\', true)">Add Voucher</button>';
+}
+else if($adminlogin==="customer"){
+    $controldisplay = '<button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>';
+}
+else{
+    $controldisplay="";
 }
 $cpzone='crew';
 
@@ -81,9 +88,7 @@ if($_POST['data_update']){
                 <div class="manage-wrap">
                     <div class="list-top justify-content-end">
                         <div class="btn-area">
-                            <button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>
                             <?= $controldisplay ?>
-
                         </div>
                     </div>
                     <div class="list-wrap v1">
@@ -216,7 +221,7 @@ if($_POST['data_update']){
             }
         })
     }
-    setInterval(refreshValue, 10000); // 밀리초 단위이므로 5초는 5000밀리초
+    //setInterval(refreshValue, 60000); // 밀리초 단위이므로 5초는 5000밀리초
     function submit_registerusers(){
         popClose('pop-set-manage');
         $('#registerusers').submit();
@@ -291,7 +296,7 @@ if($_POST['data_update']){
             foreach ($config['installedpackages']['freeradius']['config'] as $eachuser) {
                 $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
                 if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername'])) {
-                    if ($used_quota <= $eachuser['varusersmaxtotaloctets'] || $eachuser['varuserspointoftime'] !== 'forever') {
+                    if ($used_quota <= $eachuser['varusersmaxtotaloctets'] || strtolower($eachuser['varuserspointoftime']) !== 'forever') {
                         array_push($passwordlist, $eachuser['varuserspassword'].'<br>');
                     }
                 }

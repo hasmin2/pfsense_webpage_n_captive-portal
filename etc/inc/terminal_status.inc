@@ -331,6 +331,7 @@ function get_speed($gateway){
 }
 
 function get_datausage_from_db($dataMetric) {
+    global $config;
     $ch = curl_init();
     $dataMetric_rx = $dataMetric."_rx";
     $dataMetric_tx = $dataMetric."_tx";
@@ -352,6 +353,15 @@ function get_datausage_from_db($dataMetric) {
     $responsejson = json_decode($response, true);
     $totaldata = $responsejson['results'][0]['series'][0]['values'][0][1]+$responsejson['results'][0]['series'][0]['values'][0][2];
     $totaldata = round($totaldata/1073741824, 2);
+    $basedata=0;
+    foreach($config['gateways']['gateway_item'] as $gateway){
+        if($gateway['rootinterface'] == $dataMetric){
+            $basedata=intval($gateway['currentusage']);
+            break;
+        }
+    }
+    $totaldata = $totaldata + $basedata;
+
     return $totaldata;
 }
 
@@ -377,13 +387,13 @@ function get_speed_from_db($dataMetric){
     $responsejson = json_decode($response, true);
     $dn_data = $responsejson['results'][0]['series'][0]['values'][0][1];
     $up_data = $responsejson['results'][0]['series'][0]['values'][0][2];
-    $up_speed = $up_data/600;
-    $dn_speed = $dn_data/600;
-    if (($up_speed >= 1024 || $dn_speed >= 1024) && ($up_speed<=1048576 && $dn_speed<=1048576)){
+    $up_speed = $up_data/300*8;
+    $dn_speed = $dn_data/300*8;
+    if ($dn_speed >= 1024 && $dn_speed<=1048576){
         $avg_speed = round($up_speed/1024, 2).'&nbsp/&nbsp'.round($dn_speed/1024, 2)."Kb/s";
     }
-    else if($up_speed>=1048576 || $dn_speed >= 1048576){
-        $avg_speed = round($up_speed/1048576, 2).'&nbsp/&nbsp.'.round($dn_speed/1048576, 2)."Mb/s";
+    else if($dn_speed > 1048576){
+        $avg_speed = round($up_speed/1048576, 2).'&nbsp/&nbsp'.round($dn_speed/1048576, 2)."Mb/s";
     }
     else {
         $avg_speed = "0&nbsp/&nbsp0Kbps";

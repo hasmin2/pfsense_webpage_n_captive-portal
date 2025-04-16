@@ -1,5 +1,6 @@
 <?php
 
+captiveportal_configure();
 function toggle_crew_wifi($toggle){
     global $config;
     if($toggle=="1"){
@@ -27,13 +28,13 @@ function terminate_biz_internet($toggle, $ipaddr){
         del_linked_rule($serverip, $ipaddr);
     }
     write_config("Portal Change");
-    captiveportal_configure();
+
     filter_configure();
 }
 function terminate_crew_internet($toggle, $duration){
     global $config;
     $date = new DateTime();
-    if($toggle=="1"){
+    if($toggle==="1"){
         $config['captiveportal']['crew']['terminate_duration']=$duration;
         $config['captiveportal']['crew']['terminate_timestamp']=round($date->getTimestamp()/60, 0);
         captiveportal_disconnect_all($term_cause = 6, $logoutReason = "DISCONNECT", $carp_loop = false);
@@ -45,6 +46,8 @@ function terminate_crew_internet($toggle, $duration){
     }
     write_config("Portal Change");
     captiveportal_configure();
+    filter_configure();
+
 }
 function get_interfacename(){
     global $config;

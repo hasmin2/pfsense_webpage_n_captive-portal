@@ -241,7 +241,7 @@ if($_POST['data_update']){
             }
         })
     }
-    setInterval(refreshValue, 10000); // 밀리초 단위이므로 5초는 5000밀리초
+    //setInterval(refreshValue, 10000); // 밀리초 단위이므로 5초는 5000밀리초
     //setTimeout('location.reload()', 60000);
     // adding event for crew wifi portal
     document.getElementById('crew').addEventListener('change', function() {

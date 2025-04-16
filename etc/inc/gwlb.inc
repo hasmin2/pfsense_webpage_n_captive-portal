@@ -519,6 +519,12 @@ function return_gateways_status($byname = false, $gways = false) {
                 else{
                     $status[$target]['allowance']='0';
                 }
+                if($item['currentusage']){
+                    $status[$target]['currentusage']=$item['currentusage'];
+                }
+                else{
+                    $status[$target]['currentusage']='0';
+                }
                 if($item['check_timeout']){
                     $status[$target]['check_timeout']=$item['check_timeout'];
                 }
@@ -599,6 +605,11 @@ function return_gateways_status($byname = false, $gways = false) {
                     $status[$target]['allowance'] = $item['allowance'];
                 } else {
                     $status[$target]['allowance'] = '0';
+                }
+                if ($item['currentusage']) {
+                    $status[$target]['currentusage'] = $item['currentusage'];
+                } else {
+                    $status[$target]['currentusage'] = '0';
                 }
                 if ($item['check_timeout']) {
                     $status[$target]['check_timeout'] = $item['check_timeout'];
@@ -2170,6 +2181,7 @@ function save_gateway($gateway_settings, $realid = "") {
 
     $gateway['disablecrewinternet'] = $gateway_settings['disablecrewinternet'];
     $gateway['blockall_bydefault'] = $gateway_settings['blockall_bydefault'];
+    $gateway['currentusage'] = $gateway_settings['currentusage'];
     $filepath="/etc/inc/";
     $cumulative_file = fopen($filepath.$gateway_settings['rootinterface']."_cumulative", "w");
     fwrite($cumulative_file, $gateway_settings['currentusage']);

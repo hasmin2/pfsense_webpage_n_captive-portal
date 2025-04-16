@@ -70,15 +70,7 @@ if (isset($id) && $a_gateways[$id]) {
     $pconfig['portsfrom'] = $a_gateways[$id]['portsfrom'];
     $pconfig['portsto'] = $a_gateways[$id]['portsto'];
     $pconfig['protos'] = $a_gateways[$id]['protos'];
-    $filepath= "/etc/inc/";
-    if(file_exists($filepath.$a_gateways[$id]['rootinterface']."_cumulative") && ($cumulative_file = fopen($filepath.$a_gateways[$id]['rootinterface']."_cumulative", "r"))!==false ){
-        $cur_usage = fgets($cumulative_file);
-        fclose($cumulative_file);
-    }
-    else {
-        $cur_usage = 0;
-    }
-    $pconfig['currentusage'] = $cur_usage;
+    $pconfig['currentusage'] = $a_gateways[$id]['currentusage'];
 	$pconfig['allowance'] = $a_gateways[$id]['allowance'];
 	$pconfig['destinationip'] = $a_gateways[$id]['destinationip'];
 	$pconfig['check_timeout'] = $a_gateways[$id]['check_timeout'];
@@ -261,6 +253,8 @@ $group->add(new Form_Select(
 		"vsat_sec" => "FX_CREW",
 		"vsat_thi" => "2nd VSAT (or any after second VSAT terminal)",
 		"tcp_other" => "Internet",
+		"tcp_nexuswave" => "Nexus Wave",
+		"tcp_starlink" => "Star Link",
 		"vpn"=> "VPN Network",
 		"fbb_satlink"=> "SATLink FleetBroadband",
 		"fbb_jrc" => "JRC FleetBroadband",

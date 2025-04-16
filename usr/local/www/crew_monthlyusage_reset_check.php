@@ -13,8 +13,11 @@ for ($i=0; $i < $usercount; $i++){
     $used_quota=check_quota($config["installedpackages"]["freeradius"]["config"][$i]['varusersusername'],
         $config["installedpackages"]["freeradius"]["config"][$i]['varusersmaxtotaloctetstimerange']);
     if ($used_quota >= 	$config["installedpackages"]["freeradius"]["config"][$i]['varusersmaxtotaloctets']
-        &&	$config["installedpackages"]["freeradius"]["config"][$i]['varuserspointoftime'] === 'forever') {
-        $config["installedpackages"]["freeradius"]["config"][$i]["varusersmodified"]="delete";
+        &&	strtolower($config["installedpackages"]["freeradius"]["config"][$i]['varuserspointoftime']) === 'forever') {
+        $user = $config["installedpackages"]["freeradius"]["config"][$i]["varusersusername"];
+        unlink_if_exists("/var/log/radacct/datacounter/{$config["installedpackages"]["freeradius"]["config"][$i]['varusersmaxtotaloctetstimerange']}/used-octets-{$config["installedpackages"]["freeradius"]["config"][$i]['varusersusername']}*");
+        unset($config["installedpackages"]["freeradius"]["config"][$i]);  // flag for remove DB for when anyone who is in site is open webpage.
+        captiveportal_syslog("Deleted user: ".$user);
     }
 }
 write_config("Reset Crew wifi usage");

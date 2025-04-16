@@ -4,6 +4,10 @@ include_once("auth.inc");
 include_once("common_ui.inc");
 include_once("terminal_status.inc");
 include_once("lan_status.inc");
+require_once('guiconfig.inc');
+require_once('functions.inc');
+require_once('notices.inc');
+require_once("pkg-utils.inc");
 
 global $config, $g;
 $totaldata = "N/A";
@@ -24,12 +28,12 @@ $vpncolor = $vpnstatus == 'Online' ? 'green' : 'red';
 $gateways = return_gateways_array();
 $gateways_status = return_gateways_status(true);
 
-$wan_status ="";
 $drawing_table_label = "<th>Core/Version</th><th>NOC</th>";
 $drawing_table_content = '<td id="core_status_string" data-th="Version" data-th-width="90" data-width="100" class="txt-'.$a_core_status_string[1].'">'.$a_core_status_string[0].'</td>';
 $drawing_table_content .='<td id="vpnstatus" data-th="NOC" data-th-width="90" data-width="100" class="txt-'. $vpncolor .'">'.$vpnstatus.'</td>';
 $antenna_columncount = 0;
 $defaultgw = $config['gateways']['defaultgw4'];
+$wan_status ="";
 foreach ($gateways as $gname => $gateway){
     if (!startswith($gateway['terminal_type'], 'vpn')){
         $extnet_status = get_extnet_status($gateways_status[$gname]);
@@ -37,14 +41,16 @@ foreach ($gateways as $gname => $gateway){
         foreach ($config['interfaces'] as $ifname => $ifcfg) {
             if ($gateways[$gname]['interface']===$ifcfg['if']) {
                 $wan_status .= $gname."";
-                //$wan_status .= get_speed_from_db($ifcfg['if']);
-                //$wan_status .= "&nbsp&nbsp&nbsp";
-                if($gateway['allowance']=="" || $gateway['allowance']=="0"||$gateway['terminal_type']==='vsat_sec') $wan_status .= "";
-                else $wan_status .= "<br>".get_datausage_from_db($ifcfg['if']).'/'.$gateway['allowance']."GB";
+
+                if($gateway['allowance']=="" || $gateway['allowance']=="0"||$gateway['terminal_type']==='vsat_sec'){
+                    $wan_status .= '<br>'.get_datausage_from_db($ifcfg['if']).'GB';
+                } else {
+                    $wan_status .= '<br>'.get_datausage_from_db($ifcfg['if']).'/'.$gateway['allowance']."GB";
+                }
+
                 break;
             }
         }
-        //$wan_status .= get_datausage($gateway);
         $wan_status .= "<br>";
         $isselected ="";
         if ($gateway['name']===$defaultgw){
@@ -66,7 +72,7 @@ if(isset($_POST['resetfw'])){reset_fw(); exit(0);}
 if(isset($_POST['resetcore'])){reset_core(); exit(0);}
 if(isset($_POST['rebootsvr'])){reboot_svr(); exit(0);}
 
-$terminate_biz_internet = isset($config['ban_all'])? "true" : "false";
+//$terminate_biz_internet = isset($config['ban_all'])? "true" : "false";
 if($_POST['data_update']){
     echo json_encode(array(
         'biztotaldata' => $biztotaldata,
@@ -115,10 +121,7 @@ if($_POST['data_update']){
                                 <dd>
                                     <p class="text" id="vsat_info"><?= $drawing_vsat_info;?></p>
                                     <p class="text" id="fbb_info"><?= $drawing_fbb_info;?></p>
-
-
                                 </dd>
-
                             </dl>
                             <dl class="tile-area">
                                 <dt>
@@ -227,18 +230,17 @@ if($_POST['data_update']){
                 $("#fbb_info").html(result.drawing_fbb_info);
                 $("#biz_total_data").html(result.biztotaldata);
                 $("#iot_total_data").html(result.iottotaldata);
-                if(result.toggle_crew_wifi === "true") { $("#crew").prop('checked', true); }
+                /*if(result.toggle_crew_wifi === "true") { $("#crew").prop('checked', true); }
                 else { $("#crew").prop('checked', false); }
                 if(result.terminate_crew_internet === "true") { $("#terminate_crewinternet").prop('checked', true); }
                 else { $("#terminate_crewinternet").prop('checked', false); }
                 if(result.terminate_biz_internet === "true") { $("#terminate_bizinternet").prop('checked', true); }
                 else { $("#terminate_bizinternet").prop('checked', false); }
-                $("#ipaddr").val(result.ban_all_ip);
+                $("#ipaddr").val(result.ban_all_ip);*/
                 $("#wan_status").html(result.wan_status);
-                $("#terminate_remaintime").html(result.print_crewwifi_duration);
+                //$("#terminate_remaintime").html(result.print_crewwifi_duration);
             },
             error: function (request, status, error) {
-                alert(error);
             }
         })
     }

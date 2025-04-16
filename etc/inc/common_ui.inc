@@ -4,13 +4,15 @@ include_once ('config.lib.inc');
 global $g;
 $adminlogin="";
 if(session_auth()){
-    $adminlogin = true;
-}
-else if (strpos($_SERVER["REMOTE_ADDR"], "10.8.128.1") !== false){
-    $adminlogin = true;
-}
-else{
-    $adminlogin = false;
+    if(strpos(get_config_user(), "admin") !== false) {
+        $adminlogin = "admin";
+    }
+    else if(strpos(get_config_user(), "admin") !== false) {
+        $adminlogin = "customer";
+    }
+    else {
+        $adminlogin = "";
+    }
 }
 
 if(session_auth()){

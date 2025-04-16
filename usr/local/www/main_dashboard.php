@@ -496,6 +496,7 @@ function updateWidgets(newWidget) {
 	}
 
 	$('input[name=sequence]', $('#widgetSequence_form')).val(sequence);
+
 }
 
 // Determine if all the checkboxes are checked
@@ -565,7 +566,7 @@ events.push(function() {
 			$(el).parents('.panel').remove();
 			updateWidgets();
 			// Submit the form save/display all selected widgets
-			$('[name=widgetForm]').submit();
+            $('[name=widgetForm]').attr('action', '/main_dashboard.php').submit();
 		})
 	});
 
@@ -584,9 +585,8 @@ events.push(function() {
 	$('[id^=btnadd-]').click(function(event) {
 		// Add the widget name to the list of displayed widgets
 		updateWidgets(this.id.replace('btnadd-', ''));
-
 		// Submit the form save/display all selected widgets
-		$('[name=widgetForm]').submit();
+		$('[name=widgetForm]').attr('action', '/main_dashboard.php').submit();
 	});
 
 
