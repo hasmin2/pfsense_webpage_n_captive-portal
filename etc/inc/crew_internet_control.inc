@@ -1,5 +1,6 @@
 <?php
 require_once ("captiveportal.inc");
+
 captiveportal_configure();
 function toggle_crew_wifi($toggle){
     global $config;
