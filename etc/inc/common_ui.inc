@@ -7,7 +7,7 @@ if(session_auth()){
     if(strpos(get_config_user(), "admin") !== false) {
         $adminlogin = "admin";
     }
-    else if(strpos(get_config_user(), "admin") !== false) {
+    else if(strpos(get_config_user(), "customer") !== false) {
         $adminlogin = "customer";
     }
     else {
@@ -75,15 +75,15 @@ function print_sidebar($inputlink){
     $vesselinfo = $config['system']['vesselinfo'];
     $rtnstr='';
     $rtnstr.='<div id="sidebar">';
-    $rtnstr.='<div class="brand">"';
-    $rtnstr.='"<button class="btn-ic btn-menu-open"></button>"';
+    $rtnstr.='<div class="brand">';
+    $rtnstr.='<button class="btn-ic btn-menu-open"></button>';
     if($config['system']['manager']==="sktelink"){
-        $rtnstr.='"<h1 class="sklogo"><a href="/index.php"></a></h1>"';
+        $rtnstr.='<h1 class="sklogo"><a href="/index.php"></a></h1>';
     }
     else{
-        $rtnstr.='"<h1 class="logo"><a href="/index.php"></a></h1>"';
+        $rtnstr.='<h1 class="logo"><a href="/index.php"></a></h1>';
     }
-    $rtnstr.='"<p class="location" id="firewall-login">';
+    $rtnstr.='<p class="location" id="firewall-login">';
     $rtnstr.= $vesselinfo["vesselname"];
     $rtnstr.='</p>';
     $rtnstr.='<p class="gmt">';

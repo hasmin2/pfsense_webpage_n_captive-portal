@@ -48,7 +48,7 @@
 .private-wrap .tile-wrap .tile-area dd .txt-caution {text-align: center; margin-top: 4px;}
 .private-wrap .tile-wrap .tile-area dd .select.v1 {width: 160px; margin: 20px auto 0;}
 .private-wrap .tile-wrap .tile-area dd input[type="text"] {width: 160px; margin: 20px auto 0; text-align: center;}
-.private-wrap .green-label-wrap {background-color: lawngreen; padding: 10px 10px; flex: 1 0; min-width: 0;}
+.private-wrap .green-label-wrap {background-color: green; padding: 10px 10px; flex: 1 0; min-width: 0;}
 .private-wrap .yellow-label-wrap {background-color: yellow; padding: 10px 10px; flex: 1 0; min-width: 0;}
 .private-wrap .blue-label-wrap {background-color: royalblue; padding: 10px 10px; flex: 1 0; min-width: 0;}
 .private-wrap .red-label-wrap {background-color: red; padding: 10px 10px; flex: 1 0; min-width: 0;}

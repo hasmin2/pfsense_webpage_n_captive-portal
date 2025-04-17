@@ -47,15 +47,10 @@ $ch = curl_init();
 			case "Longitude":
 				$lonIdx = $i;
 				break;
-			case "lat-direction":
-				$latDirIdx = $i;
-				break;
-			case "lon-direction":
-				$lonDirIdx = $i;
-				break;
 		}
 	}
     $headingstring = $decoded['results'][0]['series'][0]['values'][0][$headingIdx];
+    echo $headingstring;
 	if(is_numeric($headingstring)){
         $heading = $headingstring;
     }
@@ -64,19 +59,22 @@ $ch = curl_init();
     }
 	$lat = $decoded['results'][0]['series'][0]['values'][0][$latIdx];
 	$lon = $decoded['results'][0]['series'][0]['values'][0][$lonIdx];
-	$latDir = $decoded['results'][0]['series'][0]['values'][0][$latDirIdx];
-	$lonDir = $decoded['results'][0]['series'][0]['values'][0][$lonDirIdx];
-
 	$lat_last = $decoded['results'][0]['series'][0]['values'][1][$latIdx];
 	$lon_last = $decoded['results'][0]['series'][0]['values'][1][$lonIdx];
-	$latDir_last = $decoded['results'][0]['series'][0]['values'][1][$latDirIdx];
-	$lonDir_last = $decoded['results'][0]['series'][0]['values'][1][$lonDirIdx];
-	if($latDir == "S"){ $lat_current = $lat*-1; }
-	else { $lat_current = $lat; }
-	if($lonDir == "W"){ $lon_current = 360 - $lon; }
-	else { $lon_current = $lon; }
-	if($latDir_last == "S"){ $lat_last = $lat_last*-1; }
-	if($lonDir_last == "W"){ $lon_last = 360-$lon_last; }
+    if($lat<0){
+        $latDir = "S";
+        $lat_current = abs($lat);
+    }
+    else{
+        $latDir = "N";
+    }
+    if($lon<0){
+        $lonDir = "W";
+        $lon_current = abs($lon);
+    }
+    else{
+        $lonDir = "E";
+    }
 
 	$current_time= $decoded['results'][0]['series'][0]['values'][0][0];
 	$last_time= $decoded['results'][0]['series'][0]['values'][1][0];

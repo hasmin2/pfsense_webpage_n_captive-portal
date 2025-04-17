@@ -101,12 +101,6 @@ function check_vsat_status_influxdb(){
                     case "Longitude":
                         $lonIdx = $i;
                         break;
-                    case "lat_direction":
-                        $latDirIdx = $i;
-                        break;
-                    case "lon_direction":
-                        $lonDirIdx = $i;
-                        break;
                 }
             }
             $headingstring = $decoded['results'][0]['series'][0]['values'][0][$headingIdx];
@@ -116,7 +110,6 @@ function check_vsat_status_influxdb(){
             else{
                 $heading = 0;
             }
-
             $lat = $decoded['results'][0]['series'][0]['values'][0][$latIdx];
             $lon = $decoded['results'][0]['series'][0]['values'][0][$lonIdx];
             $lat_last = end($decoded['results'][0]['series'][0]['values'])[$latIdx];
@@ -125,24 +118,20 @@ function check_vsat_status_influxdb(){
                 $heading = round(calculateHeading($lat_last, $lon_last, $lat, $lon),1);
             }
             $distance = haversineGreatCircleDistance($lat_last, $lon_last, $lat, $lon, 6371);
-            if($lat < 0){
-                $lat_current=$lat*-1;
-                $latDir="S";
+            if($lat<0){
+                $latDir = "S";
+                $lat_current = abs($lat);
             }
-            else {
-                $lat_current = $lat;
-                $latDir="N";
+            else{
+                $latDir = "N";
             }
-            if($lon < 0){
-                $lon_current=$lon*-1;
-                $lonDir="W";
+            if($lon<0){
+                $lonDir = "W";
+                $lon_current = abs($lon);
             }
-            else {
-                $lon_current = $lon;
-                $lonDir="E";
+            else{
+                $lonDir = "E";
             }
-            if($lat_last < 0){ $lat_last*=-1; }
-            if($lon_last < 0){ $lon_last*=-1; }
             $current_time= $decoded['results'][0]['series'][0]['values'][0][0];
             $last_time= end($decoded['results'][0]['series'][0]['values'])[0];
             $timegap= strtotime($current_time) - strtotime($last_time);
