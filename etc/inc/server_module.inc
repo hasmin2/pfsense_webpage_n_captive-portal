@@ -124,6 +124,7 @@ function check_vsat_status_influxdb(){
             }
             else{
                 $latDir = "N";
+                $lat_current = $lat;
             }
             if($lon<0){
                 $lonDir = "W";
@@ -131,6 +132,7 @@ function check_vsat_status_influxdb(){
             }
             else{
                 $lonDir = "E";
+                $lon_current = $lon;
             }
             $current_time= $decoded['results'][0]['series'][0]['values'][0][0];
             $last_time= end($decoded['results'][0]['series'][0]['values'])[0];
