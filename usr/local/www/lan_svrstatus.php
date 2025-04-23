@@ -1,6 +1,7 @@
 <?php
 include_once("auth.inc");
 include_once("common_ui.inc");
+require_once('guiconfig.inc');
 include_once("terminal_status.inc");
 include_once("lan_status.inc");
 $vlan_contents=draw_vlantable_contents();

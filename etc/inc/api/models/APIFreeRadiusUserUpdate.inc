@@ -48,6 +48,9 @@ class APIFreeRADIUSUserUpdate extends APIModel {
                     for ($i=0; $i < $usercount; $i++){
                         if($this->initial_data['terminaltype']==="Auto"){$terminaltype="";}
                         else{$terminaltype=$this->initial_data['terminaltype'];}
+                        if(!isset($this->config["installedpackages"]["freeradius"]["config"][$i]["varusersterminaltype"])){
+                            $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersterminaltype"]="";
+                        }
                         if(isset($this->initial_data['terminaltype']) &&
                             $terminaltype===$this->config["installedpackages"]["freeradius"]["config"][$i]["varusersterminaltype"] &&
                             strtolower($this->config["installedpackages"]["freeradius"]["config"][$i]["varusersmaxtotaloctetstimerange"]) !== 'forever'){

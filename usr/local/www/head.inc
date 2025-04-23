@@ -518,8 +518,8 @@ if (are_notices_pending()) {
 <?php
 					endif;
 			 	endforeach?>
+                <li class="dropdown-menu" role="menu"><a href="/main_dashboard.php">Go Home</a><li><a><?echo "GMT ".$config['time_offset'];?></a></li></li>
 
-					<li class="dropdown-menu" role="menu"> <li><a><?echo "GMT ".$config['time_offset'];?></a></li></li>
 
 			</ul>
 			<ul class="nav navbar-nav navbar-right">

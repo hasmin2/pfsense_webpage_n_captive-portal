@@ -1,49 +1,50 @@
 <?php
-    require_once("common_ui.inc");
-    require_once("terminal_status.inc");
-    global $config, $g;
-    $vesselinfo = $config['system']['vesselinfo'];
-    if($_POST['routing_radiobutton']){
-        set_routing($_POST['routing_radiobutton'], $_POST['routeduration']);
-    }
+require_once("common_ui.inc");
+require_once("terminal_status.inc");
+require_once('guiconfig.inc');
+global $config, $g;
+$vesselinfo = $config['system']['vesselinfo'];
+if($_POST['routing_radiobutton']){
+    set_routing($_POST['routing_radiobutton'], $_POST['routeduration']);
+}
 
-    $gateways = return_gateways_array();
-    $gateways_status = return_gateways_status(true);
-    $rtnstr = '';
+$gateways = return_gateways_array();
+$gateways_status = return_gateways_status(true);
+$rtnstr = '';
 
-    foreach ($gateways as $gname => $gateway){
-        $defaultgw = get_defaultgw($gateway);
-        if (!startswith($gateway['terminal_type'], 'vpn')){
-            if($defaultgw==1){$rtnstr .= '<tr class="on">';}
-            else{ $rtnstr .= '<tr>';}
-            foreach ($config['interfaces'] as $ifname => $ifcfg) {
-                if ($gateways[$gname]['interface']===$ifcfg['if']) {
-                    $rtnstr .='<td data-th="Name" data-th-width="100" data-width="100">';
-                    $rtnstr .=$gname.'<br>';
-                    $rtnstr .='<span>'.$gateway['monitor'].'</span></td>';
-                    $rtnstr .='<td data-th="Info" data-th-width="100" data-width="100">';
-                    if($gateway['allowance']=="" || $gateway['allowance']=="0"||$gateway['terminal_type']==='vsat_sec') $rtnstr .= "";
-                    else $rtnstr .= "<br>".get_datausage_from_db($ifcfg['if']).'/'.$gateway['allowance']."GB";
-                    $rtnstr .='<td data-th="GW" data-th-width="100" data-width="100">';
-                    $rtnstr .=($defaultgw ? get_routingduration() : '').'<br>';
-                    //$rtnstr .='<span>'.get_speed($gateway).'</span></td>';
-                    $rtnstr .='<span>'.get_speed_from_db($ifcfg['if']).'</span></td>';
-                    $rtnstr .='<td data-th="Net" data-th-width="100" data-width="100">';
-                    $rtnstr .='<p class='.get_net_status($gateways_status[$gname])[0].'>';
-                    $rtnstr .=get_net_status($gateways_status[$gname])[1].'</p></td>';
-                    $rtnstr .='<td data-th="Ext-Net" data-th-width="100" data-width="100">';
-                    $rtnstr .='<p class='.get_extnet_status($gateways_status[$gname])[0].'>';
-                    $rtnstr .=get_extnet_status($gateways_status[$gname])[1].'</p></td>';
-                    $rtnstr .='</tr>';
-                    break;
-                }
+foreach ($gateways as $gname => $gateway){
+    $defaultgw = get_defaultgw($gateway);
+    if (!startswith($gateway['terminal_type'], 'vpn')){
+        if($defaultgw==1){$rtnstr .= '<tr class="on">';}
+        else{ $rtnstr .= '<tr>';}
+        foreach ($config['interfaces'] as $ifname => $ifcfg) {
+            if ($gateways[$gname]['interface']===$ifcfg['if']) {
+                $rtnstr .='<td data-th="Name" data-th-width="100" data-width="100">';
+                $rtnstr .=$gname.'<br>';
+                $rtnstr .='<span>'.$gateway['monitor'].'</span></td>';
+                $rtnstr .='<td data-th="Info" data-th-width="100" data-width="100">';
+                if($gateway['allowance']=="" || $gateway['allowance']=="0"||$gateway['terminal_type']==='vsat_sec') $rtnstr .= "";
+                else $rtnstr .= "<br>".get_datausage_from_db($ifcfg['if']).'/'.$gateway['allowance']."GB";
+                $rtnstr .='<td data-th="GW" data-th-width="100" data-width="100">';
+                $rtnstr .=($defaultgw ? get_routingduration() : '').'<br>';
+                //$rtnstr .='<span>'.get_speed($gateway).'</span></td>';
+                $rtnstr .='<span>'.get_speed_from_db($ifcfg['if']).'</span></td>';
+                $rtnstr .='<td data-th="Net" data-th-width="100" data-width="100">';
+                $rtnstr .='<p class='.get_net_status($gateways_status[$gname])[0].'>';
+                $rtnstr .=get_net_status($gateways_status[$gname])[1].'</p></td>';
+                $rtnstr .='<td data-th="Ext-Net" data-th-width="100" data-width="100">';
+                $rtnstr .='<p class='.get_extnet_status($gateways_status[$gname])[0].'>';
+                $rtnstr .=get_extnet_status($gateways_status[$gname])[1].'</p></td>';
+                $rtnstr .='</tr>';
+                break;
             }
         }
     }
-    if($_POST['data_update']){
-        echo json_encode(array('return_str' => $rtnstr));
-        exit(0);
-    }
+}
+if($_POST['data_update']){
+    echo json_encode(array('return_str' => $rtnstr));
+    exit(0);
+}
 ?>
 <!DOCTYPE HTML>
 <html lang="ko">

@@ -1,6 +1,7 @@
 <?php
 require_once("openvpn.inc");
 include_once("auth.inc");
+include_once("terminal_status.inc");
 require_once("server_module.inc");
 require_once("crew_internet_control.inc");
 require_once("globals.inc");
@@ -61,7 +62,8 @@ function return_gateways_label(){
     $fbb_online="";
     $iridium_online="";
     $tcp_online="";
-    global $vsattx;
+    $res=check_vsat_status_influxdb();
+    $vsattx=$res[2];
     $isfx = false;
     foreach ($a_gateways as $gname => $gateway) {
         if ($gateways_status[$gname] && stristr($gateways_status[$gname]['status'], "online") && !stristr($gateway['terminal_type'],"vpn")) {
@@ -81,7 +83,7 @@ function return_gateways_label(){
                 else{ $fbb_online=false; }
             }
             if(stristr($gateway['terminal_type'],"vsat")) {
-                if($vsattx=="1"||$vsattx=="" && $pingresult==='Online'){
+                if($vsattx=="1" && $pingresult==='Online'){
                     $vsat_online=true;
                 }
                 else if(($vsattx=="0") && $pingresult==="Online"){
