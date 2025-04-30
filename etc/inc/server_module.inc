@@ -85,7 +85,7 @@ function check_vsat_status_influxdb(){
             $satelliteid=0;
             $satellitesignal=0;
             $satellitetx=0;
-            if($decoded['results'][0]['series'][0]['values'][0][1]){
+            if($satellite_decoded['results'][0]['series'][0]['values'][0][1]){
                 $satelliteid=$satellite_decoded['results'][0]['series'][0]['values'][0][1];
                 $satellitesignal=$satellite_decoded['results'][0]['series'][0]['values'][0][2];
                 $satellitetx=$satellite_decoded['results'][0]['series'][0]['values'][0][3];

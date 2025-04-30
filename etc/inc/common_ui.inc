@@ -65,6 +65,7 @@ function print_css_n_head(){
     $rtnstr .= '<!-- dist/js -->';
     $rtnstr .= '<script src="dist/js/jquery.mCustomScrollbar.js"></script>';
     $rtnstr .= '<!-- custom js -->';
+
     $rtnstr .= '<script src="js/common.js"></script>';
     $rtnstr .= '<script src="js/script.js"></script>';
     $rtnstr .='<link rel="icon" href="img/icon/favicon.png">';
@@ -77,7 +78,7 @@ function print_sidebar($inputlink){
     $rtnstr.='<div id="sidebar">';
     $rtnstr.='<div class="brand">';
     $rtnstr.='<button class="btn-ic btn-menu-open"></button>';
-    if($config['system']['manager']==="sktelink"){
+    if($config['system']['vesselinfo']['logo']==="sktelink"){
         $rtnstr.='<h1 class="sklogo"><a href="/index.php"></a></h1>';
     }
     else{

@@ -5,6 +5,11 @@ require_once('guiconfig.inc');
 include_once("common_ui.inc");
 include_once("terminal_status.inc");
 include_once("lan_status.inc");
+require_once("globals.inc");
+require_once("pfsense-utils.inc");
+require_once("functions.inc");
+require_once("captiveportal.inc");
+
 function print_crewwifi_timeduration(){
     global $config;
     $rtnstr = "";
@@ -43,6 +48,9 @@ if(isset($_POST['crewcheckboxvalue'])){
 }
 if(isset($_POST['terminate_crewinternetvalue'])){
     terminate_crew_internet($_POST['terminate_crewinternetvalue'], $_POST['terminate_duration']);
+    if($_POST['terminate_crewinternetvalue']==1) {
+        captiveportal_disconnect_all($term_cause = 6, $logoutReason = "DISCONNECT", $carp_loop = false);
+    }
     echo '<script> location.replace("network_control_processing.php");</script>';
 }
 if($_POST['ban_all_ip']){
