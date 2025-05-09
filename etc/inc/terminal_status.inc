@@ -83,7 +83,7 @@ function return_gateways_label(){
                 else{ $fbb_online=false; }
             }
             if(stristr($gateway['terminal_type'],"vsat")) {
-                if($vsattx=="1" && $pingresult==='Online'){
+                if(($vsattx=="1"||$vsattx=='') && $pingresult==='Online'){
                     $vsat_online=true;
                 }
                 else if(($vsattx=="0") && $pingresult==="Online"){

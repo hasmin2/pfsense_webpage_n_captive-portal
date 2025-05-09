@@ -254,6 +254,7 @@ if($_POST['data_update']){
                 data: {resetpw: "true", userlist: $('input[name="userlist[]"]:checked').map(function(){return $(this).val();}).get()},
                 type: 'POST',
                 success: function (result) {
+                    location.replace("crew_account.php");
                 },
                 error: function (result) {
                 }
