@@ -139,6 +139,7 @@ class APIFreeRADIUSUserUpdate extends APIModel {
 			"varuserslastreceivedata"=>0,
 			"varuserslastsentdata"=>0,
 			"varuserslastbasedata"=>0,
+            "varusersterminaltype"=>"",
 			"varusersresetquota"=>false,
 		);
 		foreach($userinfoentry as $item => $value){

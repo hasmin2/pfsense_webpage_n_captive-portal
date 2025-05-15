@@ -153,6 +153,7 @@ class APIFreeRADIUSUserCreate extends APIModel {
             "varuserslastreceivedata"=>0,
             "varuserslastsentdata"=>0,
             "varuserslastbasedata"=>0,
+            "varusersterminaltype"=>"",
             "varusersresetquota"=>"true",
         );
         $result=array();
