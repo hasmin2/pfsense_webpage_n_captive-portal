@@ -51,8 +51,7 @@ class APIFreeRADIUSUserUpdate extends APIModel {
                         if(!isset($this->config["installedpackages"]["freeradius"]["config"][$i]["varusersterminaltype"])){
                             $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersterminaltype"]="";
                         }
-                        if($this->initial_data['freeradius_terminaltype']=='' &&
-                            $terminaltype===$this->config["installedpackages"]["freeradius"]["config"][$i]["varusersterminaltype"] &&
+                        if( $terminaltype===$this->config["installedpackages"]["freeradius"]["config"][$i]["varusersterminaltype"] &&
                             strtolower($this->config["installedpackages"]["freeradius"]["config"][$i]["varusersmaxtotaloctetstimerange"]) !== 'forever'){
                             $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersresetquota"] = "true";
                             $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersmodified"] = "update";
