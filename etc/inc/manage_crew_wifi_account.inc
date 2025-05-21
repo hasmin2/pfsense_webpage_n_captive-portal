@@ -7,9 +7,6 @@ function draw_wifi_contents(){
     global $config, $cpzone;
     $cpzone="crew";
     $radiususers = &$config['installedpackages']['freeradius']['config'];
-    if (strpos($_SERVER["REMOTE_ADDR"], "10.8.128.1") !== false){
-        $radiususers=array_reverse($radiususers);
-    }
     $rtnstr='';
     $cpdb = captiveportal_read_db();
     foreach ($radiususers as $eachuser) {

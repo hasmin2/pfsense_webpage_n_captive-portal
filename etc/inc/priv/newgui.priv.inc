@@ -25,6 +25,7 @@ $priv_list['page-newGUIAccess'] = array();
 $priv_list['page-newGUIAccess']['name'] = "WebCfg - newGUI : Accesses";
 $priv_list['page-newGUIAccess']['descr'] = "Allow access to new GUI";
 $priv_list['page-newGUIAccess']['match'] = array();
+$priv_list['page-newGUIAccess']['match'][] = "index.php*";
 $priv_list['page-newGUIAccess']['match'][] = "network_control.php*";
 $priv_list['page-newGUIAccess']['match'][] = "terminal.php*";
 $priv_list['page-newGUIAccess']['match'][] = "lan_svrstatus.php*";

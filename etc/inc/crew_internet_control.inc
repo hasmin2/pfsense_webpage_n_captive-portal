@@ -132,7 +132,7 @@ function add_linked_rule($serverip, $clientip){
     return $interface;
 }
 
-function disable_crew_freewifi(){
+function enable_crew_freewifi(){
     global $config;
     $interface = get_crewinterface();
     if(isset($interface)) {
@@ -145,7 +145,7 @@ function disable_crew_freewifi(){
         }
     }
 }
-function enable_crew_freewifi(){
+function disable_crew_freewifi(){
     global $config;
     $interface = get_crewinterface();
     if(isset($interface)){

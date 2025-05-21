@@ -8,7 +8,7 @@ include_once("manage_crew_wifi_account.inc");
 global $adminlogin;
 $controldisplay="";
 $addbutton="";
-if($adminlogin==="admin") {
+if($adminlogin==="admin"||$adminlogin==="vesseladmin") {
     $controldisplay = '<button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>
                        <button class="btn md line-gray" onclick="confirm_resetData()"><i class="ic-reset gray"></i>Reset Data</button>
                             <button class="btn md line-gray" onclick="confirm_checkPw()"><i class="ic-check gray"></i>Check PW</button>

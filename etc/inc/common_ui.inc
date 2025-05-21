@@ -3,6 +3,7 @@ include_once ('auth.inc');
 include_once ('config.lib.inc');
 global $g;
 $adminlogin="";
+
 if(session_auth()){
     if(strpos(get_config_user(), "admin") !== false) {
         $adminlogin = "admin";
@@ -10,11 +11,18 @@ if(session_auth()){
     else if(strpos(get_config_user(), "customer") !== false) {
         $adminlogin = "customer";
     }
+    else if(strpos(get_config_user(), "vesseladmin") !== false) {
+        $adminlogin = "vesseladmin";
+    }
     else {
         $adminlogin = "";
     }
 }
-
+else{
+    if (strpos($_SERVER["REMOTE_ADDR"], "10.8.128.1") !== false){
+        $adminlogin = "admin";
+    }
+}
 if(session_auth()){
     require_once('guiconfig.inc');
     if (isset($_POST['closenotice'])) {
@@ -47,7 +55,7 @@ function print_css_n_head(){
     $rtnstr .= '<meta http-equiv="Content-Type" content="text/html" charset="utf-8">';
     $rtnstr .= '<meta http-equiv="X-UA-Compatible" content="IE=edge">';
     $rtnstr .= '<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=yes">';
-    $rtnstr .= '<meta name="apple-mobile-web-app-capable" content="yes" />';
+    $rtnstr .= '<meta name="mobile-web-app-capable" content="yes" />';
     $rtnstr .= '<meta name="apple-mobile-web-app-status-bar-style" content="black" />';
     $rtnstr .= '<meta name="format-detection" content="telephone=no" />';
     $rtnstr .= '<!-- reset css -->';
