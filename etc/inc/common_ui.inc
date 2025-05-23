@@ -89,6 +89,9 @@ function print_sidebar($inputlink){
     if($config['system']['vesselinfo']['logo']==="sktelink"){
         $rtnstr.='<h1 class="sklogo"><a href="/index.php"></a></h1>';
     }
+    if($config['system']['vesselinfo']['logo']==="inmarsat"){
+        $rtnstr.='<h1 class="inmarsatlogo"><a href="/index.php"></a></h1>';
+    }
     else{
         $rtnstr.='<h1 class="logo"><a href="/index.php"></a></h1>';
     }

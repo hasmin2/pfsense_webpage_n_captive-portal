@@ -54,8 +54,8 @@ class APIFreeRADIUSUserCreate extends APIModel {
 					        $this->id = 0;
                             $this->config["installedpackages"]["freeradius"]=["config"=>[$this->id]];
                         }
-                        $this->config["installedpackages"]["freeradius"]["config"][$this->id]=$this->create_userinfo($this->id);
-                        $this->config["installedpackages"]["freeradius"]["config"][$this->id]["varusersmodified"]="create";
+                        $this->config["installedpackages"]["freeradius"]["config"][$this->id]=$this->create_userinfo();
+
                         $this->write_config();
 
 					} else {
@@ -115,7 +115,7 @@ class APIFreeRADIUSUserCreate extends APIModel {
         }
         return false;
     }
-	private function create_userinfo($id){
+	private function create_userinfo(){
         # Check for our required `password` payload value
         $userinfoentry = array(
             "sortable"=>"",
@@ -155,6 +155,8 @@ class APIFreeRADIUSUserCreate extends APIModel {
             "varuserslastbasedata"=>0,
             "varusersterminaltype"=>"",
             "varusersresetquota"=>"true",
+            "varuserscreatedate"=>"",
+
         );
         $result=array();
 		foreach($userinfoentry as $item => $value){
@@ -167,6 +169,8 @@ class APIFreeRADIUSUserCreate extends APIModel {
 				$result[$item] = $value;
 			}
 		}
+        $result['varuserscreatedate'] = date('Y/m/d H:i:s');
+        $result["varusersmodified"] = "create";
 		return $result;
 	}
 	private function startsWith($haystack, $needle) {

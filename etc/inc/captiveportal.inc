@@ -1634,7 +1634,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
             if($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']){
                 unset($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']);
                 $timerange=strtolower($config['installedpackages']['freeradius']['config'][$userindex]['varuserspointoftime']);
-                unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$login}");
+                unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$login}*");
             }
             write_config("freeradius user update");
             //다음으로 수정사항이 있으면 유저 리싱크 함.
@@ -2432,6 +2432,15 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
     if ($cpcfg['preauthurl']) {
         $htmltext = str_replace("\$PORTAL_REDIRURL\$", "{$cpcfg['preauthurl']}", $htmltext);
         $htmltext = str_replace("#PORTAL_REDIRURL#", "{$cpcfg['preauthurl']}", $htmltext);
+    }
+    if($config['system']['vesselinfo']['logo']==="sktelink") {
+        $htmltext = str_replace("\$PORTAL_MAIN_LOGO\$", "captiveportal-skt-logo.svg", $htmltext);
+    }
+    else if($config['system']['vesselinfo']['logo']==="inmarsat") {
+        $htmltext = str_replace("\$PORTAL_MAIN_LOGO\$", "captiveportal-inmarsat-logo.svg", $htmltext);
+    }
+    else{
+        $htmltext = str_replace("\$PORTAL_MAIN_LOGO\$", "captiveportal-logo.svg", $htmltext);
     }
     /* substitute other variables */
     $htmltext = str_replace("\$PORTAL_ACTION\$", $portal_url, $htmltext);

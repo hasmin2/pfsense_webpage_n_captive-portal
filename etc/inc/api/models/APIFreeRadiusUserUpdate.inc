@@ -36,9 +36,8 @@ class APIFreeRADIUSUserUpdate extends APIModel {
             foreach ($this->config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
 				if ($this->initial_data["freeradius_username"] === $userentry['varusersusername']) {
 					$this->validated_data["freeradius_username"] = $userentry['varusersusername'];
-					$this->id = $item;
-					$this->update_userinfo();
-                    $this->config["installedpackages"]["freeradius"]["config"][$this->id]["varusersmodified"]="update";
+					$this->update_userinfo($item);
+                    //$this->config["installedpackages"]["freeradius"]["config"][$item]["varusersmodified"]="update";
 				}
             }
             # Set an error if no user was found
@@ -93,63 +92,29 @@ class APIFreeRADIUSUserUpdate extends APIModel {
         }
     }
 
-
     public function validate_payload() {
         # Run each validation method
         $this->__validate_username();
         $this->__validate_priv();
     }
 
-	public function update_userinfo(){
+	public function update_userinfo($index){
         # Check for our required `password` payload value
-		$userinfoentry = array(
-			"sortable"=>"",
-			"varusersusername"=>"",
-			"varuserspassword"=>"",
-			"varuserspasswordencryption"=>"Cleartext-Password",
-			"varusersmotpenable"=>"",
-			"varusersauthmethod"=>"motp",
-			"varusersmotpinitsecret"=>"",
-			"varusersmotppin"=>"",
-			"varusersmotpoffset"=>"",
-			"qrcodetext"=>"",
-			"varuserswisprredirectionurl"=>"",
-			"varuserssimultaneousconnect"=>"",
-			"description"=>"",
-			"varusersframedipaddress"=>"",
-			"varusersframedipnetmask"=>"",
-			"varusersframedroute"=>"",
-			"varusersframedip6address"=>"",
-			"varusersframedip6route"=>"",
-			"varusersvlanid"=>"",
-			"varusersexpiration"=>"",
-			"varuserssessiontimeout"=>"",
-			"varuserslogintime"=>"",
-			"varusersamountoftime"=>"",
-			"varuserspointoftime"=>"Monthly",
-			"varusersmaxtotaloctets"=>"1",
-			"varusersmaxtotaloctetstimerange"=>"monthly",
-			"varusersmaxbandwidthdown"=>"",
-			"varusersmaxbandwidthup"=>"",
-			"varusersacctinteriminterval"=>"600",
-			"varuserstopadditionaloptions"=>"",
-			"varuserscheckitemsadditionaloptions"=>"",
-			"varusersreplyitemsadditionaloptions"=>"",
-			"varuserslastreceivedata"=>0,
-			"varuserslastsentdata"=>0,
-			"varuserslastbasedata"=>0,
-            "varusersterminaltype"=>"",
-			"varusersresetquota"=>false,
-		);
-		foreach($userinfoentry as $item => $value){
-			if($this->startsWith($item, "varusers") == 1){ $postfix = substr($item, 8); } 
-			else { $postfix = $item; }
-			if(isset($this->initial_data["freeradius_".$postfix])){
-				$this->config["installedpackages"]["freeradius"]["config"][$this->id][$item] = $this->initial_data["freeradius_".$postfix];
-				$this->validated_data["freeradius_".$postfix] = $this->initial_data["freeradius_".$postfix];
-			}
-		}
-	}
+        foreach ($this->config["installedpackages"]["freeradius"]["config"][$index] as $item => $value) {
+            if ($this->startsWith($item, "varusers") == 1) {
+                $postfix = substr($item, 8);
+            } else {
+                $postfix = $item;
+            }
+            if (isset($this->initial_data["freeradius_" . $postfix])) {
+                $this->config["installedpackages"]["freeradius"]["config"][$index][$item] = $this->initial_data["freeradius_" . $postfix];
+                $this->validated_data["freeradius_" . $postfix] = $this->initial_data["freeradius_" . $postfix];
+            }
+
+        }
+        $this->config["installedpackages"]["freeradius"]["config"][$index]['varuserscreatedate'] = date('Y/m/d H:i:s');
+        $this->config["installedpackages"]["freeradius"]["config"][$index]["varusersmodified"] = "update";
+    }
 	private function startsWith($haystack, $needle) {
 		// search backwards starting from haystack length characters from the end
 		return $needle === "" || strrpos($haystack, $needle, -strlen($haystack)) !== false;
