@@ -3249,13 +3249,17 @@ function getcurquota($sessionid, $clientip){
                 $timerange = $value['varusersmaxtotaloctetstimerange'];
             }
         }
-        $filepath = "/var/log/radacct/datacounter/$timerange/used-octets-$username";
-        if(file_exists($filepath) && ($use_file = fopen($filepath, "r"))!==false ){
-            $usagenum = fgets($use_file);
-            fclose($use_file);
-        }
-        else {
-            $usagenum = 0;
+        $filepathall = "/var/log/radacct/datacounter/$timerange/used-octets-$username*";
+        $usagenum = 0;
+        $files = glob($filepathall);
+            foreach($files as $filepath){
+            if(file_exists($filepath) && ($use_file = fopen($filepath, "r"))!==false ){
+                $usagenum = $usagenum + intval(fgets($use_file));
+                fclose($use_file);
+            }
+            else {
+                $usagenum += 0;
+            }
         }
         $basedata = number_format(abs($usagenum)/1048576, 2, '.',',');
         $rcv = number_format(abs(getVolume($clientip)['input_bytes'])/1048576, 2, '.',',');
@@ -3265,13 +3269,17 @@ function getcurquota($sessionid, $clientip){
 }
 function check_quota($username, $timerange){
     global $config;
-    $filepath = "/var/log/radacct/datacounter/$timerange/used-octets-$username";
-    if(file_exists($filepath) && ($use_file = fopen($filepath, "r"))!==false ){
-        $usagenum = fgets($use_file);
-        fclose($use_file);
-    }
-    else {
-        $usagenum = 0;
+    $filepathall = "/var/log/radacct/datacounter/$timerange/used-octets-$username*";
+    $usagenum = 0;
+    $files = glob($filepathall);
+    foreach($files as $filepath){
+        if(file_exists($filepath) && ($use_file = fopen($filepath, "r"))!==false ){
+            $usagenum = $usagenum + intval(fgets($use_file));
+            fclose($use_file);
+        }
+        else {
+            $usagenum += 0;
+        }
     }
     $basedata = number_format(abs($usagenum)/1048576, 2, '.',',');
     return str_replace(",", "", $basedata);
