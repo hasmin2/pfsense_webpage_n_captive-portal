@@ -8,39 +8,55 @@ function draw_wifi_contents(){
     $cpzone="crew";
     $radiususers = &$config['installedpackages']['freeradius']['config'];
     $rtnstr='';
+    $radiususeridsorted= array();
+    foreach($radiususers as $eachuser){
+        $radiususeridsorted[] = $eachuser['varusersusername'];
+        echo ($eachuser['varusersusername']);
+    }
+    sort($radiususeridsorted);
+
     $cpdb = captiveportal_read_db();
-    foreach ($radiususers as $eachuser) {
-        $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
-        if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername'])){
-            if($used_quota <= $eachuser['varusersmaxtotaloctets'] || strtolower($eachuser['varuserspointoftime'])!=='forever'){
-                $rtnstr .= '<tr><td data-th="" data-th-width="0" data-width="100"><div class="check v1">';
-                $rtnstr .= '<input type="checkbox" name="userlist[]" id='.$eachuser['varusersusername'].' value="'.$eachuser['varusersusername'].'">';
-                $rtnstr .= '<label for="'.$eachuser['varusersusername'].'"></label></div></td><td data-th="ID" data-th-width="100" data-width="100">';
-                $rtnstr .= $eachuser['varusersusername'];
-                if($eachuser['varuserscreatedate']){ $createdate = $eachuser['varuserscreatedate'];}
-                else{$createdate = 'N/A';}
-                $rtnstr .= '</td><td data-th="Date create" data-th-width="100" data-width="100">'.$createdate.'<br class="hide-mo"></td>';
-                $updateperiod=$eachuser['varusersterminaltype']==='' ?  'Auto' : $eachuser['varusersterminaltype'];
-                $rtnstr .= '<td data-th="Type" data-th-width="100" data-width="100">'.$updateperiod.'</td>';
-                $terminaltype = strtolower($eachuser['varusersmaxtotaloctetstimerange']) === "forever" ? "one-time":$eachuser['varusersmaxtotaloctetstimerange'];
-                $rtnstr .= '<td data-th="Update" data-th-width="100" data-width="100">'.$terminaltype.'</td>';
-                $state = '';
-                if($eachuser['varusersmodified']=="update"){$state = "Init / {$eachuser['varusersmaxtotaloctets']}MB";}
-                else{$state .=number_format($used_quota,2,'.',',')." / {$eachuser['varusersmaxtotaloctets']}MB";}
-                $rtnstr .= '<td data-th="Usage state" data-th-width="100" data-width="100">'.$state.'</td>';
-                foreach ($cpdb as $cpent) {
-                    if($cpent[4]==$eachuser['varusersusername']){
-                        $isonline = '<a href="?'.$_GET['order'].'act=del&amp;zone=crew&amp;id='.$cpent[5].'">Logout</a>';
-                        break;
+    foreach($radiususeridsorted as $eachusersorted) {
+        foreach ($radiususers as $eachuser) {
+            $used_quota = check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
+            if (preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername']) && $eachuser['varusersusername'] === $eachusersorted) {
+                if ($used_quota <= $eachuser['varusersmaxtotaloctets'] || strtolower($eachuser['varuserspointoftime']) !== 'forever') {
+                    $rtnstr .= '<tr><td data-th="" data-th-width="0" data-width="100"><div class="check v1">';
+                    $rtnstr .= '<input type="checkbox" name="userlist[]" id=' . $eachuser['varusersusername'] . ' value="' . $eachuser['varusersusername'] . '">';
+                    $rtnstr .= '<label for="' . $eachuser['varusersusername'] . '"></label></div></td><td data-th="ID" data-th-width="100" data-width="100">';
+                    $rtnstr .= $eachuser['varusersusername'];
+                    if ($eachuser['varuserscreatedate']) {
+                        $createdate = $eachuser['varuserscreatedate'];
+                    } else {
+                        $createdate = 'N/A';
                     }
-                    else{ $isonline = ''; }
+                    $rtnstr .= '</td><td data-th="Date create" data-th-width="100" data-width="100">' . $createdate . '<br class="hide-mo"></td>';
+                    $updateperiod = $eachuser['varusersterminaltype'] === '' ? 'Auto' : $eachuser['varusersterminaltype'];
+                    $rtnstr .= '<td data-th="Type" data-th-width="100" data-width="100">' . $updateperiod . '</td>';
+                    $terminaltype = strtolower($eachuser['varusersmaxtotaloctetstimerange']) === "forever" ? "one-time" : $eachuser['varusersmaxtotaloctetstimerange'];
+                    $rtnstr .= '<td data-th="Update" data-th-width="100" data-width="100">' . $terminaltype . '</td>';
+                    $state = '';
+                    if ($eachuser['varusersmodified'] == "update") {
+                        $state = "Init / {$eachuser['varusersmaxtotaloctets']}MB";
+                    } else {
+                        $state .= number_format($used_quota, 2, '.', ',') . " / {$eachuser['varusersmaxtotaloctets']}MB";
+                    }
+                    $rtnstr .= '<td data-th="Usage state" data-th-width="100" data-width="100">' . $state . '</td>';
+                    foreach ($cpdb as $cpent) {
+                        if ($cpent[4] == $eachuser['varusersusername']) {
+                            $isonline = '<a href="?' . $_GET['order'] . 'act=del&amp;zone=crew&amp;id=' . $cpent[5] . '">Logout</a>';
+                            break;
+                        } else {
+                            $isonline = '';
+                        }
+                    }
+                    $rtnstr .= '<td data-th="Online" data-th-width="100" data-width="100" class="txt-green">' . $isonline . '</td>';
+                    /*$rtnstr .= '<td data-th="" data-th-width="0" data-width="100">';
+                    $rtnstr .= '<div class="spinner"><button class="btn-plus"></button>';
+                    $rtnstr .= '<input type="text" name="" id="" value="1000">';
+                    $rtnstr .= '<button class="btn-minus"></button><button class="btn md line-mint p0 flex-none">Apply</button>';*/
+                    $rtnstr .= '</div></td></tr>';
                 }
-                $rtnstr .= '<td data-th="Online" data-th-width="100" data-width="100" class="txt-green">'.$isonline.'</td>';
-                /*$rtnstr .= '<td data-th="" data-th-width="0" data-width="100">';
-                $rtnstr .= '<div class="spinner"><button class="btn-plus"></button>';
-                $rtnstr .= '<input type="text" name="" id="" value="1000">';
-                $rtnstr .= '<button class="btn-minus"></button><button class="btn md line-mint p0 flex-none">Apply</button>';*/
-                $rtnstr .= '</div></td></tr>';
             }
         }
     }
@@ -51,17 +67,18 @@ function draw_wifi_contents(){
 function check_wifi_account_password(){
     global $config;
     $passwordlist = array();
-    $userlist = aray();
     foreach ($config['installedpackages']['freeradius']['config'] as $eachuser) {
-        $used_quota = check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
-        if (preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername'])) {
-            if ($used_quota <= $eachuser['varusersmaxtotaloctets'] || $eachuser['varuserspointoftime'] !== 'forever') {
-                array_push($passwordlist, $eachuser['varuserspassword']);
-                array_push($userlist, $eachuser['varusersusername']);
-            }
-        }
+        array_push($passwordlist, $eachuser['varuserspassword']);
     }
-    return array($passwordlist, $userlist);
+    return implode("|||", $passwordlist);
+}
+function check_wifi_account_id(){
+    global $config;
+    $passwordlist = array();
+    foreach ($config['installedpackages']['freeradius']['config'] as $eachuser) {
+        array_push($passwordlist, $eachuser['varusersusername']);
+    }
+    return implode("|||", $passwordlist);
 }
 function del_wifi_user($userlist){
     global $config;

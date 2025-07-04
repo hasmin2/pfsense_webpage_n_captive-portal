@@ -60,7 +60,7 @@ if (!function_exists('compose_manual_routing_contents')) {
         $gw_displayed = false;
 
         foreach ($a_gateways as $gname => $gateway) {
-            if ($gateway['monitor_disable'] || $gateway['terminal_type']==="vpn") {
+            if ($gateway['terminal_type']==="vpn") {
                 continue;
             }
             $gw_displayed = true;

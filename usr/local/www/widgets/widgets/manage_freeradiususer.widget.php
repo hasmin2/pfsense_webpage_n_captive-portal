@@ -98,7 +98,7 @@ if ($_POST['widgetkey']) {//???????????
 			foreach ($userlist as $user){
 				if ($user === $userentry['varusersusername']) {
 					unset($config["installedpackages"]["freeradius"]["config"][$item]);  // flag for remove DB for when anyone who is in site is open webpage.
-					unlink_if_exists("/var/log/radacct/datacounter/{$userentry['varusersmaxtotaloctetstimerange']}/used-octets-{$_POST['delusername']}*");
+					unlink_if_exists("/var/log/radacct/datacounter/{$userentry['varusersmaxtotaloctetstimerange']}/used-octets-$user*");
 					captiveportal_syslog("Deleted user".$user);
 				}
 			}

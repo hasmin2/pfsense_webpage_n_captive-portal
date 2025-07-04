@@ -291,25 +291,17 @@ if($_POST['data_update']){
         }
     }
     function confirm_checkPw(){
-        var pwlist = "<?php
-            global $config;
-            $passwordlist = array();
-            foreach ($config['installedpackages']['freeradius']['config'] as $eachuser) {
-                $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
-                if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername'])) {
-                    if ($used_quota <= $eachuser['varusersmaxtotaloctets'] || strtolower($eachuser['varuserspointoftime']) !== 'forever') {
-                        array_push($passwordlist, $eachuser['varuserspassword'].'<br>');
-                    }
-                }
-            }
-            echo implode("|||", $passwordlist);
-            ?>";
-
+        var pwlist = "<?php echo check_wifi_account_password(); ?>".split("|||");
+        var idlist = "<?php echo check_wifi_account_id(); ?>".split("|||");
         var result="";
         var resultlist = document.getElementsByName('userlist[]');
         for(let idcount=0; idcount<resultlist.length; idcount++){
             if(resultlist[idcount].checked){
-                result += "\n" + resultlist[idcount].value + " : " + pwlist.split("|||")[idcount];
+                for(let idlistcount=0; idlistcount<idlist.length; idlistcount++){
+                    if(resultlist[idcount].value===idlist[idlistcount]){
+                        result += "\n" + resultlist[idcount].value + " : " + pwlist[idlistcount]+"<br>";
+                    }
+                }
             }
         }
         if(result===''){

@@ -3303,7 +3303,9 @@ function is_using_fx(){
     global $config;
     $result = "";
     foreach($config['gateways']['gateway_item'] as $key => $value){
-        if($config['gateways']['defaultgw4'] == $value['name'] &&  strpos( $value['terminal_type'], 'vsat') !== false){
+        if($config['gateways']['defaultgw4'] == $value['name'] &&
+            (strpos( $value['terminal_type'], 'vsat_pri') !== false||
+                strpos( $value['terminal_type'], 'nexuswave') !== false)){
             $isusingvsat = true;
             break;
         }

@@ -62,6 +62,9 @@ function return_gateways_label(){
     $fbb_online="";
     $iridium_online="";
     $tcp_online="";
+    $tcp_nexuswave_online="";
+    $tcp_oneweb_online="";
+    $tcp_starlink_online="";
     $res=check_vsat_status_influxdb();
     $vsattx=$res[2];
     $isfx = false;
@@ -95,10 +98,25 @@ function return_gateways_label(){
                     $vsat_online=false;
                 }
             }
-            if(stristr($gateway['terminal_type'],"tcp")) {
+            if(stristr($gateway['terminal_type'],"tcp_other")) {
                 if($pingresult==="Online"){ $tcp_online=true; }
                 else{ $tcp_online=false; }
             }
+
+            if(stristr($gateway['terminal_type'],"tcp_oneweb")) {
+                if($pingresult==="Online"){ $tcp_oneweb_online=true; }
+                else{ $tcp_oneweb_online=false; }
+            }
+            if(stristr($gateway['terminal_type'],"tcp_starlink")) {
+                if($pingresult==="Online"){ $tcp_starlink_online=true; }
+                else{ $tcp_starlink_online=false; }
+            }
+
+            if(stristr($gateway['terminal_type'],"tcp_nexuswave")) {
+                if($pingresult==="Online"){ $tcp_nexuswave_online=true; }
+                else{ $tcp_nexuswave_online=false; }
+            }
+
         }
     }
     $system_status_string="";
@@ -120,11 +138,26 @@ function return_gateways_label(){
     }
     if($tcp_online===true){
         $system_status_color="purple-label-wrap";
-        $system_status_string.="LEO/4G ";
+        $system_status_string.="4G ";
+    }
+    if($tcp_oneweb_online===true){
+        $system_status_color="purple-label-wrap";
+        $system_status_string.="OneWEB ";
+    }
+    if($tcp_nexuswave_online===true){
+        $system_status_color="purple-label-wrap";
+        $system_status_string.="NEXUSWAVE ";
+    }
+    if($tcp_starlink_online===true){
+        $system_status_color="purple-label-wrap";
+        $system_status_string.="STARLink ";
     }
     $system_status_string .='available';
     if($system_status_string==='available'){
         $system_status_string = 'Vessel network offline';
+    }
+    if($system_status_color==="gray-label-wrap"){
+        $system_status_string="No network defined";
     }
     return array($system_status_color, $system_status_string);
 }

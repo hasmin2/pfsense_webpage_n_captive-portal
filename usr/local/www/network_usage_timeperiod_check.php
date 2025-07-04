@@ -206,31 +206,6 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
         //}
     }
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-/*$fx_total=0;
-$isfx=false;
-foreach ($interface as $key => $item) {
-    if($item['terminal_type']=='vsat_sec'){
-        $isfx=true;
-        break;
-    }
-}
-foreach ($interface as $key => $item) {
-    if($item['terminal_type']=='vsat_pri' || $item['terminal_type']=='vsat_sec'){
-        $cumulative_file = fopen($filepath.$item['rootinterface']."_cumulative", "r");
-        $fx_total = $fx_total + fgets($cumulative_file);
-        fclose($cumulative_file);
-    }
-}
-if($isfx){
-    $fx_totalfile = fopen($filepath."fx_total", "w");
-    fwrite($fx_totalfile, sprintf('%.6f',$fx_total));
-    fclose($fx_totalfile);
-}
-else {
-    unlink_if_exists($filepath."fx_total");
-}*/
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 $defaultgw4 = $config['gateways']['defaultgw4'];
 $gateways = $config['gateways']['gateway_item'];
