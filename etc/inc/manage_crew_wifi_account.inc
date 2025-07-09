@@ -11,7 +11,6 @@ function draw_wifi_contents(){
     $radiususeridsorted= array();
     foreach($radiususers as $eachuser){
         $radiususeridsorted[] = $eachuser['varusersusername'];
-        echo ($eachuser['varusersusername']);
     }
     sort($radiususeridsorted);
 
