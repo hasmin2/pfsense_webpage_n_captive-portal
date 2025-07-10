@@ -109,6 +109,7 @@ if($_POST['data_update']){
                     </div>
                 </div>
             </div>
+            &nbsp;<strong><?php echo $a_terminal_label[2];?></strong>
             <div class="contents">
                 <div class="title-area">
                     <div class="private-wrap" >

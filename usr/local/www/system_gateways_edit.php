@@ -253,16 +253,20 @@ $group->add(new Form_Select(
 		"vsat_sec" => "FX_CREW",
 		"vsat_thi" => "2nd VSAT (or any after second VSAT terminal)",
 		"tcp_other" => "Internet",
-		"tcp_nexuswave" => "Nexus Wave",
-		"tcp_starlink" => "Star Link",
-		"vpn"=> "VPN Network",
+		"nexuswave_pri" => "NexusWave CORP",
+        "nexuswave_sec" => "NexusWave legacy CORP",
+        "nexuswave_thi" => "NexusWave CREW",
+        "nexuswave_fth" => "NexusWave IOT",
+		"tcp_starlink" => "STARLink",
+        "tcp_kuiper" => "Amazon Kuiper",
 		"fbb_satlink"=> "SATLink FleetBroadband",
 		"fbb_jrc" => "JRC FleetBroadband",
 		"fbb_furuno" => "FURUNO FleetBroadband",
 		"fbb_sailor" => "SAILOR FleetBroadband",
 		"iridium_other"=> "Iridium",
-		"metered_other"=> "Metered terminial"
-	)
+		"metered_other"=> "Metered terminial",
+        "vpn"=> "VPN or Internal network"
+     )
 ))->setHelp('Choose terminal type, ***IMPORTANT *** Note that the Gateway priority is "Internet"-> "VSAT(N)"->"any FBB"->"Iridium"->"Metered"');
 //$section->add($group);
 

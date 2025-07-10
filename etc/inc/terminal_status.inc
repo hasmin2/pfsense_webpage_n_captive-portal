@@ -53,88 +53,123 @@ function return_terminal_state(){
     }
     return array($vsatstring, $vsatgpsstring, $fbbstring);
 }
+$vsat_sec_online = "";
 function return_gateways_label(){
     $a_gateways=return_gateways_array();
     $gateways_status = return_gateways_status(true);
     $system_status_color="gray-label-wrap";
-    $vsat_online="";
-    $metered_online="";
-    $fbb_online="";
-    $iridium_online="";
-    $tcp_online="";
-    $tcp_nexuswave_online="";
-    $tcp_oneweb_online="";
-    $tcp_starlink_online="";
     $res=check_vsat_status_influxdb();
     $vsattx=$res[2];
-    $isfx = false;
     foreach ($a_gateways as $gname => $gateway) {
         if ($gateways_status[$gname] && stristr($gateways_status[$gname]['status'], "online") && !stristr($gateway['terminal_type'],"vpn")) {
 
             $system_status_color="red-label-wrap";
             $pingresult = get_extnet_status($gateways_status[$gname])[1];
-            if(stristr($gateway['terminal_type'],"metered")) {
+            if(stristr($gateway['terminal_type'],"metered") && !$metered_online) {
                 if($pingresult==="Online"){ $metered_online=true; }
                 else{ $metered_online=false; }
             }
-            if(stristr($gateway['terminal_type'],"iridium")) {
+            if(stristr($gateway['terminal_type'],"iridium")&& !$iridium_online) {
                 if($pingresult==="Online"){ $iridium_online=true; }
                 else{ $iridium_online=false; }
             }
-            if(stristr($gateway['terminal_type'],"fbb") && !$isfx) {
+            if(stristr($gateway['terminal_type'],"fbb") && !$fbb_online) {
                 if($pingresult==="Online"){ $fbb_online=true; }
                 else{ $fbb_online=false; }
             }
-            if(stristr($gateway['terminal_type'],"vsat")) {
-                if(($vsattx=="1"||$vsattx=='') && $pingresult==='Online'){
-                    $vsat_online=true;
-                }
-                else if(($vsattx=="0") && $pingresult==="Online"){
-                    $vsat_online=false;
-                    $fbb_online=true;
-                    $isfx=true;
-                }
-                else{
-                    $vsat_online=false;
-                }
+            if(stristr($gateway['terminal_type'],"vsat_pri") && !$vsat_pri_online) {
+                if($pingresult==="Online"){ $vsat_pri_online=true; }
+                else{ $vsat_pri_online=false; }
             }
-            if(stristr($gateway['terminal_type'],"tcp_other")) {
+            if(stristr($gateway['terminal_type'],"vsat_sec") && !$vsat_sec_online) {
+                if($pingresult==="Online"){ $vsat_sec_online=true; }
+                else{ $vsat_sec_online=false; }
+            }
+            if(stristr($gateway['terminal_type'],"vsat_thi") && !$vsat_thi_online) {
+                if($pingresult==="Online"){ $vsat_thi_online=true; }
+                else{ $vsat_thi_online=false; }
+            }
+            if(stristr($gateway['terminal_type'],"nexuswave_pri") && !$nexuswave_pri_online) {
+                if($pingresult==="Online"){ $nexuswave_pri_online=true; }
+                else{ $nexuswave_pri_online=false; }
+            }
+            if(stristr($gateway['terminal_type'],"nexuswave_sec") && !$nexuswave_sec_online) {
+                if($pingresult==="Online"){ $nexuswave_sec_online=true; }
+                else{ $nexuswave_sec_online=false; }
+            }
+            if(stristr($gateway['terminal_type'],"nexuswave_thi") && !$nexuswave_thi_online) {
+                if($pingresult==="Online"){ $nexuswave_thi_online=true; }
+                else{ $nexuswave_thi_online=false; }
+            }
+            if(stristr($gateway['terminal_type'],"nexuswave_fth") && !$nexuswave_fth_online) {
+                if($pingresult==="Online"){ $nexuswave_fth_online=true; }
+                else{ $nexuswave_fth_online=false; }
+            }
+            if(stristr($gateway['terminal_type'],"tcp_other") && !$tcp_online) {
                 if($pingresult==="Online"){ $tcp_online=true; }
                 else{ $tcp_online=false; }
             }
-
-            if(stristr($gateway['terminal_type'],"tcp_oneweb")) {
+            if(stristr($gateway['terminal_type'],"tcp_oneweb") && !$tcp_oneweb_online) {
                 if($pingresult==="Online"){ $tcp_oneweb_online=true; }
                 else{ $tcp_oneweb_online=false; }
             }
-            if(stristr($gateway['terminal_type'],"tcp_starlink")) {
+            if(stristr($gateway['terminal_type'],"tcp_starlink") && !$tcp_starlink_online) {
                 if($pingresult==="Online"){ $tcp_starlink_online=true; }
                 else{ $tcp_starlink_online=false; }
             }
-
-            if(stristr($gateway['terminal_type'],"tcp_nexuswave")) {
-                if($pingresult==="Online"){ $tcp_nexuswave_online=true; }
-                else{ $tcp_nexuswave_online=false; }
+            if(stristr($gateway['terminal_type'],"tcp_kuiper") && !$tcp_kuiper_online) {
+                if($pingresult==="Online"){ $tcp_kuiper_online=true; }
+                else{ $tcp_kuiper_online=false; }
             }
 
         }
     }
+
     $system_status_string="";
+
+    if($vsat_pri_online) {
+        $vsat_online=true;
+        if (isset($vsat_sec_online)) {
+            $vsat_online=false;
+            if ($vsattx === '1' || $vsattx === '') {$fx_online = true; }
+            else {
+                $fx_backup_online = true;
+            }
+        }
+    }
+    if($nexuswave_pri_online ||$nexuswave_sec_online|| $nexuswave_fth_online|| $nexuswave_thi_online) {
+        $nexuswave_online=true;
+
+    }
+    $system_status_descrtpion = "<br>";
     if($metered_online===true){
         $system_status_color="yellow-label-wrap";
         $system_status_string.="Metered ";
+        $system_status_descrtpion .= 'Vessel network is running on metered network, please be aware of data usage<br>';
     }
     if($iridium_online===true){
         $system_status_color="blue-label-wrap";
         $system_status_string.="Iridium ";
+        $system_status_descrtpion .= 'Vessel network is running on Iridium network, Pleae be patient that the connection is only up to 700Kbps<br>';
     }
     if($fbb_online===true){
         $system_status_color="blue-label-wrap";
         $system_status_string.="FBB ";
+        $system_status_descrtpion .= 'Vessel network is running on FBB network, please be patient that the connection is only up to 500Kbps<br>';
     }
+    if($fx_backup_online===true){
+        $system_status_color="blue-label-wrap";
+        $system_status_string.="FX Backup ";
+        $system_status_descrtpion .= 'FX Backup is currently active, please be patient that the connection is only up to 500kbps<br>';
+    }
+
     if($vsat_online===true){
         $system_status_color="green-label-wrap";
         $system_status_string.="VSAT ";
+    }
+    if($fx_online===true){
+        $system_status_color="green-label-wrap";
+        $system_status_string.="Fleet Xpress ";
     }
     if($tcp_online===true){
         $system_status_color="purple-label-wrap";
@@ -144,9 +179,14 @@ function return_gateways_label(){
         $system_status_color="purple-label-wrap";
         $system_status_string.="OneWEB ";
     }
-    if($tcp_nexuswave_online===true){
+
+    if($nexuswave_online===true) {
         $system_status_color="purple-label-wrap";
         $system_status_string.="NEXUSWAVE ";
+    }
+    if($tcp_kuiper_online===true){
+        $system_status_color="purple-label-wrap";
+        $system_status_string.="Kuiper ";
     }
     if($tcp_starlink_online===true){
         $system_status_color="purple-label-wrap";
@@ -155,11 +195,13 @@ function return_gateways_label(){
     $system_status_string .='available';
     if($system_status_string==='available'){
         $system_status_string = 'Vessel network offline';
+        $system_status_descrtpion .= 'OFFLINE, please check your network connection';
     }
     if($system_status_color==="gray-label-wrap"){
         $system_status_string="No network defined";
+        $system_status_descrtpion .= 'currently no network is defined, please verify that antenna is connected and configured correctly';
     }
-    return array($system_status_color, $system_status_string);
+    return array($system_status_color, $system_status_string, $system_status_descrtpion);
 }
 
 
