@@ -131,8 +131,14 @@ function return_gateways_label(){
         $vsat_online=true;
         if (isset($vsat_sec_online)) {
             $vsat_online=false;
-            if ($vsattx === '1' || $vsattx === '') {$fx_online = true; }
+            if ($vsattx == 1 || $vsattx == '') {$fx_online = true; }
             else {
+                $fx_backup_online = true;
+            }
+        }
+        else{
+            if ($vsattx == 0) {
+                $vsat_online = false;
                 $fx_backup_online = true;
             }
         }
@@ -195,11 +201,18 @@ function return_gateways_label(){
     $system_status_string .='available';
     if($system_status_string==='available'){
         $system_status_string = 'Vessel network offline';
-        $system_status_descrtpion .= 'OFFLINE, please check your network connection';
+        $system_status_descrtpion .= 'Currently all available network connection found "OFFLINE" please check your antenna is online';
     }
     if($system_status_color==="gray-label-wrap"){
         $system_status_string="No network defined";
-        $system_status_descrtpion .= 'currently no network is defined, please verify that antenna is connected and configured correctly';
+        $system_status_descrtpion .= 'System cannot find any network connectivity, please verify that the antenna/internet is connected and configured correctly';
+    }
+    global $config;
+    if (!$config['gateways']['manualrouteduration'] && $system_status_descrtpion=='<br>'){
+        $system_status_descrtpion .= 'Vessel antenna is configured to automatically select for best available network.<br>If you want to set a specific antenna, go to "Antenna" and choose an best available antenna.<br>';
+    }
+    else if(!$config['gateways']['manualrouteduration'] && $system_status_descrtpion=='<br>'){
+        $system_status_descrtpion .= 'Vessel antenna is configured manual set as per user request.<br> If you want to set "Auto Switching", go to "Antenna" and choose "Automatic" in antenna selection menu.<br>';
     }
     return array($system_status_color, $system_status_string, $system_status_descrtpion);
 }
