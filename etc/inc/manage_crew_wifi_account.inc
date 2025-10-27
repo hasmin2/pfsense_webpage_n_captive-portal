@@ -5,6 +5,7 @@ require_once ('functions.inc');
 
 function draw_wifi_contents(){
     global $config, $cpzone;
+    global $adminlogin;
     $cpzone="crew";
     $radiususers = &$config['installedpackages']['freeradius']['config'];
     $rtnstr='';
@@ -24,12 +25,17 @@ function draw_wifi_contents(){
                     $rtnstr .= '<input type="checkbox" name="userlist[]" id=' . $eachuser['varusersusername'] . ' value="' . $eachuser['varusersusername'] . '">';
                     $rtnstr .= '<label for="' . $eachuser['varusersusername'] . '"></label></div></td><td data-th="ID" data-th-width="100" data-width="100">';
                     $rtnstr .= $eachuser['varusersusername'];
-                    if ($eachuser['varuserscreatedate']) {
-                        $createdate = $eachuser['varuserscreatedate'];
-                    } else {
-                        $createdate = 'N/A';
-                    }
-                    $rtnstr .= '</td><td data-th="Date create" data-th-width="100" data-width="100">' . $createdate . '<br class="hide-mo"></td>';
+                    //$rtnstr .= '<td><form id="" action="submit.php" method="post"><input type="text" id="nameInput" name="name" placeholder="이름을 입력하세요" /><button type="submit" id="realSubmit">submit</button></form></td>';
+                    $descr = $eachuser['varusersdescription'];
+                    $rtnstr  .='<td> <form action="crew_account.php" method="post" style="display:flex; align-items:center; gap:10px; margin:0;">      
+      <input type="text" name="description" value="'.$descr.'"style="border:1px solid #ccc; outline:none; outline:none; padding:5px;">
+      <input type="hidden" name="userid" value= "'.$eachuser['varusersusername'].'">
+   <button type="submit" style="background:none; border:none; padding:0;">
+      <img src="img/icon/ic_apply.png" alt="제출" style="width:24px; height:24px;"></form></td>';
+                    //$rtnstr .= '</td><td data-th="Date create" data-th-width="100" data-width="100">' . $createdate . '<br class="hide-mo"></td>';
+                    $schedule = get_scheduler($eachuser['varusersusername']);
+                    $json = htmlspecialchars(json_encode($schedule, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+                    $rtnstr .= '</td><td data-th="Date create" data-th-width="100" data-width="100"><a onclick="popOpenScheduler(\'pop-set-scheduler\', true,'.$json.')"><img src="img/icon/ic_scheduler.png" alt="Scheduler" style="width:24px; height:24px; display:block; margin:10px auto 0px;"></a><br class="hide-mo"></td>';
                     $updateperiod = $eachuser['varusersterminaltype'] === '' ? 'Auto' : $eachuser['varusersterminaltype'];
                     $rtnstr .= '<td data-th="Type" data-th-width="100" data-width="100">' . $updateperiod . '</td>';
                     $terminaltype = strtolower($eachuser['varusersmaxtotaloctetstimerange']) === "forever" ? "one-time" : $eachuser['varusersmaxtotaloctetstimerange'];
@@ -50,17 +56,90 @@ function draw_wifi_contents(){
                         }
                     }
                     $rtnstr .= '<td data-th="Online" data-th-width="100" data-width="100" class="txt-green">' . $isonline . '</td>';
-                    /*$rtnstr .= '<td data-th="" data-th-width="0" data-width="100">';
-                    $rtnstr .= '<div class="spinner"><button class="btn-plus"></button>';
-                    $rtnstr .= '<input type="text" name="" id="" value="1000">';
-                    $rtnstr .= '<button class="btn-minus"></button><button class="btn md line-mint p0 flex-none">Apply</button>';*/
-                    $rtnstr .= '</div></td></tr>';
+                    /*if($adminlogin==="admin"|| $adminlogin==="vesseladmin"){
+                        $rtnstr .= '<td data-th="" data-th-width="0" data-width="100">';
+                        $rtnstr .= '<div class="spinner"><button class="btn-plus"></button>';
+                        $rtnstr .= '<input type="text" name="" id="" value="1000">';
+                        $rtnstr .= '<button class="btn-minus"></button><button class="btn md line-mint p0 flex-none">Apply</button>';
+                        $rtnstr .= '</div></td>';
+                    }
+                    else{*/
+                        $rtnstr .= '<td></td>';
+                    //}
+                    $rtnstr .= '</tr>';
                 }
             }
         }
     }
     return $rtnstr;
 
+}
+
+function set_descruption($userid, $description){
+    global $config;
+    foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
+        if(($userid === $userentry['varusersusername'])){
+            $config["installedpackages"]["freeradius"]["config"][$item]['varusersdescription'] = $description;
+        }
+    }
+    write_config('set '.$userid.' description');
+}
+
+
+function get_scheduler($user){
+    global $config;
+    //$result = ["id" => $user];
+
+    $rows[]=["id"=> $user];
+    foreach ($config["schedules"]["schedule"] as $eachSchedule) {
+        if($eachSchedule['name']===$user){
+            foreach ($eachSchedule['timerange'] as $schedule) {
+                $fromto = explode("-", $schedule['hour']);
+                $rows[]=["enabled"=>$schedule['rangedescr']==='TRUE' ? true:false,  "from"=>$fromto[0], "to"=>$fromto[1], "days"=>explode(',', $schedule['position'])];
+            }
+        }
+    }
+    while (count($rows) < 4) {
+        $rows[] = [
+            "enabled" => false,
+            "from"    => "00:00",
+            "to"      => "12:00",
+            "days"    => [1, 2, 3, 4, 5, 6, 7]
+        ];
+    }
+    $result = json_encode($rows, JSON_UNESCAPED_UNICODE);
+    return $result;
+}
+
+function set_scheduler($userid, $schedule) {
+    global $config;
+    $schdIndex = -1;
+    if(!isset($config["schedules"]["schedule"])){
+        $config["schedules"]["schedule"]=[];
+    }
+    foreach ($config["schedules"]["schedule"] as $index => $eachSchedule) {
+        if ($eachSchedule['name']===$userid) {
+            $schdIndex = $index;
+        }
+    }
+    $scheduledItemList = ['name'=> $userid, 'descr'=>'', 'timerange'=>[]];
+
+    foreach ($schedule as $item) {
+        $enabled="FALSE";
+        if($item['enabled']===true) {
+            $enabled="TRUE";
+        }
+        $timerange = ["rangedescr"=> $enabled, "hour" => $item['from']."-".$item['to'], 'position'=>implode(",", $item['days'])];
+        $scheduledItemList['timerange'][] = $timerange;
+    }
+
+    if ($schdIndex >= 0) {
+        $config["schedules"]["schedule"][$schdIndex]=$scheduledItemList;
+    }
+    else{
+        $config["schedules"]["schedule"][]=$scheduledItemList;
+    }
+    write_config('Update/write '.$userid.' schedule');
 }
 
 function check_wifi_account_password(){
@@ -122,15 +201,6 @@ function reset_wifi_user_pw($userlist){
 }
 function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltype, $timeperiod){
     global $config;
-    /*if($terminaltype != ""){
-        foreach ($config['gateways']['gateway_item'] as $gwitem){
-            if(is_array($gwitem) && $gwitem['name'] == $terminaltype){ {
-                $terminaltype=$gwitem['name'];
-                break;
-            }
-        }
-    }*/
-
     $userprefix=strtolower($terminaltype).'user';
     $userpostfix = 0;
     foreach($config['installedpackages']['freeradius']['config'] as $item){

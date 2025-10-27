@@ -19,6 +19,11 @@ foreach ($config['interfaces'] as $ifname => $ifcfg) {
         $iottotaldata = "IoT:".read_month_data($ifcfg['if']);
     }
 }
+if($_POST['gmt']){
+    $config['time_offset'] = $_POST['gmt'];
+    write_config("time_offset changed to ", $config['time_offset']);
+    echo '<script> location.replace("index_processing.php");</script>';
+}
 $a_terminal_state = return_terminal_state();
 $a_terminal_label = return_gateways_label();
 $a_core_status_string = get_core_status();

@@ -112,6 +112,18 @@ class APIFreeRADIUSUserUpdate extends APIModel {
             }
 
         }
+        if(isset($this->initial_data["freeradius_maxtotaloctetstimerange"])) {
+            $timerange = $this->initial_data["freeradius_maxtotaloctetstimerange"];
+            $username = $this->initial_data["freeradius_username"];
+            $filepathall = "/var/log/radacct/datacounter/$timerange/used-octets-$username";
+
+            if (($use_file = fopen($filepathall, "w")) !== false) {
+                fwrite($use_file, $this->initial_data["freeradius_lastbasedata"]);
+                fclose($use_file);
+            }
+        }
+
+
         $this->config["installedpackages"]["freeradius"]["config"][$index]['varuserscreatedate'] = date('Y/m/d H:i:s');
         $this->config["installedpackages"]["freeradius"]["config"][$index]["varusersmodified"] = "update";
     }

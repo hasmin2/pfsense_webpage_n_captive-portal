@@ -98,7 +98,7 @@ function print_sidebar($inputlink){
     $rtnstr.='<p class="location" id="firewall-login">';
     $rtnstr.= $vesselinfo["vesselname"];
     $rtnstr.='</p>';
-    $rtnstr.='<p class="gmt">';
+    $rtnstr.='<p class="gmt" id="gmt-modify" style="cursor:pointer;">';
     $rtnstr.= 'GMT '.$config["time_offset"];
     $rtnstr.='</p>';
     $rtnstr.='</div><div id="lnb">';
@@ -140,6 +140,19 @@ function print_sidebar($inputlink){
     else{
         $rtnstr.='<li><a href="/download_center.php"><i class="ic-lnb06"></i><p>Download Center</p></a></li>';
     }
+    //$csrf = $_SESSION['csrfMagicToken'] ?? ($_SESSION['token'] ?? '');
+
+
+    $username = htmlspecialchars($_SESSION['Username'] ?? '', ENT_QUOTES);
+    $rtnstr .= '<form id="logoutForm" action="/index.php?logout" method="post" style="display:inline;">
+  <input type="hidden" name="__csrf_magic" id="__csrf_magic" value="">
+  <button type="submit" class="btn btn-link" title="Logout ('. $username.')"
+          style="background:none;border:0;padding:0;cursor:pointer;">
+    <i class="fa fa-sign-out"></i> Logout
+  </button>
+</form>';
+
+
     $rtnstr.='</ul></div>';
 
     $rtnstr.='</div></div>';
@@ -172,6 +185,9 @@ function print_sidebar($inputlink){
             <button type=button class="btn md fill-dark" onclick="popClose(\'pop-login\')"><i class="ic-cancel"></i>CANCEL</button>
         </div>
         </form>
+        <form id="gmtForm" action="/index.php" method="post" style="display:none;">
+            <input type="hidden" name="gmt" id="gmtVal">
+        </form>
     </div>';
     $rtnstr .= '<div class="popup layer pop-message"><div class="pop-head"><p class="title">Message</p></div><div class="pop-cont"><div class="form">';
     $rtnstr .= '<div class="form-cont" id="message_text"></div></div></div><div class="pop-foot">';
@@ -181,6 +197,10 @@ function print_sidebar($inputlink){
         location.replace("main_dashboard.php");
         //popOpenAndDim(\'pop-login\', true);
     }
+    /*document.getElementById("gmt-modify").onclick=function(){
+        location.replace("/");
+        
+    }*/
     function firewall_login(){
         //alert($(\'#usernamefld\').val());
         //$(\'#firewall-loginform\').submit();
@@ -193,4 +213,3 @@ function print_sidebar($inputlink){
 }
 
 ?>
-

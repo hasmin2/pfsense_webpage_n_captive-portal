@@ -131,21 +131,16 @@ function return_gateways_label(){
         $vsat_online=true;
         if (isset($vsat_sec_online)) {
             $vsat_online=false;
-            if ($vsattx == 1 || $vsattx == '') {$fx_online = true; }
-            else {
-                $fx_backup_online = true;
+            if ($vsattx === 1 || $vsattx === '') {
+                $fx_online = true;
             }
-        }
-        else{
-            if ($vsattx == 0) {
-                $vsat_online = false;
+            else {
                 $fx_backup_online = true;
             }
         }
     }
     if($nexuswave_pri_online ||$nexuswave_sec_online|| $nexuswave_fth_online|| $nexuswave_thi_online) {
         $nexuswave_online=true;
-
     }
     $system_status_descrtpion = "<br>";
     if($metered_online===true){
@@ -196,7 +191,7 @@ function return_gateways_label(){
     }
     if($tcp_starlink_online===true){
         $system_status_color="purple-label-wrap";
-        $system_status_string.="STARLink ";
+        $system_status_string.="Starlink ";
     }
     $system_status_string .='available';
     if($system_status_string==='available'){

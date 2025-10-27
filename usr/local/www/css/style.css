@@ -77,6 +77,12 @@
 .pop-set-manage {width: 400px;}
 .pop-set-manage .btn.lg {min-width: 240px; margin: 0 auto;}
 .pop-set-manage .btn.lg + .btn.lg {margin-top: 10px;}
+
+/* scheduler Setting */
+.pop-set-scheduler {width: 400px;}
+.pop-set-scheduler .btn.lg {min-width: 240px; margin: 0 auto;}
+.pop-set-scheduler .btn.lg + .btn.lg {margin-top: 10px;}
+
 /* login */
 .pop-login {width: 400px;}
 

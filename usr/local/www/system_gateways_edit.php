@@ -258,6 +258,7 @@ $group->add(new Form_Select(
         "nexuswave_thi" => "NexusWave CREW",
         "nexuswave_fth" => "NexusWave IOT",
 		"tcp_starlink" => "STARLink",
+        "tcp_oneweb" => "OneWEB",
         "tcp_kuiper" => "Amazon Kuiper",
 		"fbb_satlink"=> "SATLink FleetBroadband",
 		"fbb_jrc" => "JRC FleetBroadband",

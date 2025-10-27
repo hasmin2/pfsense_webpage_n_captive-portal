@@ -9,10 +9,10 @@ global $adminlogin;
 $controldisplay="";
 $addbutton="";
 if($adminlogin==="admin"||$adminlogin==="vesseladmin") {
-    $controldisplay = '<button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>
+    $controldisplay = '<td><button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>
                        <button class="btn md line-gray" onclick="confirm_resetData()"><i class="ic-reset gray"></i>Reset Data</button>
                             <button class="btn md line-gray" onclick="confirm_checkPw()"><i class="ic-check gray"></i>Check PW</button>
-                            <button class="btn md line-gray" onclick="confirm_delUser()"><i class="ic-delete gray"></i>Delete</button>';
+                            <button class="btn md line-gray" onclick="confirm_delUser()"><i class="ic-delete gray"></i>Delete</button></td>';
     $addbutton = '<button class="btn-setting" onclick="popOpenAndDim(\'pop-set-manage\', true)">Add Voucher</button>';
 }
 else if($adminlogin==="customer"){
@@ -30,6 +30,28 @@ if (isset($cpzone) && !empty($cpzone) && isset($a_cp[$cpzone]['zoneid'])) {
 if (($_GET['act'] == "del") && !empty($cpzone)) {
 	captiveportal_disconnect_client($_GET['id'], 6);
 }
+if ($_POST['schedule_json'] && $_POST['userid']) {
+    $userid="";
+    $schedule=[];
+    $schedule_json = json_decode($_POST['schedule_json'], true);
+    foreach ($schedule_json as $eachItem) {
+        if(isset($eachItem['userid'])){
+            $userid=$eachItem['userid'];
+        }
+        else{
+            $schedule[]=$eachItem;
+        }
+    }
+   set_scheduler($userid, $schedule);
+    echo '<script> location.replace("crew_account_processing.php");</script>';
+}
+if ($_POST['description'] && $_POST['userid']) {
+    $description=$_POST['description'];
+    $userid=$_POST['userid'];
+    set_descruption($userid, $description);
+    echo '<script> location.replace("crew_account_processing.php");</script>';
+}
+//print_r($_POST);
 
 $table_contents = draw_wifi_contents();
 $gateways = return_gateways_array();
@@ -77,7 +99,6 @@ if($_POST['data_update']){
             <div class="title-area">
                 <p class="headline">Manage Crew Account</p>
             </div>
-
             <div class="etc-area">
                 <?= $addbutton ?>
             </div>
@@ -96,26 +117,28 @@ if($_POST['data_update']){
                             <div class="inner">
                                 <select name="" id="" class="select v1">
                                     <option value="">ID</option>
-                                    <option value="">Date create</option>
+                                    <option value="">Description</option>
+                                    <option value="">Duty</option>
                                     <option value="">Type</option>
                                     <option value="">Update</option>
                                     <option value="">Usage state</option>
                                     <option value="">Online</option>
-                                    <!--option value="">Topup/Action</option-->
+                                    <option value="">Topup</option>
                                 </select>
                                 <button class="btn-ic btn-sort"></button>
                             </div>
                         </div>
                         <table>
                             <colgroup>
-                                <col style="width: 50px;">
-                                <col style="width: 170px;">
-                                <col style="width: 130px;">
-                                <col style="width: 170px;">
-                                <col style="width: 120px;">
-                                <col style="width: 150px;">
-                                <col style="width: 80px;">
-                                <!--col style="width: 170px;"-->
+                                <col style="width: 5%;">
+                                <col style="width: 10%;">
+                                <col style="width: 15%;">
+                                <col style="width: 5%;">
+                                <col style="width: 10%;">
+                                <col style="width: 10%;">
+                                <col style="width: 20%;">
+                                <col style="width: 10%;">
+                                <col style="width: 15%;">
                             </colgroup>
                             <thead>
                             <tr>
@@ -126,12 +149,13 @@ if($_POST['data_update']){
                                     </div>
                                 </th>
                                 <th>ID<button class="btn-ic btn-sort"></button></th>
-                                <th>Date create<button class="btn-ic btn-sort"></button></th>
+                                <th>Description<button class="btn-ic btn-sort"></button></th>
+                                <th>Duty<button class="btn-ic btn-sort"></button></th>
                                 <th>Type<button class="btn-ic btn-sort"></button></th>
                                 <th>Update<button class="btn-ic btn-sort"></button></th>
                                 <th>Usage state<button class="btn-ic btn-sort"></button></th>
                                 <th>Online<button class="btn-ic btn-sort"></button></th>
-                                <!--th>Topup/Action<button class="btn-ic btn-sort"></button></th-->
+                                <th>Topup/Action<button class="btn-ic btn-sort"></button></th>
                             </tr>
                             </thead>
                             <tbody id="crew_account_table">
@@ -191,6 +215,7 @@ if($_POST['data_update']){
                 <div class="form-cont">
                     <select name="timeperiod" id="timeperiod" class="select v1">
                         <option value="Monthly">Monthly</option>
+                        <option value="Weekly">Weekly</option>
                         <option value="Daily">Daily</option>
                         <option value="Forever">one-time</option>
                     </select>
@@ -203,6 +228,62 @@ if($_POST['data_update']){
         </div>
     </div>
 </form>
+<form name="crewscheduler" id='crewscheduler' method="post" action="/crew_account.php">
+    <div class="popup layer pop-set-scheduler">
+        <div class="pop-head">
+            <p class="title">Scheduler</p>
+        </div>
+        <div id="content">
+            <div class="contents">
+                <div class="container">
+                    <div class="manage-wrap">
+                        <div class="list-wrap v1">
+                            <div class="sort-area">
+                                <div class="inner">
+                                    <select name="" id="" class="select v1">
+                                        <option value="">Act</option>
+                                        <option value="">From Hour</option>
+                                        <option value="">Minute</option>
+                                        <option value="">To Hour</option>
+                                        <option value="">Minute</option>
+                                        <option value="">day</option>
+                                    </select>
+                                    <button class="btn-ic btn-sort"></button>
+                                </div>
+                            </div>
+                            <table id="scheduleTable">
+                                <input type="hidden" name="userid" id="userIdHidden">
+                                <colgroup>
+                                    <col style="width: 50px;">
+                                    <col style="width: 100px;">
+                                    <col style="width: 100px;">
+                                    <col style="width: 100px;">
+                                    <col style="width: 100px;">
+                                    <col style="width: 200px;">
+                                </colgroup>
+                                <thead>
+                                <tr>
+                                    <th id="th-enable" style="text-align: center;">Act</th>
+                                    <th id="th-from-hour" style="text-align: center;">From Hour</th>
+                                    <th id="th-from-min" style="text-align: center;">From Min</th>
+                                    <th id="th-to-hour" style="text-align: center;">To Hour</th>
+                                    <th id="th-to-min" style="text-align: center;">To Min</th>
+                                    <th id="th-day" style="text-align: center;">day</th>
+                                </tr>
+                                </thead>
+                                <tbody id="sched-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="pop-foot">
+            <button type='button' class="btn md fill-mint" onclick="submit_crewscheduler()"><i class="ic-submit"></i>APPLY</button>
+            <button type='button' class="btn md fill-dark" onclick="popClose('pop-set-scheduler')"><i class="ic-cancel"></i>CANCEL</button>
+        </div>
+    </div>
+</form>
 </body>
 <script type="text/javascript">
     function refreshValue() {
@@ -212,8 +293,6 @@ if($_POST['data_update']){
             type: 'POST',
             dataType: 'json',
             success: function (result) {
-
-
                 $("#crew_account_table").html(result.crew_wifi_table);
             },
             error: function (request, status, error) {

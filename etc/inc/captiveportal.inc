@@ -1767,8 +1767,18 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                             $result = false;
                             $date = new DateTime();
                             $timeduration = $config['captiveportal'][$cpzone]['terminate_timestamp'] + $config['captiveportal'][$cpzone]['terminate_duration'] - round($date->getTimestamp() / 60, 0);
-                            $msg = "Portal has shutdown by ADMIN, wait for " . $timeduration . " minutes.";
+                            if($timeduration>10000){
+                                $msg = "Portal has shutdown by ADMIN until ADMIN back system on.";
+                            }
+                            else {
+                                $msg = "Portal has shutdown by ADMIN, wait for " . $timeduration . " minutes.";
+                            }
                         }
+                    }
+                    $schedule_suspended = get_suspend_timeschedule($login);
+                    if($schedule_suspended == true){
+                        $result = false;
+                        $msg = "Your ID has been suspended by admin schedule policy.";
                     }
                 }
 
@@ -1806,6 +1816,43 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
     }
 
     return array('result'=>$auth_result, 'attributes'=>$reply_attributes, 'auth_method' =>$auth_method, 'login_status'=> $login_status, 'login_message' => $login_msg);
+}
+function get_suspend_timeschedule($loginId) {
+    global $config;
+    $result = false;
+    foreach($config["schedules"]["schedule"] as $scheduleItem){
+        if($scheduleItem['name']===$loginId){
+            foreach($scheduleItem['timerange'] as $eachScheduleItem){
+                $time_offset=0;
+                //captiveportal_syslog($scheduleItem['timerange']);
+                if($eachScheduleItem['rangedescr']==='TRUE'){
+                    if($config['time_offset']){
+                        $time_offset=$config['time_offset'];
+                    }
+                    $utc = new DateTime('now', new DateTimeZone('UTC'));
+                    $hours = floor($time_offset);
+                    $minutes = ($time_offset - $hours) * 60;
+                    $utc->modify(sprintf('+%d hours %d minutes', $hours, $minutes));
+                    $weekdays = ['7', '1', '2', '3', '4', '5', '6'];
+                    $localtime =  $utc-> format ('H:i');
+                    $localweekday = $weekdays[$utc->format('w')];
+                    list($start, $end) = explode('-', $eachScheduleItem['hour']);
+                    $currentMinutes = toMinutes($localtime);
+                    $startMinutes   = toMinutes($start);
+                    $endMinutes     = toMinutes($end);
+                    if ($startMinutes <= $currentMinutes && $currentMinutes <= $endMinutes) {
+                        captiveportal_syslog("User :{$loginId} is currently suspended for scheduled time");
+                        $result = true;
+                    }
+                }
+            }
+        }
+    }
+    return $result;
+}
+function toMinutes($time) {
+    list($h, $m) = explode(':', $time);
+    return $h * 60 + $m;
 }
 
 function captiveportal_opendb() {
@@ -2327,13 +2374,15 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         captiveportal_disconnect_client($sessionid);
         portal_reply_page($redirurl, "login","PW Reset", $clientmac, $clientip);
     } else if ($type == "connected") {
+        $userindex= -1;
         foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
             if($username==$value['varusersusername']){
                 $userindex = $item;
                 break;
             }
         }
-        if (isset($userindex)){//사용자가 있을 때
+        captiveportal_logportalauth($clientip, $clientmac, $username, $sessionid, "User is showed".$userindex);
+        if ($userindex> -1){//사용자가 있을 때
             $isexist=false;//게이트웨이가 있는지 확인함.
             if(isset($config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype']) &&
                 $config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype']!==''){
@@ -3305,14 +3354,14 @@ function is_using_fx(){
     foreach($config['gateways']['gateway_item'] as $key => $value){
         if($config['gateways']['defaultgw4'] == $value['name'] &&
             (strpos( $value['terminal_type'], 'vsat_pri') !== false||
-                strpos( $value['terminal_type'], 'nexuswave') !== false)){
+                strpos( $value['terminal_type'], 'nexuswave_pri') !== false)){
             $isusingvsat = true;
             break;
         }
     }
     if($isusingvsat){
         foreach($config['gateways']['gateway_item'] as $key => $value){
-            if($value['terminal_type']=='vsat_sec'){
+            if($value['terminal_type']=='vsat_sec'|| $value['terminal_type']=='nexuswave_thi'){
                 $result=$value['name'];
                 break;
             }
@@ -3345,6 +3394,7 @@ function del_crew_linked_rule($sourceip, $userid){
             }
         }
     }
+    mwexec("/sbin/pfctl -k ".$sourceip);
     return $result;
 }
 
