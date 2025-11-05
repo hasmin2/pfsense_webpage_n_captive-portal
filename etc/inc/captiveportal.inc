@@ -2381,7 +2381,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
                 break;
             }
         }
-        captiveportal_logportalauth($clientip, $clientmac, $username, $sessionid, "User is showed".$userindex);
+        //captiveportal_logportalauth($clientip, $clientmac, $username, $sessionid, "User is showed".$userindex);
         if ($userindex> -1){//사용자가 있을 때
             $isexist=false;//게이트웨이가 있는지 확인함.
             if(isset($config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype']) &&
@@ -2438,6 +2438,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             }
         } else {
             $title="Removing..";
+            captiveportal_logportalauth($clientip, $clientmac, $username, $sessionid, "User is Removing ".$userindex);
             $portalbtnmessage= "Removed your account. Tap to re-login";
             $portalinfobtnmessage = "Removing your Account information";
             $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
@@ -2448,7 +2449,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     } else if ($type == "login") {
         $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal_{$cpzone}.html");
-        $portalinfobtnmessage = "{$currentusercount}crew @ ".round($crewspeed, 2)."Kbps";
+       // $portalinfobtnmessage = "{$currentusercount}crew @ ".round($crewspeed, 2)."Kbps";
     } else if ($type == "check_quota") {
         if(!empty($username)){
             foreach($config['installedpackages']['freeradius']['config'] as $item => $value){

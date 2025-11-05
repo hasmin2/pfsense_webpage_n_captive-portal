@@ -775,8 +775,8 @@ EOD;
 				}
 			} else {
 				// If an octet limit is NOT set we delete the files for the limit and the counter.
-				//unlink_if_exists("/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}/max-octets-{$varusersusername}");
-				//unlink_if_exists("/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}/used-octets-{$varusersusername}*");
+				unlink_if_exists("/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}/max-octets-{$varusersusername}");
+				unlink_if_exists("/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}/used-octets-{$varusersusername}*");
 			}
 			if ($varusersadditionaloptionsreplyitems != '') {
 				if ($varusersreplyitem != '') {
