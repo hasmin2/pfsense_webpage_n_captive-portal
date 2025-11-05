@@ -114,7 +114,6 @@ function takeFirstAndRest(input) {
     document.getElementById("gmt-save").addEventListener("click", function() {
     const newValue = document.getElementById("gmt-input").value;
     gmtElem.innerHTML = "GMT " + newValue;
-    // TODO: AJAX 로 서버에 저장하거나 hidden input으로 form에 전달 가능
 });
 });
 });

@@ -19,7 +19,7 @@ foreach ($config['interfaces'] as $ifname => $ifcfg) {
         $iottotaldata = "IoT:".read_month_data($ifcfg['if']);
     }
 }
-if($_POST['gmt']){
+if(isset($_POST['gmt'])){
     $config['time_offset'] = $_POST['gmt'];
     write_config("time_offset changed to ", $config['time_offset']);
     echo '<script> location.replace("index_processing.php");</script>';
