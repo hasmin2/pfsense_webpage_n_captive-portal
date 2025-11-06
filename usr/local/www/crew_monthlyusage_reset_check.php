@@ -35,5 +35,6 @@ foreach ($config['gateways']['gateway_item'] as $index => $item) {
         $config['gateways']['gateway_item'][$index]['currentusage'] = 0;
     }
 }
+captiveportal_syslog("Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset");
 write_config("Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset");
 ?>

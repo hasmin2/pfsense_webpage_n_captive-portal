@@ -6,9 +6,10 @@ foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userent
     if(strtolower($config["installedpackages"]["freeradius"]["config"][$item]['varuserspointoftime']) === 'daily'){
         $config['installedpackages']['freeradius']['config'][$item]['varusersresetquota'] = "true";
         $config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
-        //captiveportal_syslog("Reset Datausage for".$userentry['varusersusername']);
+
     }
 }
 freeradius_users_resync();
+captiveportal_syslog("Reset Daily datausage Wifi user");
 write_config("Reset Daily datausage Wifi user");
 ?>
