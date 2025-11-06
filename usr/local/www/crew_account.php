@@ -215,6 +215,7 @@ if($_POST['data_update']){
                 <div class="form-cont">
                     <select name="timeperiod" id="timeperiod" class="select v1">
                         <option value="Monthly">Monthly</option>
+                        <option value="Halfmonthly">Half-Monthly</option>
                         <option value="Weekly">Weekly</option>
                         <option value="Daily">Daily</option>
                         <option value="Forever">one-time</option>
