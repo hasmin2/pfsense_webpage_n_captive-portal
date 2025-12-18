@@ -1633,7 +1633,8 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
             unset($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified']);
             if($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']){
                 unset($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']);
-                $timerange=strtolower($config['installedpackages']['freeradius']['config'][$userindex]['varuserspointoftime']);
+                $timerange = strtolower($config['installedpackages']['freeradius']['config'][$userindex]['varuserspointoftime']);
+                captiveportal_logportalauth($clientmac, $clientmac, $clientip, "Zone: {$cpzone} -user::{$login}::: timerange::::: {$timerange}");
                 unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$login}*");
             }
             write_config("freeradius user update");
@@ -1698,7 +1699,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
             if ($authlevel < 3) {
                 $radmac_error = false;
                 $attributes = array("nas_identifier" => empty($cpcfg["radiusnasid"]) ? "CaptivePortal-{$cpzone}" : $cpcfg["radiusnasid"],
-                    "nas_port_type" => RADIUS_ETHERNET,
+                    "nas_por t_type" => RADIUS_ETHERNET,
                     "nas_port" => $pipeno,
                     "framed_ip" => $clientip);
                 if (mac_format($clientmac) !== null) {
@@ -1759,7 +1760,6 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                     }
                 }
                 // We determine a flag
-
                 if ($result === true) {
                     $val = 3;
                     if (isset($config['captiveportal'][$cpzone]['terminate_duration'])){
@@ -1776,6 +1776,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                         }
                     }
                     $schedule_suspended = get_suspend_timeschedule($login);
+                    captiveportal_syslog($schedule_suspended);
                     if($schedule_suspended == true){
                         $result = false;
                         $msg = "Your ID has been suspended by admin schedule policy.";
@@ -1792,12 +1793,14 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                     }
                     else if($attributes['ms_chap_error']){  //if login failed
                         $msg="Password is incorrect.\nPlease try again.";
+                        //$msg = print_r($attributes);
                     }
                     else if ($attributes['ms_chap2_success']||$attributes['ms_chap_success']){
                         $msg="maximum usage exceed.";
+                        //$msg = print_r($attributes);
                     }
                     else {
-                        $msg="Contacted server, but unknown error to login";
+                        $msg="User is suspended";
                     }
                 } elseif ($result === null) {
                     $val = 0;
@@ -2339,18 +2342,12 @@ function portal_hostname_from_client_ip($cliip) {
 
 function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = null, $clientip = null, $username = null, $password = null, $voucher = null) {
     global $g, $config, $cpzone;
-    $currentusercount=count(captiveportal_read_db());
-    if($currentusercount==0){
-        $crewspeed = get_expected_speed()/($currentusercount+1);
-    } else {
-        $crewspeed = get_expected_speed()/($currentusercount);
-    }
     $cpcfg = $config['captiveportal'][$cpzone];
     $ourhostname = portal_hostname_from_client_ip($clientip);
     $protocol = (isset($cpcfg['httpslogin'])) ? 'https://' : 'http://';
     $portal_url=$redirurl;
     //////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////
-    $sessionid = already_connected($clientip, $clientmac)[5];
+    $sessionid = already_connected($clientip)[5];
     $username_from_id = getusername($sessionid);
     if($username_from_id != ""){
         $username  = $username_from_id;
@@ -2445,7 +2442,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             captiveportal_disconnect_client($sessionid);
             write_config("FreeRADIUS user change applied");
         }
-        $portalinfobtnmessage = "{$currentusercount}crew @ ".round($crewspeed, 2)."Kbps";
+       // $portalinfobtnmessage = "{$currentusercount}crew @ ".round($crewspeed, 2)."Kbps";
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     } else if ($type == "login") {
         $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal_{$cpzone}.html");
@@ -2527,6 +2524,22 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
     $htmltext = str_replace("#USERNAME#", htmlspecialchars($username), $htmltext);
     $htmltext = str_replace("#PASSWORD#", htmlspecialchars($password), $htmltext);
     $htmltext = str_replace("#VOUCHER#", htmlspecialchars($voucher), $htmltext);
+
+    $htmltext = str_replace("#VOUCHER#", htmlspecialchars($voucher), $htmltext);
+
+    if ($type === "connected") {
+        $schedule_suspended = get_suspend_timeschedule($username);
+        if($schedule_suspended == true){
+            freeradius_users_resync(false,"user suspend applied");//-> Freeradius 에다가 리싱크 명령함.
+            captiveportal_disconnect_client($sessionid);
+        }
+        $htmltext .= "\n<script>
+            setTimeout(function () {
+                // 현재 접속한 사이트의 루트 URL로 이동
+                window.location.href = window.location.origin;
+            }, 5000);
+        </script>";
+    }
     echo $htmltext;
 }
 
@@ -3240,20 +3253,20 @@ function captiveportal_isip_logged($clientip) {
         return $cpentry;
     }
 }
-function already_connected($clientip, $clientmac) {
+function already_connected($clientip) {
     global $g, $cpzone;
-    if (($clientip != "") && ($clientmac != "")) {
-        $query = "WHERE ip = '{$clientip}' AND mac = '{$clientmac}'";
-        $cpdb = captiveportal_read_db();
+    if ($clientip != "") {
+        $query = "WHERE ip = '{$clientip}'";
+        $cpdb = captiveportal_read_db($query);
         /* Lookup the $sessionid */
         foreach ($cpdb as $cpentry) {
-            if (($cpentry[2] == $clientip) && ($cpentry[3] == $clientmac)){
+      //      if ($cpentry[2] == $clientip){
                 return $cpentry;
-            }
+        //    }
         }
+    } else {
         return false;
-    } else
-        return false;
+    }
 }
 function getusername($sessionid) {
     global $cpzone;
@@ -3355,7 +3368,8 @@ function is_using_fx(){
     foreach($config['gateways']['gateway_item'] as $key => $value){
         if($config['gateways']['defaultgw4'] == $value['name'] &&
             (strpos( $value['terminal_type'], 'vsat_pri') !== false||
-                strpos( $value['terminal_type'], 'nexuswave_pri') !== false)){
+                strpos( $value['terminal_type'], 'nexuswave_pri') !== false||
+                strpos( $value['terminal_type'], 'nexuswave_sec') !== false)){
             $isusingvsat = true;
             break;
         }
@@ -3447,23 +3461,5 @@ function add_crew_linked_rule($sourceip, $userid){
     $newrule['created']['username']='${userid}@${sourceip}';
     array_push($config['filter']['rule'], $newrule);
     filter_configure();
-}
-function get_expected_speed(){
-    if(file_exists("/etc/inc/crew_rx") && ($crew_file = fopen("/etc/inc/crew_rx", "r"))!==false ){
-        $crew_rx = fgets($crew_file);
-    }
-    else {
-        $crew_rx = 0;
-    }
-    fclose($crew_file);
-    if(file_exists("/etc/inc/crew_tx") && ($crew_file = fopen("/etc/inc/crew_tx", "r"))!==false ){
-        $crew_tx = fgets($crew_file);
-    }
-    else {
-        $crew_tx = 0;
-    }
-    fclose($crew_file);
-    $result = $crew_tx+$crew_rx;
-    return $result;
 }
 ?>
