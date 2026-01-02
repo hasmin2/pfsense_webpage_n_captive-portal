@@ -35,7 +35,7 @@ global $config, $g;
 global $adminlogin;
 $settings='';
 $crew_wifitoggle_disable='disabled';
-if($adminlogin){
+if($adminlogin==='admin'){
     $settings='<button class="btn-setting" onclick="popOpenAndDim(\'pop-set-terminal\', true)">Setting</button>';
     $crew_wifitoggle_disable='';
  }

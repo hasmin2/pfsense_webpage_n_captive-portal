@@ -186,6 +186,7 @@ if ($_POST['widgetkey']) {//???????????
 				"varuserssessiontimeout"=>"",
 				"varuserslogintime"=>"",
 				"varusersamountoftime"=>"",
+                "varusershalftimeperiod"=>"half",
 				"varuserspointoftime"=>"Monthly",
 				"varusersmaxtotaloctets"=>"1",
 				"varusersmaxtotaloctetstimerange"=>"monthly",
@@ -195,19 +196,16 @@ if ($_POST['widgetkey']) {//???????????
 				"varuserstopadditionaloptions"=>"",
 				"varuserscheckitemsadditionaloptions"=>"",
 				"varusersreplyitemsadditionaloptions"=>"",
-				"varuserslastreceivedata"=>0,
-				"varuserslastsentdata"=>0,
-				"varuserslastbasedata"=>0,
 				"varusersterminaltype"=>"",
 				"varusersresetquota"=>"true",
                 "varuserscreatedate"=>$curdate,
 			);
 			$userinfoentry['varusersusername']=$username;
             if($_POST['randpwd']==="randpwd"){
-                $alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
+                $alphabet = '1234567890';
                 $pass = array(); //remember to declare $pass as an array
                 $alphaLength = strlen($alphabet) - 1; //put the length -1 in cache
-                for ($passwordchar = 0; $passwordchar < 8; $passwordchar++) {
+                for ($passwordchar = 0; $passwordchar < 6; $passwordchar++) {
                     $n = rand(0, $alphaLength);
                     $pass[] = $alphabet[$n];
                 }

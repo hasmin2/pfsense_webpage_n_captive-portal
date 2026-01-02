@@ -3,7 +3,8 @@ require_once("captiveportal.inc");
 
 global $config;
 foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
-    if(strtolower($config["installedpackages"]["freeradius"]["config"][$item]['varuserspointoftime']) === 'halfmonthly'){
+    if(strtolower($config["installedpackages"]["freeradius"]["config"][$item]['varuserspointoftime']) === 'monthly'  &&
+        strtolower($config["installedpackages"]["freeradius"]["config"][$item]['varusershalftimeperiod']) === 'half'){
         $config['installedpackages']['freeradius']['config'][$item]['varusersresetquota'] = "true";
         $config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
 

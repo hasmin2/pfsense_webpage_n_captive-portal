@@ -20,9 +20,13 @@ foreach ($config['interfaces'] as $ifname => $ifcfg) {
     }
 }
 if(isset($_POST['gmt'])){
-    $config['time_offset'] = $_POST['gmt'];
-    write_config("time_offset changed to ", $config['time_offset']);
+    $config['time_offset_enabled']['time_offset'] = $_POST['gmt'];
+    write_config("time_offset changed to ", $config['time_offset_enabled']['time_offset']);
     echo '<script> location.replace("index_processing.php");</script>';
+}
+if(isset($_POST['gmtcheck'])){
+    $config['time_offset_enabled']['gmtcheck'] = $_POST['gmtcheck'];
+    write_config("GMT has been manually checked");
 }
 $a_terminal_state = return_terminal_state();
 $a_terminal_label = return_gateways_label();

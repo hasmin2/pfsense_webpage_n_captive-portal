@@ -21,7 +21,8 @@ foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userent
         unset($config["installedpackages"]["freeradius"]["config"][$item]);  // flag for remove DB for when anyone who is in site is open webpage.
         captiveportal_syslog("Deleted user: ".$user);
     }
-    if(strtolower($config["installedpackages"]["freeradius"]["config"][$item]['varuserspointoftime']) === 'monthly'){
+    if(strtolower($config["installedpackages"]["freeradius"]["config"][$item]['varuserspointoftime']) === 'monthly'
+       && strtolower($config["installedpackages"]["freeradius"]["config"][$item]['varusershalftimeperiod']) === ''){
         $config['installedpackages']['freeradius']['config'][$item]['varusersresetquota'] = "true";
         $config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
         //captiveportal_syslog("Reset Datausage for".$userentry['varusersusername']);

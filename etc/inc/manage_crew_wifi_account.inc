@@ -3,7 +3,7 @@ require_once ("globals.inc");
 require_once ("captiveportal.inc");
 require_once ('functions.inc');
 
-function draw_wifi_contents(){
+/*function draw_wifi_contents(){
     global $config, $cpzone;
     global $adminlogin;
     $cpzone="crew";
@@ -36,10 +36,21 @@ function draw_wifi_contents(){
                     $schedule = get_scheduler($eachuser['varusersusername']);
                     $json = htmlspecialchars(json_encode($schedule, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
                     $rtnstr .= '</td><td data-th="Date create" data-th-width="100" data-width="100"><a onclick="popOpenScheduler(\'pop-set-scheduler\', true,'.$json.')"><img src="img/icon/ic_scheduler.png" alt="Scheduler" style="width:24px; height:24px; display:block; margin:10px auto 0px;"></a><br class="hide-mo"></td>';
-                    $updateperiod = $eachuser['varusersterminaltype'] === '' ? 'Auto' : $eachuser['varusersterminaltype'];
-                    $rtnstr .= '<td data-th="Type" data-th-width="100" data-width="100">' . $updateperiod . '</td>';
-                    $terminaltype = strtolower($eachuser['varusersmaxtotaloctetstimerange']) === "forever" ? "one-time" : $eachuser['varusersmaxtotaloctetstimerange'];
-                    $rtnstr .= '<td data-th="Update" data-th-width="100" data-width="100">' . $terminaltype . '</td>';
+                    $terminaltype = $eachuser['varusersterminaltype'] === '' ? 'Auto' : $eachuser['varusersterminaltype'];
+                    $rtnstr .= '<td data-th="Type" data-th-width="100" data-width="100">' . $terminaltype . '</td>';
+                    if(strtolower($eachuser['varusersmaxtotaloctetstimerange']) === "forever"){
+                        $updateperiod='one-time';
+                    }
+                    else{
+                        if($eachuser['varusershalftimeperiod']==""||!isset($eachuser['varusershalftimeperiod'])) {
+                            $updateperiod = $eachuser['varusersmaxtotaloctetstimerange'];
+                        }
+                        else{
+                            $updateperiod = $eachuser['varusershalftimeperiod'].'-'.$eachuser['varusersmaxtotaloctetstimerange'];
+                        }
+                    }
+
+                    $rtnstr .= '<td data-th="Update" data-th-width="100" data-width="100">' . $updateperiod . '</td>';
                     $state = '';
                     if ($eachuser['varusersmodified'] == "update") {
                         $state = "Init / {$eachuser['varusersmaxtotaloctets']}MB";
@@ -56,24 +67,102 @@ function draw_wifi_contents(){
                         }
                     }
                     $rtnstr .= '<td data-th="Online" data-th-width="100" data-width="100" class="txt-green">' . $isonline . '</td>';
-                    /*if($adminlogin==="admin"|| $adminlogin==="vesseladmin"){
-                        $rtnstr .= '<td data-th="" data-th-width="0" data-width="100">';
-                        $rtnstr .= '<div class="spinner"><button class="btn-plus"></button>';
-                        $rtnstr .= '<input type="text" name="" id="" value="1000">';
-                        $rtnstr .= '<button class="btn-minus"></button><button class="btn md line-mint p0 flex-none">Apply</button>';
-                        $rtnstr .= '</div></td>';
-                    }
-                    else{*/
-                        $rtnstr .= '<td></td>';
-                    //}
+                 //   $rtnstr .= '<td></td>';
                     $rtnstr .= '</tr>';
                 }
             }
         }
     }
     return $rtnstr;
+}*/
 
+function draw_wifi_contents(){
+    global $config, $cpzone, $adminlogin;
+    $cpzone="crew";
+
+    $radiususers = &$config['installedpackages']['freeradius']['config'];
+    $rtnstr='';
+
+    // 1) username => user 맵 만들기
+    $usersByName = [];
+    foreach ($radiususers as $u) {
+        if (!empty($u['varusersusername'])) {
+            $usersByName[$u['varusersusername']] = $u;
+        }
+    }
+
+    $names = array_keys($usersByName);
+    sort($names);
+
+    $cpdb = captiveportal_read_db();
+    $onlineByUser = [];
+    foreach ($cpdb as $cpent) {
+        if (isset($cpent[4], $cpent[5])) {
+            $onlineByUser[$cpent[4]] = $cpent[5];
+        }
+    }
+
+    foreach ($names as $name) {
+        $eachuser = $usersByName[$name];
+
+        // 기존 필터 동일
+        if (!preg_match("/[a-z]*[0-9]{5}/", $name)) {
+            continue;
+        }
+
+        $used_quota = check_quota($name, $eachuser['varusersmaxtotaloctetstimerange']);
+
+        if ($used_quota > $eachuser['varusersmaxtotaloctets'] && strtolower($eachuser['varuserspointoftime']) === 'forever') {
+            continue;
+        }
+
+        $rtnstr .= '<tr><td data-th="" data-th-width="0" data-width="100"><div class="check v1">';
+        $rtnstr .= '<input type="checkbox" name="userlist[]" id=' . $name . ' value="' . $name . '">';
+        $rtnstr .= '<label for="' . $name . '"></label></div></td><td data-th="ID" data-th-width="100" data-width="100">';
+        $rtnstr .= $name;
+
+        $descr = $eachuser['varusersdescription'];
+        $rtnstr  .= '<td><form action="crew_account.php" method="post" style="display:flex; align-items:center; gap:10px; margin:0;">
+          <input type="text" name="description" value="'.$descr.'" style="border:1px solid #ccc; outline:none; padding:5px;">
+          <input type="hidden" name="userid" value="'.$name.'">
+          <button type="submit" style="background:none; border:none; padding:0;">
+            <img src="img/icon/ic_apply.png" alt="제출" style="width:24px; height:24px;">
+          </button>
+        </form></td>';
+
+        $schedule = get_scheduler($name);
+        $json = htmlspecialchars(json_encode($schedule, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+        $rtnstr .= '<td data-th="Date create" data-th-width="100" data-width="100"><a onclick="popOpenScheduler(\'pop-set-scheduler\', true,'.$json.')"><img src="img/icon/ic_scheduler.png" alt="Scheduler" style="width:24px; height:24px; display:block; margin:10px auto 0px;"></a><br class="hide-mo"></td>';
+
+        $updateperiod = $eachuser['varusersterminaltype'] === '' ? 'Auto' : $eachuser['varusersterminaltype'];
+        $rtnstr .= '<td data-th="Type" data-th-width="100" data-width="100">' . $updateperiod . '</td>';
+        if($eachuser['varusershalftimeperiod']=='') {
+            $updateperiodname= $eachuser['varusersmaxtotaloctetstimerange'];
+        }
+        else{
+            $updateperiodname = $eachuser['varusershalftimeperiod'].'-'.$eachuser['varusersmaxtotaloctetstimerange'];
+        }
+        $terminaltype = strtolower($eachuser['varusersmaxtotaloctetstimerange']) === "forever" ? "one-time" : $updateperiodname;
+        $rtnstr .= '<td data-th="Update" data-th-width="100" data-width="100">' . $terminaltype . '</td>';
+
+        if ($eachuser['varusersmodified'] == "update") {
+            $state = "Init / {$eachuser['varusersmaxtotaloctets']}MB";
+        } else {
+            $state = number_format($used_quota, 2, '.', ',') . " / {$eachuser['varusersmaxtotaloctets']}MB";
+        }
+        $rtnstr .= '<td data-th="Usage state" data-th-width="100" data-width="100">' . $state . '</td>';
+
+        $isonline = isset($onlineByUser[$name])
+            ? '<a href="?' . $_GET['order'] . 'act=del&amp;zone=crew&amp;id=' . $onlineByUser[$name] . '">Logout</a>'
+            : '';
+        $rtnstr .= '<td data-th="Online" data-th-width="100" data-width="100" class="txt-green">' . $isonline . '</td>';
+
+        $rtnstr .= '<td></td></tr>';
+    }
+
+    return $rtnstr;
 }
+
 
 function set_descruption($userid, $description){
     global $config;
@@ -172,6 +261,41 @@ function del_wifi_user($userlist){
     freeradius_users_resync();
     write_config("Deleted Wifi user");
 }
+function modify_wifi_user($userlist, $modifydata){
+    global $config;
+    captiveportal_syslog("modifydata:::".$modifydata['datalimit']);
+    foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
+        foreach ($userlist as $user) {
+            if ($user === $userentry['varusersusername']) {
+                $halftimeperiod=explode('-',$modifydata['timeperiod']);
+                if(count($halftimeperiod)==2) {
+                    $varusershalftimeperiod=$halftimeperiod[0];
+                    $varuserstimeperiod=$halftimeperiod[1];
+                }
+                else{
+                    $varusershalftimeperiod="";
+                    $varuserstimeperiod=$halftimeperiod[0];
+                }
+                if($modifydata['datalimit']!='') {
+                    $config["installedpackages"]["freeradius"]["config"][$item]['varusersmaxtotaloctets']=$modifydata['datalimit'];
+                }
+                if($modifydata['timeperiod']!='') {
+                    //$config["installedpackages"]["freeradius"]["config"][$item]['varusersamountoftime']=$modifydata['timelimit'];
+                }
+                $config["installedpackages"]["freeradius"]["config"][$item]['varusershalftimeperiod']=$varusershalftimeperiod;
+                $config["installedpackages"]["freeradius"]["config"][$item]['varuserspointoftime']=$varuserstimeperiod;
+                $config["installedpackages"]["freeradius"]["config"][$item]['varusersmaxtotaloctetstimerange']=strtolower($varuserstimeperiod);
+                $config["installedpackages"]["freeradius"]["config"][$item]['varusersmaxbandwidthdown']=$modifydata['downspeed'];
+                $config["installedpackages"]["freeradius"]["config"][$item]['varusersmaxbandwidthup']=$modifydata['upspeed'];
+                $config["installedpackages"]["freeradius"]["config"][$item]['varusersterminaltype']=$modifydata['terminaltype'];
+                $config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
+                captiveportal_syslog("User setting changed".$userentry['varusersusername']);
+            }
+        }
+    }
+    freeradius_users_resync();
+    write_config("Reset datausage Wifi user");
+}
 function reset_wifi_user($userlist){
     global $config;
     foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
@@ -211,6 +335,7 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
     }
     $userpostfix++;
     for ($usercount=$userpostfix;$usercount<$userpostfix+$vouchernumber;$usercount++){
+        if($vouchernumber>100){ break; }
         $username = $userprefix.str_pad($usercount, 5, '0', STR_PAD_LEFT);
         $userexist = false;
         foreach($config['installedpackages']['freeradius']['config'] as $item){
@@ -218,6 +343,16 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
         }
         if($userexist) { continue; }
         $curdate = date('Y/m/d H:i:s');;
+        $halftimeperiod=explode('-',$timeperiod);
+        if(count($halftimeperiod)==2) {
+            $varusershalftimeperiod=$halftimeperiod[0];
+            $varuserstimeperiod=$halftimeperiod[1];
+        }
+        else{
+            $varusershalftimeperiod="";
+            $varuserstimeperiod=$halftimeperiod[0];
+        }
+
         $userinfoentry = array(
             "sortable"=>"",
             "varuserspasswordencryption"=>"Cleartext-Password",
@@ -238,19 +373,17 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
             "varusersvlanid"=>"",
             "varusersexpiration"=>"",
             "varuserssessiontimeout"=>"",
+            "varusershalftimeperiod"=>$varusershalftimeperiod,
             "varuserslogintime"=>"",
             "varusersamountoftime"=>"",
-            "varuserspointoftime"=>$timeperiod,
-            "varusersmaxtotaloctetstimerange"=> strtolower($timeperiod),
+            "varuserspointoftime"=>$varuserstimeperiod,
+            "varusersmaxtotaloctetstimerange"=> strtolower($varuserstimeperiod),
             "varusersmaxbandwidthdown"=>"",
             "varusersmaxbandwidthup"=>"",
             "varusersacctinteriminterval"=>"600",
             "varuserstopadditionaloptions"=>"",
             "varuserscheckitemsadditionaloptions"=>"",
             "varusersreplyitemsadditionaloptions"=>"",
-            "varuserslastreceivedata"=>0,
-            "varuserslastsentdata"=>0,
-            "varuserslastbasedata"=>0,
             "varusersterminaltype"=>$terminaltype,
             "varusersresetquota"=>"true",
             "varusersmodified"=>"create",
@@ -258,10 +391,10 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
         );
         $userinfoentry['varusersusername']=$username;
         if($israndompw==="randpwd"){
-            $alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
+            $alphabet = '1234567890';
             $pass = array(); //remember to declare $pass as an array
             $alphaLength = strlen($alphabet) - 1; //put the length -1 in cache
-            for ($passwordchar = 0; $passwordchar < 8; $passwordchar++) {
+            for ($passwordchar = 0; $passwordchar < 6; $passwordchar++) {
                 $n = rand(0, $alphaLength);
                 $pass[] = $alphabet[$n];
             }

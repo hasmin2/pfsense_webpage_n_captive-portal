@@ -89,6 +89,7 @@ if ($macfilter || isset($cpcfg['passthrumacadd'])) {
 if ($_POST['logout_id']) {//When User click logout button from './logout.php'
 	$safe_logout_id = SQLite3::escapeString($_POST['logout_id']);
 	captiveportal_disconnect_client($safe_logout_id);
+
 	portal_reply_page($redirurl, "login","Logged out!!!", $clientmac, $clientip);
 } elseif ($_POST['new_password']){
 	//$safe_logout_id = SQLite3::escapeString($_POST['logout_id']);
@@ -183,8 +184,8 @@ if ($_POST['logout_id']) {//When User click logout button from './logout.php'
 	if ($auth_result['result']) {
 		captiveportal_logportalauth($user, $clientmac, $clientip, $auth_result['login_status']);
 		portal_allow($clientip, $clientmac, $user, $passwd, $redirurl, $auth_result['attributes'], $pipeno, $auth_result['auth_method'], $context);
-        portal_reply_page($loginurl, "connected", trim($_POST['auth_user'])." online", $clientmac, $clientip);
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		portal_reply_page($loginurl, "connected", trim($_POST['auth_user'])." online", $clientmac, $clientip);
+		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	} else {
 		captiveportal_free_dn_ruleno($pipeno);
 		$type = "error";
@@ -213,7 +214,16 @@ if ($_POST['logout_id']) {//When User click logout button from './logout.php'
 		portal_reply_page($redirurl, "login", "Welcome!", $clientmac, $clientip);
 	}
 	else {//is still connected
-		portal_reply_page($redirurl, "connected", trim($_POST['auth_user'])." online", $clientmac, $clientip);
+		$userid=trim($_POST['auth_user']);
+		$useridfromip = getusername(already_connected($clientip, $clientmac)[5]);
+		//echo "web userid is::".$userid;
+		//echo "from IP id is::".$useridfromip;
+		if($userid=='' && $useridfromip=='') {//로그아웃 된것
+			portal_reply_page($redirurl, "login", "Welcome!", $clientmac, $clientip);
+		}
+		else{
+			portal_reply_page($redirurl, "connected", $userid." online", $clientmac, $clientip);
+		}
 	}
 }
 

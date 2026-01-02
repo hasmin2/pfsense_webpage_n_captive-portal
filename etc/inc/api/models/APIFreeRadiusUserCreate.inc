@@ -141,6 +141,7 @@ class APIFreeRADIUSUserCreate extends APIModel {
             "varuserssessiontimeout"=>"",
             "varuserslogintime"=>"",
             "varusersamountoftime"=>"",
+            "varusershalftimeperiod"=>"",
             "varuserspointoftime"=>"Monthly",
             "varusersmaxtotaloctets"=>"1",
             "varusersmaxtotaloctetstimerange"=>"monthly",
@@ -150,9 +151,6 @@ class APIFreeRADIUSUserCreate extends APIModel {
             "varuserstopadditionaloptions"=>"",
             "varuserscheckitemsadditionaloptions"=>"",
             "varusersreplyitemsadditionaloptions"=>"",
-            "varuserslastreceivedata"=>0,
-            "varuserslastsentdata"=>0,
-            "varuserslastbasedata"=>0,
             "varusersterminaltype"=>"",
             "varusersresetquota"=>"true",
             "varuserscreatedate"=>"",
@@ -170,7 +168,7 @@ class APIFreeRADIUSUserCreate extends APIModel {
 			}
 		}
         if(isset($this->initial_data["freeradius_maxtotaloctetstimerange"])) {
-            $timerange = $this->initial_data["freeradius_maxtotaloctetstimerange"];
+            $timerange = strtolower(this->initial_data["freeradius_maxtotaloctetstimerange"]);
             $username = $this->initial_data["freeradius_username"];
             $filepathall = "/var/log/radacct/datacounter/$timerange/used-octets-$username";
             if (($use_file = fopen($filepathall, "w")) !== false) {

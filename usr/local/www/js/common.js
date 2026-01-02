@@ -204,11 +204,9 @@ document.addEventListener("DOMContentLoaded", function() {
     const gmtText = document.getElementById("gmt-modify");
     const gmtForm = document.getElementById("gmtForm");
     const gmtVal  = document.getElementById("gmtVal");
-
     gmtText.addEventListener("click", function() {
         let current = parseInt(gmtText.innerText.replace("GMT", "").trim()) || 0;
         let input = prompt("Please input time difference regarding current location (-11 ~ 12):", current);
-
         if (input !== null) {
             let val = parseInt(input, 10);
             if (!isNaN(val) && val >= -11 && val <= 12) {

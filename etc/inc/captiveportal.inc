@@ -1634,7 +1634,6 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
             if($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']){
                 unset($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']);
                 $timerange = strtolower($config['installedpackages']['freeradius']['config'][$userindex]['varuserspointoftime']);
-                captiveportal_logportalauth($clientmac, $clientmac, $clientip, "Zone: {$cpzone} -user::{$login}::: timerange::::: {$timerange}");
                 unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$login}*");
             }
             write_config("freeradius user update");
@@ -1777,6 +1776,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                     }
                     $schedule_suspended = get_suspend_timeschedule($login);
                     captiveportal_syslog($schedule_suspended);
+
                     if($schedule_suspended == true){
                         $result = false;
                         $msg = "Your ID has been suspended by admin schedule policy.";
@@ -1820,39 +1820,151 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
 
     return array('result'=>$auth_result, 'attributes'=>$reply_attributes, 'auth_method' =>$auth_method, 'login_status'=> $login_status, 'login_message' => $login_msg);
 }
+
 function get_suspend_timeschedule($loginId) {
     global $config;
-    $result = false;
-    foreach($config["schedules"]["schedule"] as $scheduleItem){
-        if($scheduleItem['name']===$loginId){
-            foreach($scheduleItem['timerange'] as $eachScheduleItem){
-                $time_offset=0;
-                //captiveportal_syslog($scheduleItem['timerange']);
-                if($eachScheduleItem['rangedescr']==='TRUE'){
-                    if($config['time_offset']){
-                        $time_offset=$config['time_offset'];
-                    }
-                    $utc = new DateTime('now', new DateTimeZone('UTC'));
-                    $hours = floor($time_offset);
-                    $minutes = ($time_offset - $hours) * 60;
-                    $utc->modify(sprintf('+%d hours %d minutes', $hours, $minutes));
-                    $weekdays = ['7', '1', '2', '3', '4', '5', '6'];
-                    $localtime =  $utc-> format ('H:i');
-                    $localweekday = $weekdays[$utc->format('w')];
-                    list($start, $end) = explode('-', $eachScheduleItem['hour']);
-                    $currentMinutes = toMinutes($localtime);
-                    $startMinutes   = toMinutes($start);
-                    $endMinutes     = toMinutes($end);
-                    if ($startMinutes <= $currentMinutes && $currentMinutes <= $endMinutes) {
-                        captiveportal_syslog("User :{$loginId} is currently suspended for scheduled time");
-                        $result = true;
-                    }
+
+    if (empty($config["schedules"]["schedule"]) || !is_array($config["schedules"]["schedule"])) {
+        return false;
+    }
+
+    foreach ($config["schedules"]["schedule"] as $scheduleItem) {
+
+        if (($scheduleItem['name'] ?? '') !== $loginId) {
+            continue;
+        }
+
+        if (empty($scheduleItem['timerange']) || !is_array($scheduleItem['timerange'])) {
+            continue;
+        }
+
+        foreach ($scheduleItem['timerange'] as $idx => $eachScheduleItem) {
+
+            $allowedWeekdays = [];
+            $effectiveWeekday = null;
+
+            // rangedescr == 'TRUE' 인 것만 적용
+            if (($eachScheduleItem['rangedescr'] ?? '') !== 'TRUE') {
+                continue;
+            }
+
+            // 1) 로컬 시간 계산 (time_offset: -11 ~ +12, '시간'만)
+            $time_offset = 0;
+            if (isset($config['time_offset_enabled']['time_offset']) && $config['time_offset_enabled']['time_offset'] !== '') {
+                $time_offset = (int)$config['time_offset_enabled']['time_offset'];
+            }
+
+            // 범위 강제 (-11 ~ +12)
+            if ($time_offset < -11) $time_offset = -11;
+            if ($time_offset >  12) $time_offset =  12;
+
+            $utc = new DateTime('now', new DateTimeZone('UTC'));
+
+            // ✅ 시간만 적용
+            if ($time_offset !== 0) {
+                $utc->modify(($time_offset > 0 ? '+' : '') . $time_offset . ' hours');
+            }
+
+            // ✅ 오프셋 적용 후 로컬 시간/요일
+            $currentLocalTime = $utc->format('H:i');
+            $currentWeekday   = (int)$utc->format('N'); // 1=Mon ... 7=Sun
+
+            // 2) 스케줄 시간 파싱
+            if (empty($eachScheduleItem['hour']) || strpos($eachScheduleItem['hour'], '-') === false) {
+                continue;
+            }
+
+            list($start, $end) = explode('-', $eachScheduleItem['hour'], 2);
+
+            $currentMinutes = toMinutes($currentLocalTime);
+            $startMinutes   = toMinutes($start);
+            $endMinutes     = toMinutes($end);
+
+            // 3) 요일 추출
+            $allowedWeekdays = array_map('intval', (array)extract_schedule_weekdays_v2($eachScheduleItem));
+            $weekdayRestricted = !empty($allowedWeekdays);
+
+            $inRange = false;
+
+            if ($startMinutes <= $endMinutes) {
+                $inRange = ($startMinutes <= $currentMinutes && $currentMinutes <= $endMinutes);
+                $effectiveWeekday = $currentWeekday;
+            } else {
+                $inRange = ($currentMinutes >= $startMinutes) || ($currentMinutes <= $endMinutes);
+
+                if ($currentMinutes <= $endMinutes) {
+                    $prev = clone $utc;
+                    $prev->modify('-1 day');
+                    $effectiveWeekday = (int)$prev->format('N');
+                } else {
+                    $effectiveWeekday = $currentWeekday;
                 }
             }
+            $weekdayOk = true;
+            if ($weekdayRestricted) {
+                $weekdayOk = in_array((int)$effectiveWeekday, $allowedWeekdays, true);
+            }
+
+            if ($inRange && $weekdayOk) {
+                return true;
+            }
+        }
+        break;
+    }
+    return false;
+}
+
+function extract_schedule_weekdays_v2(array $tr) : array
+{
+    $pos = $tr['position'] ?? null;
+    if ($pos !== null && $pos !== '' && $pos !== false) {
+        // CSV "1,2,3,4,5,6,7"
+        if (is_string($pos) && strpos($pos, ',') !== false) {
+            $parts = preg_split('/\s*,\s*/', trim($pos), -1, PREG_SPLIT_NO_EMPTY);
+            return array_values(array_map('strval', $parts));
+        }
+
+        // 배열 [1,2,3]
+        if (is_array($pos)) {
+            $out = array_values(array_map('strval', $pos));
+            return $out;
+        }
+
+        // 숫자 처리
+        if (is_numeric($pos)) {
+            $n = (int)$pos;
+
+            if ($n >= 1 && $n <= 7) {
+                return [(string)$n];
+            }
+
+            $mask = $n;
+            $out = [];
+            for ($i = 0; $i <= 6; $i++) {
+                if ($mask & (1 << $i)) {
+                    $out[] = (string)($i + 1); // bit0=월(1) ... bit6=일(7)
+                }
+            }
+            return $out;
         }
     }
-    return $result;
+
+    foreach (['weekdays', 'weekday', 'days', 'wdays'] as $k) {
+        if (!empty($tr[$k])) {
+            $vals = is_array($tr[$k])
+                ? $tr[$k]
+                : preg_split('/[,\s]+/', (string)$tr[$k], -1, PREG_SPLIT_NO_EMPTY);
+            $out = array_values(array_map('strval', $vals));
+            return $out;
+        }
+    }
+    return [];
 }
+
+
+
+
+
 function toMinutes($time) {
     list($h, $m) = explode(':', $time);
     return $h * 60 + $m;
@@ -2347,7 +2459,7 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
     $protocol = (isset($cpcfg['httpslogin'])) ? 'https://' : 'http://';
     $portal_url=$redirurl;
     //////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////
-    $sessionid = already_connected($clientip)[5];
+    $sessionid = already_connected($clientip, $clientmac)[5];
     $username_from_id = getusername($sessionid);
     if($username_from_id != ""){
         $username  = $username_from_id;
@@ -2442,11 +2554,10 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             captiveportal_disconnect_client($sessionid);
             write_config("FreeRADIUS user change applied");
         }
-       // $portalinfobtnmessage = "{$currentusercount}crew @ ".round($crewspeed, 2)."Kbps";
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     } else if ($type == "login") {
         $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal_{$cpzone}.html");
-       // $portalinfobtnmessage = "{$currentusercount}crew @ ".round($crewspeed, 2)."Kbps";
+        ;
     } else if ($type == "check_quota") {
         if(!empty($username)){
             foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
@@ -2523,10 +2634,6 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
     $htmltext = str_replace("#CLIENT_IP#", htmlspecialchars($clientip), $htmltext);
     $htmltext = str_replace("#USERNAME#", htmlspecialchars($username), $htmltext);
     $htmltext = str_replace("#PASSWORD#", htmlspecialchars($password), $htmltext);
-    $htmltext = str_replace("#VOUCHER#", htmlspecialchars($voucher), $htmltext);
-
-    $htmltext = str_replace("#VOUCHER#", htmlspecialchars($voucher), $htmltext);
-
     if ($type === "connected") {
         $schedule_suspended = get_suspend_timeschedule($username);
         if($schedule_suspended == true){
@@ -3253,21 +3360,22 @@ function captiveportal_isip_logged($clientip) {
         return $cpentry;
     }
 }
-function already_connected($clientip) {
+function already_connected($clientip, $clientmac) {
     global $g, $cpzone;
-    if ($clientip != "") {
-        $query = "WHERE ip = '{$clientip}'";
-        $cpdb = captiveportal_read_db($query);
+    if (($clientip != "") && ($clientmac != "")) {
+        $query = "WHERE ip = '{$clientip}' AND mac = '{$clientmac}'";
+        $cpdb = captiveportal_read_db();
         /* Lookup the $sessionid */
         foreach ($cpdb as $cpentry) {
-      //      if ($cpentry[2] == $clientip){
+            if (($cpentry[2] == $clientip) && ($cpentry[3] == $clientmac)){
                 return $cpentry;
-        //    }
+            }
         }
-    } else {
         return false;
-    }
+    } else
+        return false;
 }
+
 function getusername($sessionid) {
     global $cpzone;
     $query = "WHERE sessionid = '{$sessionid}'";
@@ -3312,10 +3420,10 @@ function getcurquota($sessionid, $clientip){
                 $timerange = $value['varusersmaxtotaloctetstimerange'];
             }
         }
-        $filepathall = "/var/log/radacct/datacounter/$timerange/used-octets-$username*";
+        $filepathall = "/var/log/radacct/datacounter/$timerange/used-octets-$username";
         $usagenum = 0;
         $files = glob($filepathall);
-            foreach($files as $filepath){
+        foreach($files as $filepath){
             if(file_exists($filepath) && ($use_file = fopen($filepath, "r"))!==false ){
                 $usagenum = $usagenum + intval(fgets($use_file));
                 fclose($use_file);
@@ -3332,7 +3440,7 @@ function getcurquota($sessionid, $clientip){
 }
 function check_quota($username, $timerange){
     global $config;
-    $filepathall = "/var/log/radacct/datacounter/$timerange/used-octets-$username*";
+    $filepathall = "/var/log/radacct/datacounter/$timerange/used-octets-$username";
     $usagenum = 0;
     $files = glob($filepathall);
     foreach($files as $filepath){

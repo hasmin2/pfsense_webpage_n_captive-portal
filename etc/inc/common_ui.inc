@@ -2,7 +2,7 @@
 include_once ('auth.inc');
 include_once ('config.lib.inc');
 global $g;
-$adminlogin="";
+global $adminlogin;
 
 if(session_auth()){
     if(strpos(get_config_user(), "admin") !== false) {
@@ -98,9 +98,35 @@ function print_sidebar($inputlink){
     $rtnstr.='<p class="location" id="firewall-login">';
     $rtnstr.= $vesselinfo["vesselname"];
     $rtnstr.='</p>';
-    $rtnstr.='<p class="gmt" id="gmt-modify" style="cursor:pointer;">';
-    $rtnstr.= 'GMT '.$config["time_offset"];
-    $rtnstr.='</p>';
+    $rtnstr .= '<p class="gmt" id="gmt-modify" style="cursor:pointer;">';
+    $rtnstr .= 'GMT ' . $config['time_offset_enabled']["time_offset"];
+    $rtnstr .= '</p>';
+    $gmtmanualchecked = $config['time_offset_enabled']['gmtcheck']? "checked" : "";
+
+    $rtnstr .= '<div class="gmt-option">';
+    $rtnstr .= '  <label for="gmtcheck">';
+    $rtnstr .= '    <input type="checkbox" name="gmtcheck" id="gmtcheck"'.$gmtmanualchecked.'
+                 style="display:inline-block !important; visibility:visible !important; opacity:1 !important;
+                        -webkit-appearance:checkbox !important; appearance:checkbox !important;">';
+    $rtnstr .= '    <span>Manual Timezone Enable</span>';
+    $rtnstr .= '  </label>';
+    $rtnstr .= '</div>';
+
+
+    /*$rtnstr .= '<input type="checkbox" name="gmtcheck" id="gmtcheck"
+ style="
+  display:inline-block !important;
+  visibility:visible !important;
+  opacity:1 !important;
+  position:relative !important;
+  left:auto !important; top:auto !important;
+  width:18px !important; height:18px !important;
+  z-index:999999 !important;
+  -webkit-appearance:checkbox !important;
+  appearance:checkbox !important;
+ ">';*/
+
+
     $rtnstr.='</div><div id="lnb">';
     $rtnstr.='<button class="btn-ic btn-menu-close"></button>';
     $rtnstr.='<div class="depth01"><ul>';
@@ -188,6 +214,9 @@ function print_sidebar($inputlink){
         <form id="gmtForm" action="/index.php" method="post" style="display:none;">
             <input type="hidden" name="gmt" id="gmtVal">
         </form>
+        <form id="gmtEnabledForm" action="/index.php" method="post" style="display:none;">
+            <input type="hidden" name="manaulgmt" id="manualgmt">
+        </form>
     </div>';
     $rtnstr .= '<div class="popup layer pop-message"><div class="pop-head"><p class="title">Message</p></div><div class="pop-cont"><div class="form">';
     $rtnstr .= '<div class="form-cont" id="message_text"></div></div></div><div class="pop-foot">';
@@ -206,6 +235,24 @@ function print_sidebar($inputlink){
         //$(\'#firewall-loginform\').submit();
         popClose(\'pop-login\');
     }
+     (function(){
+      var el = document.getElementById("gmtcheck");
+      if (!el) return;
+    
+      el.addEventListener("change", function () {
+        var csrfEl = document.querySelector(\'input[name="__csrf_magic"]\');
+        var csrf = csrfEl ? csrfEl.value : "";
+        var val  = this.checked ? "1" : "0";
+    
+        fetch("/index.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "__csrf_magic=" + encodeURIComponent(csrf) + "&gmtcheck=" + encodeURIComponent(val)
+        })
+        .then(function(){ console.log("gmtcheck POST sent:", val); })
+        .catch(function(e){ console.error("gmtcheck error:", e); });
+      });
+    })();
     </script>';
 
 

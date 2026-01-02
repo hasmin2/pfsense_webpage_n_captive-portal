@@ -13,6 +13,7 @@ if($adminlogin==="admin"||$adminlogin==="vesseladmin") {
                        <button class="btn md line-gray" onclick="confirm_resetData()"><i class="ic-reset gray"></i>Reset Data</button>
                             <button class="btn md line-gray" onclick="confirm_checkPw()"><i class="ic-check gray"></i>Check PW</button>
                             <button class="btn md line-gray" onclick="confirm_delUser()"><i class="ic-delete gray"></i>Delete</button></td>';
+    $setupbutton = '<button class="btn-setting" onclick="popOpenAndDim(\'pop-modify-manage\', true)">Modify Voucher</button>';
     $addbutton = '<button class="btn-setting" onclick="popOpenAndDim(\'pop-set-manage\', true)">Add Voucher</button>';
 }
 else if($adminlogin==="customer"){
@@ -64,6 +65,22 @@ foreach ($gateways as $gname => $gateway){
     }
 }
 
+if (isset($_POST['modifyusers'])) {
+
+    // 1) 기본 POST 값
+    $userlist = $_POST['userlist'] ?? [];
+
+    // 2) modifydata 파싱
+    $modifydata = [];
+    if (!empty($_POST['modifydata'])) {
+        parse_str($_POST['modifydata'], $modifydata);
+    }
+
+    // 이후 처리
+    modify_wifi_user($userlist, $modifydata);
+    exit;
+}
+
 if(isset($_POST['resetpw'])){ reset_wifi_user_pw($_POST['userlist']); exit(0);}
 if(isset($_POST['resetdata'])){reset_wifi_user($_POST['userlist']);exit(0);}
 if(isset($_POST['deluser'])){del_wifi_user($_POST['userlist']);exit(0);}
@@ -86,7 +103,7 @@ if($_POST['data_update']){
 }
 ////////////////////SIMPLE SELF API//////////////////////////
 ?>
-<!DOCTYPE HTML>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
 <?php echo print_css_n_head();?>
@@ -100,8 +117,11 @@ if($_POST['data_update']){
                 <p class="headline">Manage Crew Account</p>
             </div>
             <div class="etc-area">
-                <?= $addbutton ?>
-            </div>
+                <div style="display:flex; align-items:center; gap:20px;">
+                    <?= $setupbutton ?>
+                    <div style="flex:1;"></div>
+                    <?= $addbutton ?>
+                </div>            </div>
         </div>
 
         <div class="contents">
@@ -138,7 +158,7 @@ if($_POST['data_update']){
                                 <col style="width: 10%;">
                                 <col style="width: 20%;">
                                 <col style="width: 10%;">
-                                <col style="width: 15%;">
+                                <!--col style="width: 15%;"-->
                             </colgroup>
                             <thead>
                             <tr>
@@ -155,7 +175,7 @@ if($_POST['data_update']){
                                 <th>Update<button class="btn-ic btn-sort"></button></th>
                                 <th>Usage state<button class="btn-ic btn-sort"></button></th>
                                 <th>Online<button class="btn-ic btn-sort"></button></th>
-                                <th>Topup/Action<button class="btn-ic btn-sort"></button></th>
+                                <!--<th><button class="btn-ic btn-sort"></button></th>-->
                             </tr>
                             </thead>
                             <tbody id="crew_account_table">
@@ -168,10 +188,74 @@ if($_POST['data_update']){
         </div>
     </div>
 </div>
+<form name="modifyusers" id='modifyusers' method="post" action="/crew_account.php">
+    <div class="popup layer pop-modify-manage">
+        <div class="pop-head">
+            <p class="title">Modify Voucher</p>
+        </div>
+        <div class="pop-cont">
+            <div class="form">
+                <div class="form-tit">
+                    <p class="tit">Data limit (Mbytes)</p>
+                </div>
+                <div class="form-cont">
+                    <input type="text" name="datalimit" id="datalimit">
+                </div>
+            </div>
+            <div class="form">
+                <div class="form-tit">
+                    <br>
+                    <p class="tit">Time limit (Time minutes)</p>
+                </div>
+                <div class="form-cont">
+                    <input type="text" name="timelimit" id="timelimit" placeholder="Time based limit, NOT IMPLEMENTED YET">
+                </div>
+            </div>
+            <div class="form mt20">
+                <div class="form-tit">
+                    <p class="tit">Data speed (Kbps)</p>
+                </div>
+
+                <div class="form-cont" style="display:flex; gap:10px;">
+                    <input type="text" name="downspeed" id="downspeed" style="width:100%;" placeholder="Download Kbps, Experimental">
+                    <input type="text" name="upspeed" id="upspeed" style="width:100%;" placeholder="Upload Kbps, Experimental">
+                </div>
+            </div>
+
+            <hr class="line v1 mt30">
+            <div class="form mt30">
+                <div class="form-tit">
+                    <p class="tit">Terminal Type</p>
+                </div>
+                <div class="form-cont">
+                    <select name="terminaltype" id="terminaltype" class="select v1">
+                        <?php echo $terminaltypeoption;?>
+                    </select>
+                </div>
+                <div class="form-tit">
+                    <p class="tit">Reset every...</p>
+                </div>
+                <div class="form-cont">
+                    <select name="timeperiod" id="timeperiod" class="select v1">
+                        <option value="Monthly">Monthly</option>
+                        <option value="half-Monthly">Half-Monthly</option>
+                        <option value="Weekly">Weekly</option>
+                        <option value="Daily">Daily</option>
+                        <option value="Forever">one-time</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="pop-foot">
+            <button type='button' class="btn md fill-mint" onclick="submit_modifyusers()"><i class="ic-submit"></i>APPLY</button>
+            <button type='button' class="btn md fill-dark" onclick="popClose('pop-modify-manage')"><i class="ic-cancel"></i>CANCEL</button>
+        </div>
+    </div>
+</form>
 <form name="registerusers" id='registerusers' method="post" action="/crew_account.php">
     <div class="popup layer pop-set-manage">
         <div class="pop-head">
-            <p class="title">Account Setting</p>
+            <p class="title">Create Voucher</p>
         </div>
         <div class="pop-cont">
             <div class="form">
@@ -215,7 +299,7 @@ if($_POST['data_update']){
                 <div class="form-cont">
                     <select name="timeperiod" id="timeperiod" class="select v1">
                         <option value="Monthly">Monthly</option>
-                        <option value="Halfmonthly">Half-Monthly</option>
+                        <option value="half-Monthly">Half-Monthly</option>
                         <option value="Weekly">Weekly</option>
                         <option value="Daily">Daily</option>
                         <option value="Forever">one-time</option>
@@ -229,31 +313,37 @@ if($_POST['data_update']){
         </div>
     </div>
 </form>
-<form name="crewscheduler" id='crewscheduler' method="post" action="/crew_account.php">
-    <div class="popup layer pop-set-scheduler">
+<form name="crewscheduler" id="crewscheduler" method="post" action="/crew_account.php">
+    <input type="hidden" name="userid" id="userIdHidden">
+
+    <div class="popup layer pop-set-scheduler"
+         style="width:720px; max-width:90%; left:50%; transform:translateX(-50%);">
         <div class="pop-head">
-            <p class="title">Scheduler</p>
+            <p class="title">Suspension Setup</p>
         </div>
+
         <div id="content">
-            <div class="contents">
+            <div class="contents" style="padding:15px 20px;">
                 <div class="container">
                     <div class="manage-wrap">
                         <div class="list-wrap v1">
+
                             <div class="sort-area">
                                 <div class="inner">
-                                    <select name="" id="" class="select v1">
+                                    <select class="select v1">
                                         <option value="">Act</option>
                                         <option value="">From Hour</option>
                                         <option value="">Minute</option>
                                         <option value="">To Hour</option>
                                         <option value="">Minute</option>
-                                        <option value="">day</option>
+                                        <option value="">Day</option>
                                     </select>
                                     <button class="btn-ic btn-sort"></button>
                                 </div>
                             </div>
-                            <table id="scheduleTable">
-                                <input type="hidden" name="userid" id="userIdHidden">
+
+                            <table id="scheduleTable"
+                                   style="width:100%; table-layout:fixed; border-collapse:collapse;">
                                 <colgroup>
                                     <col style="width: 50px;">
                                     <col style="width: 100px;">
@@ -262,29 +352,40 @@ if($_POST['data_update']){
                                     <col style="width: 100px;">
                                     <col style="width: 200px;">
                                 </colgroup>
+
                                 <thead>
                                 <tr>
-                                    <th id="th-enable" style="text-align: center;">Act</th>
-                                    <th id="th-from-hour" style="text-align: center;">From Hour</th>
-                                    <th id="th-from-min" style="text-align: center;">From Min</th>
-                                    <th id="th-to-hour" style="text-align: center;">To Hour</th>
-                                    <th id="th-to-min" style="text-align: center;">To Min</th>
-                                    <th id="th-day" style="text-align: center;">day</th>
+                                    <th style="text-align:center; padding:4px 6px;">Act</th>
+                                    <th style="text-align:center; padding:4px 6px;">From Hour</th>
+                                    <th style="text-align:center; padding:4px 6px;">From Min</th>
+                                    <th style="text-align:center; padding:4px 6px;">To Hour</th>
+                                    <th style="text-align:center; padding:4px 6px;">To Min</th>
+                                    <th style="text-align:center; padding:4px 6px;">Day</th>
                                 </tr>
                                 </thead>
+
                                 <tbody id="sched-body"></tbody>
                             </table>
+
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="pop-foot">
-            <button type='button' class="btn md fill-mint" onclick="submit_crewscheduler()"><i class="ic-submit"></i>APPLY</button>
-            <button type='button' class="btn md fill-dark" onclick="popClose('pop-set-scheduler')"><i class="ic-cancel"></i>CANCEL</button>
+
+        <div class="pop-foot" style="text-align:center; padding:10px 0;">
+            <button type="button" class="btn md fill-mint" onclick="submit_crewscheduler()"
+                    style="min-width:120px; margin:0 4px;">
+                <i class="ic-submit"></i>APPLY
+            </button>
+            <button type="button" class="btn md fill-dark" onclick="popClose('pop-set-scheduler')"
+                    style="min-width:120px; margin:0 4px;">
+                <i class="ic-cancel"></i>CANCEL
+            </button>
         </div>
     </div>
 </form>
+
 </body>
 <script type="text/javascript">
     function refreshValue() {
@@ -306,27 +407,40 @@ if($_POST['data_update']){
         popClose('pop-set-manage');
         $('#registerusers').submit();
     }
-    const checkboxes = document.querySelectorAll('.userlist', 'input[type="checkbox"]');
-    checkboxes.forEach(checkbox => {
-        checkbox.addEventListener('click', handleCheck);
-    });
-    let lastChecked;
-    function handleCheck(e) {
-        let inBetween = false;
-        if (e.shiftKey && this.checked) {
-            checkboxes.forEach(checkbox => {
-                if (checkbox === this || checkbox === lastChecked) {
-                    inBetween = !inBetween;
-                }
+    function submit_modifyusers() {
+        if (!confirm("Selected users are being set this configure, OK to continue.")) return;
 
-                if (inBetween) {
-                    checkbox.checked = true;
-                }
-            });
+        // 1) modifyusers 폼 데이터 → __csrf_magic 포함됨
+        let data = $("#modifyusers").serialize();   // 여기 안에 __csrf_magic 있어야 함
+
+        // 2) PHP에서 트리거로 쓰는 플래그 이름은 modifyusers (s 붙음)
+        data += "&modifyusers=true";
+
+        // 3) 체크된 userlist 추가
+        let userlist = $('input[name="userlist[]"]:checked')
+            .map(function () { return $(this).val(); })
+            .get();
+
+        for (let i = 0; i < userlist.length; i++) {
+            data += "&userlist[]=" + encodeURIComponent(userlist[i]);
         }
 
-        lastChecked = this;
+        // (선택) modifydata 로 폼 내용 통째로 넘기고 싶으면:
+        data += "&modifydata=" + encodeURIComponent($("#modifyusers").serialize());
+
+        $.ajax({
+            url: "crew_account.php",   // 스킴/호스트 동일하게, ./ 도 가능
+            type: "POST",
+            data: data,                // ★ 그냥 문자열
+            // processData / contentType 기본값 유지 (건들지 말기)
+            success: function (result) {
+                location.replace("crew_account.php");
+            }
+        });
+
+        popClose('pop-modify-manage');
     }
+
     function confirm_resetPw(){
         if(window.confirm('Selected user passwords will be reset to 1111, OK to continue.')){
             $.ajax({

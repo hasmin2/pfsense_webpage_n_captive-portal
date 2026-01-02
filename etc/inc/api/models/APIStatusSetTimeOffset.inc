@@ -23,11 +23,17 @@ class APIStatusSetTimeOffset extends APIModel {
         $this->privileges = ["page-all", "page-system-gateways"];
     }
     public function action() {
-        if($this->initial_data['time_offset']){
-            $last_timeoffset = $this->config['time_offset'];
+        if($this->initial_data['time_offset'] ){
+            $last_timeoffset = $this->config['time_offset_enabled']['time_offset'];
             if($last_timeoffset!==$this->initial_data['time_offset']){
-                $this->config['time_offset'] = $this->initial_data['time_offset'];
+                if($this -> config['time_offset_enabled']['gmtcheck']=='1'){
+                    return APIResponse\get(0, ("Manual timezone applied"));
+                }
+                $this->config['time_offset_enabled']['time_offset'] = $this->initial_data['time_offset'];
                 $this->write_config();
+            }
+            else{
+                return APIResponse\get(0, ("Same Timezone, no change made"));
             }
             return APIResponse\get(0, ("applied successful"));
         }
