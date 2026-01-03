@@ -3394,12 +3394,12 @@ function getsession($username) {
     $cpdb = captiveportal_read_db();
     /* Lookup the username*/
     foreach ($cpdb as $cpentry) {
-        if ($cpentry[5] == $username){
-            return $cpentry[4];
+        if ($cpentry[4] == $username){
+            return $cpentry[5];
         }
     }
     return false;
-
+///18181818188181818181 cpentry 5로둠
 }
 function captiveportal_fxuser_disconnect(){
     foreach ($this->config['installedpackages']['freeradius']['config'] as $value) {

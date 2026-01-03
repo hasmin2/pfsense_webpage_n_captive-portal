@@ -1062,8 +1062,8 @@ EOD;
 				}
 			} else {
 				// If an octet limit is NOT set we delete the files for the limit and the counter.
-				//unlink_if_exists("/var/log/radacct/datacounter/{$varmacsmaxtotaloctetstimerange}/max-octets-{$varmacsaddress}");
-				//unlink_if_exists("/var/log/radacct/datacounter/{$varmacsmaxtotaloctetstimerange}/used-octets-{$varmacsaddress}*");
+				unlink_if_exists("/var/log/radacct/datacounter/{$varmacsmaxtotaloctetstimerange}/max-octets-{$varmacsaddress}");
+				unlink_if_exists("/var/log/radacct/datacounter/{$varmacsmaxtotaloctetstimerange}/used-octets-{$varmacsaddress}*");
 			}
 			if ($varmacsadditionaloptionsreplyitems != '') {
 				if ($varmacsreplyitem != '') {
@@ -3745,19 +3745,24 @@ else
     if [ ! -e "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME" ]; then
 		echo 0 > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"
 	fi
+	
     USEDOCTETS=\$((\$ACCTINPUTOCTETS+\$ACCTOUTPUTOCTETS))
+    
     # If this is an interim update, track it in a separate session file
     # since the incoming data is a gauge not a counter.
     if [ \$UPDATETYPE = "Interim-Update" ]; then
         echo \$USEDOCTETS > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-\$SESSIONID"
+               logger -f /var/log/system.log "FreeRADIUS: User \$USERNAME has used \$USEDOCTETS MB IN  \$TIMERANGE allotted traffic with interim traffic."
     else
         USEDOCTETS=\$((\$USEDOCTETS+`cat "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"`))
+    
         # If there was a session file for this session (from interim updates) clear it since the equivalent
         # value was just added to the total.
         if [ -e "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-\$SESSIONID" ]; then
             rm "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-\$SESSIONID"
         fi
         echo "\$USEDOCTETS" > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"
+                logger -f /var/log/system.log "FreeRADIUS: User \$USERNAME has used \$USEDOCTETS MB IN  \$TIMERANGE allotted traffic with outsess session ."
     fi
     exit 0
 fi
