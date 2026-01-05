@@ -3651,20 +3651,39 @@ function freeradius_modulesdatacounter_resync() {
 
 	$conf .= <<<EOD
 exec datacounterdaily {
-		wait = yes
-		program = "/bin/sh {$varFREERADIUS_SCRIPTS}/datacounter_acct.sh %{request:User-Name} daily %{request:Acct-Input-Octets} %{request:Acct-Output-Octets} %{request:Acct-Status-Type} %{request:Acct-Session-Id}"
+    wait = yes
+    program = "/bin/sh /usr/local/etc/raddb/scripts/datacounter_acct.sh \
+%{request:User-Name} daily \
+%{request:Acct-Input-Octets} %{request:Acct-Output-Octets} \
+%{%{request:Acct-Input-Gigawords}:-0} %{%{request:Acct-Output-Gigawords}:-0} \
+%{request:Acct-Status-Type} %{request:Acct-Session-Id}"
 }
+
 exec datacounterweekly {
-		wait = yes
-		program = "/bin/sh {$varFREERADIUS_SCRIPTS}/datacounter_acct.sh %{request:User-Name} weekly %{request:Acct-Input-Octets} %{request:Acct-Output-Octets} %{request:Acct-Status-Type} %{request:Acct-Session-Id}"
+    wait = yes
+    program = "/bin/sh /usr/local/etc/raddb/scripts/datacounter_acct.sh \
+%{request:User-Name} weekly \
+%{request:Acct-Input-Octets} %{request:Acct-Output-Octets} \
+%{%{request:Acct-Input-Gigawords}:-0} %{%{request:Acct-Output-Gigawords}:-0} \
+%{request:Acct-Status-Type} %{request:Acct-Session-Id}"
 }
+
 exec datacountermonthly {
-		wait = yes
-		program = "/bin/sh {$varFREERADIUS_SCRIPTS}/datacounter_acct.sh %{request:User-Name} monthly %{request:Acct-Input-Octets} %{request:Acct-Output-Octets} %{request:Acct-Status-Type} %{request:Acct-Session-Id}"
+    wait = yes
+    program = "/bin/sh /usr/local/etc/raddb/scripts/datacounter_acct.sh \
+%{request:User-Name} monthly \
+%{request:Acct-Input-Octets} %{request:Acct-Output-Octets} \
+%{%{request:Acct-Input-Gigawords}:-0} %{%{request:Acct-Output-Gigawords}:-0} \
+%{request:Acct-Status-Type} %{request:Acct-Session-Id}"
 }
+
 exec datacounterforever {
-		wait = yes
-		program = "/bin/sh {$varFREERADIUS_SCRIPTS}/datacounter_acct.sh %{request:User-Name} forever %{request:Acct-Input-Octets} %{request:Acct-Output-Octets} %{request:Acct-Status-Type} %{request:Acct-Session-Id}"
+    wait = yes
+    program = "/bin/sh /usr/local/etc/raddb/scripts/datacounter_acct.sh \
+%{request:User-Name} forever \
+%{request:Acct-Input-Octets} %{request:Acct-Output-Octets} \
+%{%{request:Acct-Input-Gigawords}:-0} %{%{request:Acct-Output-Gigawords}:-0} \
+%{request:Acct-Status-Type} %{request:Acct-Session-Id}"
 }
 
 EOD;
@@ -3719,53 +3738,83 @@ function freeradius_datacounter_acct_resync() {
 
 	$conf .= <<<EOD
 #!/bin/sh
-### USAGE: datacounter_acct.sh USERNAME TIMERANGE ACCTINPUTOCTETS ACCTOUTPUTOCTETS
-### We need this from an Accounting-Request packet to count the octets
-USERNAME=`echo -n "\\$1" | sed 's/[^0-9a-zA-Z.:_-]/X/g' `
-TIMERANGE=`echo -n "\\$2" | sed 's/[^a-z]//g' `
-ACCTINPUTOCTETS=`echo -n "\\$3" | sed 's/[^0-9]/0/g' `
-ACCTOUTPUTOCTETS=`echo -n "\\$4" | sed 's/[^0-9]/0/g' `
-UPDATETYPE=\$5
-SESSIONID=\$6
+#
+# USAGE:
+# datacounter_acct.sh USER TIMERANGE IN_OCTETS OUT_OCTETS IN_GW OUT_GW STATUS SESSIONID
+#
 
-### If we do not get Octets we set some default values
-if [ ! \$ACCTINPUTOCTETS ]; then
-	ACCTINPUTOCTETS=0
-fi
-if [ ! \$ACCTOUTPUTOCTETS ]; then
-	ACCTOUTPUTOCTETS=0
-fi
+USERNAME=$(echo -n "$1" | sed 's/[^0-9a-zA-Z.:_-]/X/g')
+TIMERANGE=$(echo -n "$2" | sed 's/[^a-z]//g')
 
-### We only write this to the file if username exists
-### If all counters are activated (daily, weekly, monthly, forever) we need to check which is active for the user
-if [ ! -e "/var/log/radacct/datacounter/\$TIMERANGE/max-octets-\$USERNAME" ]; then
-	exit 0
-else
-	### If no used-octets file exist then we assume that it was deleted by cron job and we need to create a new file starting from zero
-    if [ ! -e "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME" ]; then
-		echo 0 > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"
-	fi
-	
-    USEDOCTETS=\$((\$ACCTINPUTOCTETS+\$ACCTOUTPUTOCTETS))
-    
-    # If this is an interim update, track it in a separate session file
-    # since the incoming data is a gauge not a counter.
-    if [ \$UPDATETYPE = "Interim-Update" ]; then
-        echo \$USEDOCTETS > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-\$SESSIONID"
-               logger -f /var/log/system.log "FreeRADIUS: User \$USERNAME has used \$USEDOCTETS MB IN  \$TIMERANGE allotted traffic with interim traffic."
-    else
-        USEDOCTETS=\$((\$USEDOCTETS+`cat "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"`))
-    
-        # If there was a session file for this session (from interim updates) clear it since the equivalent
-        # value was just added to the total.
-        if [ -e "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-\$SESSIONID" ]; then
-            rm "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-\$SESSIONID"
-        fi
-        echo "\$USEDOCTETS" > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"
-                logger -f /var/log/system.log "FreeRADIUS: User \$USERNAME has used \$USEDOCTETS MB IN  \$TIMERANGE allotted traffic with outsess session ."
-    fi
+IN_OCTETS=$(echo -n "$3" | sed 's/[^0-9]/0/g')
+OUT_OCTETS=$(echo -n "$4" | sed 's/[^0-9]/0/g')
+
+IN_GW=$(echo -n "$5" | sed 's/[^0-9]/0/g')
+OUT_GW=$(echo -n "$6" | sed 's/[^0-9]/0/g')
+
+STATUS="$7"
+SESSIONID="$8"
+
+BASE="/var/log/radacct/datacounter/\$TIMERANGE"
+MAXFILE="\$BASE/max-octets-\$USERNAME"
+USEDFILE="\$BASE/used-octets-\$USERNAME"
+SESSFILE="\$BASE/used-octets-\$USERNAME-\$SESSIONID"
+
+# ---------- sanity ----------
+[ -z "\$IN_OCTETS" ] && IN_OCTETS=0
+[ -z "\$OUT_OCTETS" ] && OUT_OCTETS=0
+[ -z "\$IN_GW" ] && IN_GW=0
+[ -z "\$OUT_GW" ] && OUT_GW=0
+[ -z "\$SESSIONID" ] && SESSIONID="nosession"
+
+# quota not enabled
+[ ! -f "\$MAXFILE" ] && exit 0
+
+# init total file
+[ ! -f "\$USEDFILE" ] && echo 0 > "\$USEDFILE"
+
+# ---------- 64bit current value ----------
+CUR_IN=$(( (IN_GW << 32) + IN_OCTETS ))
+CUR_OUT=$(( (OUT_GW << 32) + OUT_OCTETS ))
+CUR_TOTAL=$(( CUR_IN + CUR_OUT ))
+
+# ---------- STOP zero-guard (CRITICAL FIX) ----------
+if [ "\$STATUS" = "Stop" ] && [ "\$CUR_TOTAL" -eq 0 ]; then
+    logger -f /var/log/system.log \
+      "DATACOUNTER IGNORE STOP user=\$USERNAME range=\$TIMERANGE sid=\$SESSIONID (zero octets)"
     exit 0
 fi
+
+# ---------- INTERIM ----------
+if [ "\$STATUS" = "Interim-Update" ]; then
+    echo "\$CUR_TOTAL" > "\$SESSFILE"
+
+    logger -f /var/log/system.log \
+      "DATACOUNTER INTERIM user=\$USERNAME range=\$TIMERANGE sid=\$SESSIONID \
+IN=$((CUR_IN/1048576))MB OUT=$((CUR_OUT/1048576))MB TOTAL=$((CUR_TOTAL/1048576))MB \
+(GW in=\$IN_GW out=\$OUT_GW)"
+
+    exit 0
+fi
+
+# ---------- STOP / others ----------
+OLD_TOTAL=$(cat "\$USEDFILE" 2>/dev/null)
+[ -z "\$OLD_TOTAL" ] && OLD_TOTAL=0
+
+NEW_TOTAL=$(( OLD_TOTAL + CUR_TOTAL ))
+
+# clear session file if exists
+[ -f "\$SESSFILE" ] && rm -f "\$SESSFILE"
+
+echo "\$NEW_TOTAL" > "\$USEDFILE"
+
+logger -f /var/log/system.log \
+  "DATACOUNTER STOP user=\$USERNAME range=\$TIMERANGE sid=\$SESSIONID \
+IN=$((CUR_IN/1048576))MB OUT=$((CUR_OUT/1048576))MB TOTAL=$((CUR_TOTAL/1048576))MB \
+ACCUM=$((NEW_TOTAL/1048576))MB (GW in=\$IN_GW out=\$OUT_GW)"
+
+exit 0
+
 
 EOD;
 
