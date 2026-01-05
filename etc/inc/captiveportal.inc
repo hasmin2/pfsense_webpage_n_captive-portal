@@ -917,19 +917,45 @@ function captiveportal_prune_old() {
         }
 
         /* traffic quota, value retrieved from the radius attribute if the option is enabled */
-        if (isset($cpcfg['radiustraffic_quota'])) {
+        /*if (isset($cpcfg['radiustraffic_quota'])) {
             $utrafficquota = (is_numeric($cpentry[11])) ? $cpentry[11] : $trafficquota;
         } else {
             $utrafficquota = $trafficquota;
+        }*/
+        $used   = (int)getcurquota_cached($cpentry[5], $cpentry[2]);
+        $max    = (int)getmaxquota_cached($cpentry[5]);
+        $remain = ($max - $used) * 1048576;
+
+        if (!$timedout) {
+            if ($remain <= 0) {
+                $timedout = true;
+                $term_cause = 10; // NAS-Request
+                $logout_cause = "$remain REMAIN is negative, exiting";
+            } else {
+                // optional: skip heavy volume check when plenty remains
+                $CHECK_THRESHOLD = 500 * 1024 * 1024; // 500MB
+                if ($remain < $CHECK_THRESHOLD) {
+                    $volume = getVolume($cpentry[2], $cpentry[3]);
+                    $in  = isset($volume['input_bytes'])  ? (int)$volume['input_bytes']  : 0;
+                    $out = isset($volume['output_bytes']) ? (int)$volume['output_bytes'] : 0;
+
+                    if (($in + $out) > $remain) {
+                        $timedout = true;
+                        $term_cause = 10; // NAS-Request
+                        $logout_cause = "$remain OVER QUOTA EXCEEDED";
+                    }
+                }
+            }
         }
+        /*$utrafficquota = $maxbyte - $minbyte;
         if (!$timedout && $utrafficquota > 0) {
             $volume = getVolume($cpentry[2], $cpentry[3]);
             if (($volume['input_bytes'] + $volume['output_bytes']) > $utrafficquota) {
                 $timedout = true;
                 $term_cause = 10; // NAS-Request
-                $logout_cause = 'QUOTA EXCEEDED';
+                $logout_cause = 'ULTRA QUOTA EXCEEDED';
             }
-        }
+        }*/
 
         if ($timedout) {
             captiveportal_disconnect($cpentry, $term_cause, $stop_time);
@@ -1062,6 +1088,18 @@ function captiveportal_prune_old() {
     if (!empty($unsetindexes)) {
         captiveportal_remove_entries($unsetindexes);
     }
+}
+function getcurquota_cached(string $user, string $range): int {
+    static $c = [];
+    $k = $user.'|'.$range;
+    if (!isset($c[$k])) $c[$k] = (int)getcurquota($user, $range);
+    return $c[$k];
+}
+
+function getmaxquota_cached(string $user): int {
+    static $c = [];
+    if (!isset($c[$user])) $c[$user] = (int)getmaxquota($user);
+    return $c[$user];
 }
 
 function captiveportal_prune_old_automac() {
@@ -2825,7 +2863,7 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
                 }
             } else {
                 /* Implicit 'first' : refuse the new login - 'username' is already logged in */
-                captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], "CONCURRENT USER LOGIN - NOT ALLOWED KEEPING OLD SESSION ");
+                captiveportal_trafficquotaauth($cpentry[4], $cpentry[3], $cpentry[2], "CONCURRENT USER LOGIN - NOT ALLOWED KEEPING OLD SESSION ");
                 unlock($cpdblck);
                 return 2;
             }
