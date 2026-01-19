@@ -145,8 +145,10 @@ function draw_wifi_contents(){
         $terminaltype = strtolower($eachuser['varusersmaxtotaloctetstimerange']) === "forever" ? "one-time" : $updateperiodname;
         $rtnstr .= '<td data-th="Update" data-th-width="100" data-width="100">' . $terminaltype . '</td>';
 
-        if ($eachuser['varusersmodified'] == "update") {
+        if ($eachuser['varusersmodified'] == "update" && $eachuser['varusersresetquota']==="true") {
             $state = "Init / {$eachuser['varusersmaxtotaloctets']}MB";
+        } else if ($eachuser['varusersmodified'] == "update") {
+            $state = "Update / {$eachuser['varusersmaxtotaloctets']}MB";
         } else {
             $state = number_format($used_quota, 2, '.', ',') . " / {$eachuser['varusersmaxtotaloctets']}MB";
         }

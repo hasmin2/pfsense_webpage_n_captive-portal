@@ -1736,7 +1736,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
             if ($authlevel < 3) {
                 $radmac_error = false;
                 $attributes = array("nas_identifier" => empty($cpcfg["radiusnasid"]) ? "CaptivePortal-{$cpzone}" : $cpcfg["radiusnasid"],
-                    "nas_por t_type" => RADIUS_ETHERNET,
+                    "nas_port_type" => RADIUS_ETHERNET,
                     "nas_port" => $pipeno,
                     "framed_ip" => $clientip);
                 if (mac_format($clientmac) !== null) {
@@ -2522,9 +2522,11 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         portal_reply_page($redirurl, "login","PW Reset", $clientmac, $clientip);
     } else if ($type == "connected") {
         $userindex= -1;
+        $usernickname = "";
         foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
             if($username==$value['varusersusername']){
                 $userindex = $item;
+                $usernickname = $value['varusersdescription'];
                 break;
             }
         }
@@ -2560,7 +2562,12 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
                         $currentquota = getcurquota($sessionid, $clientip);
                         $maxquota = getmaxquota($sessionid);
                         if ($currentquota < $maxquota) {
-                            $title = $username." Online!";
+                            if($usernickname==""){
+                                $title = $username." Online!";
+                            }else{
+                                $title = $usernickname." Online!";
+                            }
+
                             $portalbtnmessage = "Click here to log out";
                             $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
                         } else {
@@ -3437,8 +3444,9 @@ function getsession($username) {
         }
     }
     return false;
-///18181818188181818181 cpentry 5로둠
 }
+
+
 function captiveportal_fxuser_disconnect(){
     foreach ($this->config['installedpackages']['freeradius']['config'] as $value) {
         if (!isset($value['varusersterminaltype']) || $value['varusersterminaltype'] === "") {
