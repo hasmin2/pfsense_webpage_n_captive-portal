@@ -3,80 +3,8 @@ require_once ("globals.inc");
 require_once ("captiveportal.inc");
 require_once ('functions.inc');
 
+
 /*function draw_wifi_contents(){
-    global $config, $cpzone;
-    global $adminlogin;
-    $cpzone="crew";
-    $radiususers = &$config['installedpackages']['freeradius']['config'];
-    $rtnstr='';
-    $radiususeridsorted= array();
-    foreach($radiususers as $eachuser){
-        $radiususeridsorted[] = $eachuser['varusersusername'];
-    }
-    sort($radiususeridsorted);
-
-    $cpdb = captiveportal_read_db();
-    foreach($radiususeridsorted as $eachusersorted) {
-        foreach ($radiususers as $eachuser) {
-            $used_quota = check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
-            if (preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername']) && $eachuser['varusersusername'] === $eachusersorted) {
-                if ($used_quota <= $eachuser['varusersmaxtotaloctets'] || strtolower($eachuser['varuserspointoftime']) !== 'forever') {
-                    $rtnstr .= '<tr><td data-th="" data-th-width="0" data-width="100"><div class="check v1">';
-                    $rtnstr .= '<input type="checkbox" name="userlist[]" id=' . $eachuser['varusersusername'] . ' value="' . $eachuser['varusersusername'] . '">';
-                    $rtnstr .= '<label for="' . $eachuser['varusersusername'] . '"></label></div></td><td data-th="ID" data-th-width="100" data-width="100">';
-                    $rtnstr .= $eachuser['varusersusername'];
-                    //$rtnstr .= '<td><form id="" action="submit.php" method="post"><input type="text" id="nameInput" name="name" placeholder="이름을 입력하세요" /><button type="submit" id="realSubmit">submit</button></form></td>';
-                    $descr = $eachuser['varusersdescription'];
-                    $rtnstr  .='<td> <form action="crew_account.php" method="post" style="display:flex; align-items:center; gap:10px; margin:0;">      
-      <input type="text" name="description" value="'.$descr.'"style="border:1px solid #ccc; outline:none; outline:none; padding:5px;">
-      <input type="hidden" name="userid" value= "'.$eachuser['varusersusername'].'">
-   <button type="submit" style="background:none; border:none; padding:0;">
-      <img src="img/icon/ic_apply.png" alt="제출" style="width:24px; height:24px;"></form></td>';
-                    //$rtnstr .= '</td><td data-th="Date create" data-th-width="100" data-width="100">' . $createdate . '<br class="hide-mo"></td>';
-                    $schedule = get_scheduler($eachuser['varusersusername']);
-                    $json = htmlspecialchars(json_encode($schedule, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
-                    $rtnstr .= '</td><td data-th="Date create" data-th-width="100" data-width="100"><a onclick="popOpenScheduler(\'pop-set-scheduler\', true,'.$json.')"><img src="img/icon/ic_scheduler.png" alt="Scheduler" style="width:24px; height:24px; display:block; margin:10px auto 0px;"></a><br class="hide-mo"></td>';
-                    $terminaltype = $eachuser['varusersterminaltype'] === '' ? 'Auto' : $eachuser['varusersterminaltype'];
-                    $rtnstr .= '<td data-th="Type" data-th-width="100" data-width="100">' . $terminaltype . '</td>';
-                    if(strtolower($eachuser['varusersmaxtotaloctetstimerange']) === "forever"){
-                        $updateperiod='one-time';
-                    }
-                    else{
-                        if($eachuser['varusershalftimeperiod']==""||!isset($eachuser['varusershalftimeperiod'])) {
-                            $updateperiod = $eachuser['varusersmaxtotaloctetstimerange'];
-                        }
-                        else{
-                            $updateperiod = $eachuser['varusershalftimeperiod'].'-'.$eachuser['varusersmaxtotaloctetstimerange'];
-                        }
-                    }
-
-                    $rtnstr .= '<td data-th="Update" data-th-width="100" data-width="100">' . $updateperiod . '</td>';
-                    $state = '';
-                    if ($eachuser['varusersmodified'] == "update") {
-                        $state = "Init / {$eachuser['varusersmaxtotaloctets']}MB";
-                    } else {
-                        $state .= number_format($used_quota, 2, '.', ',') . " / {$eachuser['varusersmaxtotaloctets']}MB";
-                    }
-                    $rtnstr .= '<td data-th="Usage state" data-th-width="100" data-width="100">' . $state . '</td>';
-                    foreach ($cpdb as $cpent) {
-                        if ($cpent[4] == $eachuser['varusersusername']) {
-                            $isonline = '<a href="?' . $_GET['order'] . 'act=del&amp;zone=crew&amp;id=' . $cpent[5] . '">Logout</a>';
-                            break;
-                        } else {
-                            $isonline = '';
-                        }
-                    }
-                    $rtnstr .= '<td data-th="Online" data-th-width="100" data-width="100" class="txt-green">' . $isonline . '</td>';
-                 //   $rtnstr .= '<td></td>';
-                    $rtnstr .= '</tr>';
-                }
-            }
-        }
-    }
-    return $rtnstr;
-}*/
-
-function draw_wifi_contents(){
     global $config, $cpzone, $adminlogin;
     $cpzone="crew";
 
@@ -163,7 +91,181 @@ function draw_wifi_contents(){
     }
 
     return $rtnstr;
+}*/
+
+function build_wifi_rows() {
+    global $config, $cpzone;
+    $cpzone = "crew";
+
+    $radiususers = $config['installedpackages']['freeradius']['config'] ?? [];
+    if (!is_array($radiususers)) $radiususers = [];
+
+    // username => user map
+    $usersByName = [];
+    foreach ($radiususers as $u) {
+        $uname = $u['varusersusername'] ?? '';
+        if ($uname !== '') {
+            $usersByName[$uname] = $u;
+        }
+    }
+
+    $names = array_keys($usersByName);
+    sort($names);
+
+    // online map username => session id
+    $cpdb = captiveportal_read_db();
+    $onlineByUser = [];
+    if (is_array($cpdb)) {
+        foreach ($cpdb as $cpent) {
+            if (isset($cpent[4], $cpent[5])) {
+                $onlineByUser[$cpent[4]] = $cpent[5];
+            }
+        }
+    }
+
+    $rows = [];
+    foreach ($names as $name) {
+        $eachuser = $usersByName[$name];
+
+        // 기존 필터
+        if (!preg_match("/[a-z]*[0-9]{5}/", $name)) continue;
+
+        $timerange = $eachuser['varusersmaxtotaloctetstimerange'] ?? '';
+        $used_quota = (float)check_quota($name, $timerange);
+        $maxtotal   = (float)($eachuser['varusersmaxtotaloctets'] ?? 0);
+
+        // 기존 조건 유지
+        $pointoftime = strtolower((string)($eachuser['varuserspointoftime'] ?? ''));
+        if ($used_quota > $maxtotal && $pointoftime === 'forever') continue;
+
+        $descr = (string)($eachuser['varusersdescription'] ?? '');
+
+        $updateperiod = ($eachuser['varusersterminaltype'] ?? '') === '' ? 'Auto' : $eachuser['varusersterminaltype'];
+
+        $halftime = (string)($eachuser['varusershalftimeperiod'] ?? '');
+        $updateperiodname = $halftime === '' ? $timerange : ($halftime . '-' . $timerange);
+        $terminaltype = strtolower((string)$timerange) === "forever" ? "one-time" : $updateperiodname;
+
+        // Scheduler JSON (onclick용으로 안전하게)
+        $schedule = get_scheduler($name);
+        $scheduleJson = htmlspecialchars(json_encode($schedule, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+
+        $sessionId = $onlineByUser[$name] ?? null;
+
+        $rows[] = [
+            // 공통
+            'ID'            => $name,
+            'Description'   => $descr,
+            'Type'          => $updateperiod,
+            'Update'        => $terminaltype,
+
+            // CSV용 숫자
+            'Used(MB)'      => $used_quota,
+            'Quota(MB)'     => $maxtotal,
+            'Online'        => $sessionId ? 'Y' : 'N',
+
+            // UI용
+            'ScheduleJson'  => $scheduleJson,
+            'SessionId'     => $sessionId,
+        ];
+    }
+
+    return $rows;
 }
+
+
+function export_wifi_csv() {
+    $rows = build_wifi_rows();
+    global $config;
+    $vesselname = $config['system']['vesselinfo']['vesselname'];
+    $filename = $vesselname."_" . date("Ymd_His") . ".csv";
+    header("Content-Type: text/csv; charset=UTF-8");
+    header("Content-Disposition: attachment; filename=\"$filename\"");
+    header("Pragma: no-cache");
+    header("Expires: 0");
+
+    // 엑셀 한글 깨짐 방지 BOM
+    echo "\xEF\xBB\xBF";
+
+    $out = fopen("php://output", "w");
+
+    // 헤더
+    $headers = ['ID', 'Description', 'Type', 'Update', 'Used(MB)', 'Quota(MB)', 'Online'];
+    fputcsv($out, $headers);
+
+    // 데이터
+    foreach ($rows as $r) {
+        fputcsv($out, [
+            $r['ID'] ?? '',
+            $r['Description'] ?? '',
+            $r['Type'] ?? '',
+            $r['Update'] ?? '',
+            $r['Used(MB)'] ?? '',
+            $r['Quota(MB)'] ?? '',
+            $r['Online'] ?? '',
+        ]);
+    }
+
+    fclose($out);
+    exit;
+}
+
+function draw_wifi_contents() {
+    $rows = build_wifi_rows();
+    $rtnstr = '';
+
+    // order 파라미터 안전 처리
+    $order = isset($_GET['order']) ? rawurlencode($_GET['order']) : '';
+
+    foreach ($rows as $r) {
+        $name  = htmlspecialchars($r['ID'], ENT_QUOTES, 'UTF-8');
+        $descr = htmlspecialchars($r['Description'], ENT_QUOTES, 'UTF-8');
+
+        $rtnstr .= '<tr>';
+        $rtnstr .= '<td data-th="" data-th-width="0" data-width="100"><div class="check v1">';
+        $rtnstr .= '<input type="checkbox" name="userlist[]" id="'.$name.'" value="'.$name.'">';
+        $rtnstr .= '<label for="'.$name.'"></label></div></td>';
+        $rtnstr .= '<td data-th="ID" data-th-width="100" data-width="100">'.$name.'</td>';
+        $rtnstr .= '<td><form action="crew_account.php" method="post" style="display:flex; align-items:center; gap:10px; margin:0;">
+          <input type="text" name="description" value="'.$descr.'" style="border:1px solid #ccc; outline:none; padding:5px;">
+          <input type="hidden" name="userid" value="'.$name.'">
+          <button type="submit" style="background:none; border:none; padding:0;">
+            <img src="img/icon/ic_apply.png" alt="제출" style="width:24px; height:24px;">
+          </button>
+        </form></td>';
+
+        $json = $r['ScheduleJson']; // 이미 htmlspecialchars 처리됨
+        $rtnstr .= '<td data-th="Date create" data-th-width="100" data-width="100">
+          <a onclick="popOpenScheduler(\'pop-set-scheduler\', true,'.$json.')">
+            <img src="img/icon/ic_scheduler.png" alt="Scheduler" style="width:24px; height:24px; display:block; margin:10px auto 0px;">
+          </a><br class="hide-mo">
+        </td>';
+
+        // Type / Update
+        $rtnstr .= '<td data-th="Type" data-th-width="100" data-width="100">'.htmlspecialchars($r['Type'], ENT_QUOTES, 'UTF-8').'</td>';
+        $rtnstr .= '<td data-th="Update" data-th-width="100" data-width="100">'.htmlspecialchars($r['Update'], ENT_QUOTES, 'UTF-8').'</td>';
+
+        // (기존 Usage state 칼럼 위치에 숫자로 표시하고 싶으면)
+        // 예: "used / quota"
+        $usageText = number_format((float)$r['Used(MB)'], 2, '.', ',') . ' / ' . number_format((float)$r['Quota(MB)'], 0, '.', ',') . 'MB';
+        $rtnstr .= '<td data-th="Usage state" data-th-width="100" data-width="100">'.htmlspecialchars($usageText, ENT_QUOTES, 'UTF-8').'</td>';
+
+        // Online / Logout
+        if (!empty($r['SessionId'])) {
+            $sid = rawurlencode($r['SessionId']);
+            $rtnstr .= '<td data-th="Online" data-th-width="100" data-width="100" class="txt-green">
+              <a href="?'.$order.'act=del&amp;zone=crew&amp;id='.$sid.'">Logout</a>
+            </td>';
+        } else {
+            $rtnstr .= '<td data-th="Online" data-th-width="100" data-width="100" class="txt-green"></td>';
+        }
+
+        $rtnstr .= '</tr>';
+    }
+
+    return $rtnstr;
+}
+
 
 
 function set_descruption($userid, $description){

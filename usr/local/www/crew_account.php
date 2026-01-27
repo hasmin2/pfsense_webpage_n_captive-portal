@@ -4,16 +4,20 @@ include_once("common_ui.inc");
 include_once("terminal_status.inc");
 include_once("manage_crew_wifi_account.inc");
 
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    export_wifi_csv();
+}
 
 global $adminlogin;
 $controldisplay="";
 $addbutton="";
 if($adminlogin==="admin"||$adminlogin==="vesseladmin") {
-    $controldisplay = '<td><button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>
+    $controldisplay = '<td><button class="btn md line-gray" onclick="confirm_exportCsv()"><i class="ic-reset gray"></i>Export CSV</button>
+                       <button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>
                        <button class="btn md line-gray" onclick="confirm_resetData()"><i class="ic-reset gray"></i>Reset Data</button>
                             <button class="btn md line-gray" onclick="confirm_checkPw()"><i class="ic-check gray"></i>Check PW</button>
                             <button class="btn md line-gray" onclick="confirm_delUser()"><i class="ic-delete gray"></i>Delete</button></td>';
-    $setupbutton = '<button class="btn-setting" onclick="popOpenAndDim(\'pop-modify-manage\', true)">Modify Voucher</button>';
+        $setupbutton = '<button class="btn-setting" onclick="popOpenAndDim(\'pop-modify-manage\', true)">Modify Voucher</button>';
     $addbutton = '<button class="btn-setting" onclick="popOpenAndDim(\'pop-set-manage\', true)">Add Voucher</button>';
 }
 else if($adminlogin==="customer"){
@@ -388,6 +392,9 @@ if($_POST['data_update']){
 
 </body>
 <script type="text/javascript">
+    function confirm_exportCsv() {
+       window.location.href = "crew_account.php?export=csv";
+    }
     function refreshValue() {
         $.ajax({
             url: "./crew_account.php",
