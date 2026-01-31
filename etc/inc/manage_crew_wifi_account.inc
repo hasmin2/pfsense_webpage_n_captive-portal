@@ -33,7 +33,6 @@ function build_wifi_rows() {
             }
         }
     }
-
     $rows = [];
     foreach ($names as $name) {
         $eachuser = $usersByName[$name];
