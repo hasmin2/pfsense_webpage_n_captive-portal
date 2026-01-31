@@ -41,24 +41,22 @@ function build_wifi_rows() {
         // 기존 필터
         if (!preg_match("/[a-z]*[0-9]{5}/", $name)) continue;
 
-        $timerange = $eachuser['varusersmaxtotaloctetstimerange'] ?? '';
-        $used_quota = (float)check_quota($name, $timerange);
+
+        $used_quota = (float)check_quota($name, $eachuser['varusersmaxtotaloctetstimerange']);
         $maxtotal   = (float)($eachuser['varusersmaxtotaloctets'] ?? 0);
 
         // 기존 조건 유지
         $pointoftime = strtolower((string)($eachuser['varuserspointoftime'] ?? ''));
         if ($used_quota > $maxtotal && $pointoftime === 'forever') continue;
-
         $descr = (string)($eachuser['varusersdescription'] ?? '');
 
 
-        $updateperiod = ($eachuser['varusersterminaltype'] ?? '') === '' ? 'Auto' : $eachuser['varusersterminaltype'];
-
+        $terminaltype = ($eachuser['varusersterminaltype'] ?? '') === '' ? 'Auto' : $eachuser['varusersterminaltype'];
         $halftime = (string)($eachuser['varusershalftimeperiod'] ?? '');
         $accountmodified = (string)($eachuser['varusersmodified'] ?? '');
         $accountreset = (string)($eachuser['varusersresetquota'] ?? '');
-        $updateperiodname = $halftime === '' ? $timerange : ($halftime . '-' . $timerange);
-        $terminaltype = strtolower((string)$timerange) === "forever" ? "one-time" : $updateperiodname;
+        $timerangeperiod = $eachuser['varusersmaxtotaloctetstimerange'] ?? '';
+        $timerange = strtolower((string)$timerangeperiod) === "forever" ? "one-time" : $timerangeperiod;
 
         // Scheduler JSON (onclick용으로 안전하게)
         $schedule = get_scheduler($name);
@@ -70,10 +68,10 @@ function build_wifi_rows() {
             // 공통
             'ID'            => $name,
             'Description'   => $descr,
-            'Type'          => $updateperiod,
-            'Update'        => $terminaltype,
+            'Timerange'          => $timerange,
+            'Type'        => $terminaltype,
             'Half'        => $halftime,
-            'Update'        => $accountmodified,
+            'Modified'        => $accountmodified,
             'Reset'         => $accountreset,
             // CSV용 숫자
             'Used(MB)'      => $used_quota,
@@ -88,42 +86,6 @@ function build_wifi_rows() {
 
     return $rows;
 }
-// ... 위 코드 동일 ...
-
-$totalUsed  = 0.0;
-$totalQuota = 0.0;
-$totalCount = 0;
-
-foreach ($rows as $r) {
-    $totalCount++;
-
-    $used  = isset($r['Used(MB)'])  ? (float)preg_replace('/[^0-9.\-]/', '', (string)$r['Used(MB)'])  : 0.0;
-    $quota = isset($r['Quota(MB)']) ? (float)preg_replace('/[^0-9.\-]/', '', (string)$r['Quota(MB)']) : 0.0;
-
-    $totalUsed  += $used;
-    $totalQuota += $quota;
-
-    fputcsv($out, [
-        $r['ID'] ?? '',
-        $r['Description'] ?? '',
-        $r['Type'] ?? '',
-        (($r['Half'] ?? '') . '-' . ($r['Update'] ?? '')),
-        $r['Used(MB)'] ?? '',
-        $r['Quota(MB)'] ?? '',
-        $r['Online'] ?? '',
-    ]);
-}
-
-// 마지막 TOTAL 라인: ID 칸 = 총 카운트
-fputcsv($out, [
-    $totalCount, // ID = 총 개수
-    'TOTAL',     // Description = TOTAL (원치 않으면 ''로)
-    '',          // Type
-    '',          // Update
-    $totalUsed,
-    $totalQuota,
-    '',          // Online
-]);
 
 function export_wifi_csv() {
     $rows = build_wifi_rows();
@@ -152,9 +114,19 @@ function export_wifi_csv() {
     foreach ($rows as $r) {
         $totalCount++;
 
-        $used  = isset($r['Used(MB)'])  ? (float)preg_replace('/[^0-9.\-]/', '', (string)$r['Used(MB)'])  : 0.0;
+        if($r['Half']===''){
+            $halftime = '';
+        }
+        else{
+            $halftime = $r['Half'].'-';
+        }
+        $timerange = $halftime.$r['Timerange'];
+        if(isset($r['Reset'])) {
+            $used=0.0;
+        }else {
+            $used = isset($r['Used(MB)']) ? (float)preg_replace('/[^0-9.\-]/', '', (string)$r['Used(MB)']) : 0.0;
+        }
         $quota = isset($r['Quota(MB)']) ? (float)preg_replace('/[^0-9.\-]/', '', (string)$r['Quota(MB)']) : 0.0;
-
         $totalUsed  += $used;
         $totalQuota += $quota;
 
@@ -162,7 +134,7 @@ function export_wifi_csv() {
             $r['ID'] ?? '',
             $r['Description'] ?? '',
             $r['Type'] ?? '',
-            (($r['Half'] ?? '') . '-' . ($r['Update'] ?? '')),
+            $timerange,
             $r['Used(MB)'] ?? '',
             $r['Quota(MB)'] ?? '',
             $r['Online'] ?? '',
@@ -217,17 +189,23 @@ function draw_wifi_contents() {
 
         // Type / Update
         $rtnstr .= '<td data-th="Type" data-th-width="100" data-width="100">'.htmlspecialchars($r['Type'], ENT_QUOTES, 'UTF-8').'</td>';
-        $rtnstr .= '<td data-th="Update" data-th-width="100" data-width="100">'.htmlspecialchars($r['Half'].'-'.$r['Update'], ENT_QUOTES, 'UTF-8').'</td>';
-
-        // (기존 Usage state 칼럼 위치에 숫자로 표시하고 싶으면)
-        // 예: "used / quota"
-        if($r['Update']){
-            $usageSubText = 'Update';
-        } else if($r['Reset']){
-            $usageSubText = 'Init';
-        } else{
-            $usageSubText = number_format((float)$r['Used(MB)'], 2, '.', ',');
+        if($r['Half']===''){
+            $halftime='';
         }
+        else{
+            $halftime = (string)$r['Half'].'-';
+        }
+        $rtnstr .= '<td data-th="Update" data-th-width="100" data-width="100">'.htmlspecialchars($halftime.$r['Timerange'], ENT_QUOTES, 'UTF-8').'</td>';
+
+
+        $usageSubText = number_format((float)$r['Used(MB)'], 2, '.', ',');
+        if($r['Modified']){
+            $usageSubText = 'Update';
+        }
+        if($r['Reset']){
+            $usageSubText = 'Init';
+        }
+
         $usageText = $usageSubText . ' / ' . number_format((float)$r['Quota(MB)'], 0, '.', ',') . 'MB';
         $rtnstr .= '<td data-th="Usage state" data-th-width="100" data-width="100">'.htmlspecialchars($usageText, ENT_QUOTES, 'UTF-8').'</td>';
 
