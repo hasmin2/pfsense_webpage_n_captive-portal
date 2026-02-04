@@ -1,13 +1,43 @@
 <?php
 
-include_once("auth.inc");
-include_once("common_ui.inc");
-include_once("terminal_status.inc");
-include_once("lan_status.inc");
 require_once('guiconfig.inc');
+require_once("auth.inc");
 require_once('functions.inc');
 require_once('notices.inc');
 require_once("pkg-utils.inc");
+
+include_once("common_ui.inc");
+include_once("terminal_status.inc");
+include_once("lan_status.inc");
+if (isset($_REQUEST['logout'])) {
+
+    // 1) pfSense 쪽 logout 함수가 있으면 우선 호출
+    if (function_exists('log_out')) {
+        // 일부 pfSense 계열에서 사용
+        @log_out();
+    }
+    if (function_exists('logout')) {
+        // 환경에 따라 있을 수 있음
+        @logout();
+    }
+
+    // 2) PHP 세션 강제 파기
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_start();
+    }
+    $_SESSION = [];
+
+    // 3) 세션 쿠키 제거
+    if (ini_get("session.use_cookies")) {
+        $p = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $p["path"], $p["domain"], $p["secure"], $p["httponly"]);
+    }
+
+    @session_destroy();
+
+    header("Location: /index.php");
+    exit;
+}
 
 global $config, $g;
 $totaldata = "N/A";
@@ -202,9 +232,26 @@ if($_POST['data_update']){
             <p class="title">Server Setting</p>
         </div>
         <div class="pop-cont">
-            <button class="btn lg line-mint justify-content-start" onclick="core_open()"><i class="ic-open mint"></i>Open Core console</button>
-            <button class="btn lg line-mint justify-content-start" onclick="console_open(<?php echo $config['terminalinfo']['vsat_ip'];?>)"><i class="ic-open mint"></i>Open VSAT console</button>
-            <button class="btn lg line-mint justify-content-start" onclick="console_open(<?php echo $config['terminalinfo']['fbb_ip'];?>)"><i class="ic-open mint"></i>Open FBB console</button>
+            <div class="d-grid gap-2">
+                <!--button type="button" class="btn lg line-mint justify-content-start d-flex align-items-center"
+                        onclick="core_open()">
+                    <i class="ic-open mint"></i>Open Core console
+                </button>
+
+                <button type="button" class="btn lg line-mint justify-content-start d-flex align-items-center"
+                        onclick="console_open(<?//php echo (int)$config['terminalinfo']['vsat_ip']; ?>)">
+                    <i class="ic-open mint"></i>Open VSAT console
+                </button--->
+
+                <form method="post" action="/restart_radiusd.php" class="m-0 w-100">
+                    <input type="hidden" name="do" value="restart_radiusd">
+                    <button type="submit"
+                            class="btn lg line-mint justify-content-start d-flex align-items-center w-100"
+                            onclick="return confirm('Restart Wifi Module?');">
+                        <i class="ic-open mint"></i>Restart WIFI Module
+                    </button>
+                </form>
+                <br>
             <button class="btn lg line-red justify-content-start" onclick="confirm_resetfw()"><i class="ic-reset red"></i>Reset Firewall</button>
             <button class="btn lg line-red justify-content-start" onclick="confirm_resetcore()"><i class="ic-reset red"></i>Reset Core</button>
             <button class="btn lg line-red justify-content-start" onclick="confirm_rebootsvr()"><i class="ic-reboot red"></i>Reboot SVR</button>
@@ -215,6 +262,18 @@ if($_POST['data_update']){
     </div>
 
 </div>
+<div id="rebootSplash" style="display:none; position:fixed; inset:0; z-index:999999; background:#0f172a; color:#fff;">
+    <div style="height:100%; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px; padding:24px; text-align:center;">
+        <div style="width:48px; height:48px; border:4px solid rgba(255,255,255,.25); border-top-color:#fff; border-radius:50%; animation:spin 1s linear infinite;"></div>
+
+        <div id="rebootSplashTitle" style="font-size:18px; font-weight:700;">Working…</div>
+        <div id="rebootSplashDesc" style="opacity:.85; max-width:520px;">Please wait.</div>
+    </div>
+</div>
+
+<style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+</style>
 </body>
 </html>
 <script>
@@ -283,41 +342,90 @@ if($_POST['data_update']){
         window.open(`http://${ipaddr}`);
     }
     function confirm_resetfw(){
-        var confirm = window.confirm(`Are you sure you want to reset firewall?\nIt takes 2~3 mins to restore internet.`);
-        if(confirm){
-            $.ajax({
-                url: "./index.php",
-                data: {resetfw: "true"},
-                type: 'POST',
-                success: function (result) {
-                }
-            })
-        }
+        const ok = window.confirm(`Are you sure you want to reset firewall?\nIt takes 2~3 mins to restore internet.`);
+        if(!ok) return;
+
+        showSplash('Resetting Firewall…', 'Please wait. This screen will stay until the system is ready.');
+
+        // ✅ 요청은 던지고, 결과는 신경쓰지 말고(끊겨도 정상)
+        // ✅ 복귀는 healthz 폴링이 담당
+        waitUntilBackOnline({ intervalMs: 3000, graceMs: 3000 });
+
+        $.ajax({
+            url: "./index.php",
+            data: {resetfw: "true"},
+            type: 'POST',
+            timeout: 3000 // 짧게: 끊기면 끊기는대로 OK
+        });
     }
+
     function confirm_resetcore(){
-        var confirm = window.confirm(`Are you sure you want to reset core module?\nDuring reboot, reset buttons won't work for 2~3 mins.`);
-        if(confirm){
-            $.ajax({
-                url: "./index.php",
-                data: {resetcore: "true"},
-                type: 'POST',
-                success: function (result) {
-                }
-            })
-        }
+        const ok = window.confirm(`Are you sure you want to reset core module?\nDuring reboot, reset buttons won't work for 2~3 mins.`);
+        if(!ok) return;
+
+        showSplash('Resetting Core Module…', 'Please wait. This screen will stay until the system is ready.');
+        waitUntilBackOnline({ intervalMs: 3000, graceMs: 3000 });
+
+        $.ajax({
+            url: "./index.php",
+            data: {resetcore: "true"},
+            type: 'POST',
+            timeout: 3000
+        });
     }
+
     function confirm_rebootsvr(){
-        var confirm = window.confirm(`Are you sure you want to reboot the whole system?\nIt takes about 5~10 mins to restore intenet.`);
-        if(confirm){
-            $.ajax({
-                url: "./index.php",
-                data: {rebootsvr: "true"},
-                type: 'POST',
-                success: function (result) {
-                }
-            })
-        }
+        const ok = window.confirm(`Are you sure you want to reboot the whole system?\nIt takes about 5~10 mins to restore intenet.`);
+        if(!ok) return;
+
+        showSplash('Rebooting System…', 'Please wait. This screen will stay until the server is back online.');
+        waitUntilBackOnline({ intervalMs: 3000, graceMs: 3000 });
+
+        $.ajax({
+            url: "./index.php",
+            data: {rebootsvr: "true"},
+            type: 'POST',
+            timeout: 3000
+        });
     }
+
+
+
+    function showSplash(title, desc) {
+        const wrap = document.getElementById('rebootSplash');
+        const t = document.getElementById('rebootSplashTitle');
+        const d = document.getElementById('rebootSplashDesc');
+
+        if (t) t.textContent = title || 'Working…';
+        if (d) d.textContent = desc || 'Please wait.';
+        if (wrap) wrap.style.display = 'block';
+    }
+
+    function hideSplash() {
+        const wrap = document.getElementById('rebootSplash');
+        if (wrap) wrap.style.display = 'none';
+    }
+
+    // 서버가 다시 살아날 때까지 대기 후 index로 복귀
+    function waitUntilBackOnline(opts) {
+        const checkUrl = (opts && opts.checkUrl) ? opts.checkUrl : '/healthz.php';
+        const intervalMs = (opts && opts.intervalMs) ? opts.intervalMs : 3000;
+
+        const timer = setInterval(() => {
+            fetch(checkUrl + '?_=' + Date.now(), { cache: 'no-store' })
+                .then(r => r.ok ? r.text() : Promise.reject())
+                .then(() => {
+                    clearInterval(timer);
+                    location.replace('/index.php');
+                })
+                .catch(() => {});
+        }, intervalMs);
+
+        return () => clearInterval(timer);
+    }
+
+
+
 </script>
 
 

@@ -315,7 +315,14 @@ function del_wifi_user($userlist){
         foreach ($userlist as $user){
             if ($user === $userentry['varusersusername']) {
                 unset($config["installedpackages"]["freeradius"]["config"][$item]);  // flag for remove DB for when anyone who is in site is open webpage.
-                unlink_if_exists("/var/log/radacct/datacounter/{$userentry['varusersmaxtotaloctetstimerange']}/used-octets-$user*");
+                unlink_if_exists("/var/log/radacct/datacounter/daily/used-octets-$user*");
+                unlink_if_exists("/var/log/radacct/datacounter/daily/max-octets-$user");
+                unlink_if_exists("/var/log/radacct/datacounter/weekiy/used-octets-$user*");
+                unlink_if_exists("/var/log/radacct/datacounter/weekiy/max-octets-$user");
+                unlink_if_exists("/var/log/radacct/datacounter/monthly/used-octets-$user*");
+                unlink_if_exists("/var/log/radacct/datacounter/monthly/max-octets-$user");
+                unlink_if_exists("/var/log/radacct/datacounter/forever/used-octets-$user*");
+                unlink_if_exists("/var/log/radacct/datacounter/forever/max-octets-$user");
                 captiveportal_syslog("Deleted user".$user);
             }
         }

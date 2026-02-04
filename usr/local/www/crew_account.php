@@ -203,7 +203,16 @@ if($_POST['data_update']){
                     <p class="tit">Data limit (Mbytes)</p>
                 </div>
                 <div class="form-cont">
-                    <input type="text" name="datalimit" id="datalimit">
+                    <!--input type="text" name="datalimit" id="datalimit"-->
+                    <input
+                            type="text"
+                            name="datalimit"
+                            id="datalimit"
+                            inputmode="numeric"
+                            autocomplete="off"
+                            pattern="[0-9]*"
+                            aria-label="Data limit (Mbytes)"
+                    >
                 </div>
             </div>
             <div class="form">
@@ -212,7 +221,9 @@ if($_POST['data_update']){
                     <p class="tit">Time limit (Time minutes)</p>
                 </div>
                 <div class="form-cont">
-                    <input type="text" name="timelimit" id="timelimit" placeholder="Time based limit, NOT IMPLEMENTED YET">
+                    <input type="text" name="timelimit" id="timelimit"
+                           placeholder="Time based limit, NOT IMPLEMENTED YET"
+                           inputmode="numeric" autocomplete="off" pattern="[0-9]*">
                 </div>
             </div>
             <div class="form mt20">
@@ -221,8 +232,14 @@ if($_POST['data_update']){
                 </div>
 
                 <div class="form-cont" style="display:flex; gap:10px;">
-                    <input type="text" name="downspeed" id="downspeed" style="width:100%;" placeholder="Download Kbps, Experimental">
-                    <input type="text" name="upspeed" id="upspeed" style="width:100%;" placeholder="Upload Kbps, Experimental">
+                    <input type="text" name="downspeed" id="downspeed" style="width:100%;"
+                           placeholder="Download Kbps, Experimental"
+                           inputmode="numeric" autocomplete="off" pattern="[0-9]*">
+
+                    <input type="text" name="upspeed" id="upspeed" style="width:100%;"
+                           placeholder="Upload Kbps, Experimental"
+                           inputmode="numeric" autocomplete="off" pattern="[0-9]*">
+
                 </div>
             </div>
 
@@ -267,16 +284,16 @@ if($_POST['data_update']){
                     <p class="tit">Allow data (MB)</p>
                 </div>
                 <div class="form-cont">
-                    <input type="text" name="dataamount" id="dataamount">
-                </div>
+                    <input type="text" name="dataamount" id="dataamount"
+                           inputmode="numeric" autocomplete="off" pattern="[0-9]*">                </div>
             </div>
             <div class="form mt20">
                 <div class="form-tit">
                     <p class="tit"># of Vouchers</p>
                 </div>
                 <div class="form-cont">
-                    <input type="text" name="vouchernumber" id="vouchernumber">
-                </div>
+                    <input type="text" name="vouchernumber" id="vouchernumber"
+                           inputmode="numeric" autocomplete="off" pattern="[0-9]*">                </div>
             </div>
 
             <div class="check v1 mt30">
@@ -518,5 +535,45 @@ if($_POST['data_update']){
         const checkboxes = document.getElementsByName('userlist[]');
         checkboxes.forEach((checkbox) => {checkbox.checked = selectAll.checked;})
     }
+
+        (function () {
+        function bindPositiveIntOnly(id, allowEmpty) {
+            const el = document.getElementById(id);
+            if (!el) return;
+
+            el.addEventListener('input', function () {
+                let v = el.value;
+                v = v.replace(/\D+/g, '');  // 숫자만 남김
+                v = v.replace(/^0+/, '');   // 선행 0 제거 -> 0 방지
+                el.value = v;
+            });
+
+            el.form?.addEventListener('submit', function (e) {
+                const v = el.value.trim();
+                if (allowEmpty) {
+                    if (v && !/^[1-9]\d*$/.test(v)) {
+                        e.preventDefault();
+                        alert(id + '는 1 이상의 정수만 입력 가능합니다.');
+                        el.focus();
+                    }
+                } else {
+                    if (!/^[1-9]\d*$/.test(v)) {
+                        e.preventDefault();
+                        alert(id + '는 1 이상의 정수만 입력 가능합니다.');
+                        el.focus();
+                    }
+                }
+            });
+        }
+
+        // 필요에 맞게 allowEmpty 조절 가능
+        bindPositiveIntOnly('datalimit', false);
+        bindPositiveIntOnly('timelimit', true);   // 미구현이면 비워두기 허용 추천
+        bindPositiveIntOnly('downspeed', true);   // 실험 기능이면 비워두기 허용 추천
+        bindPositiveIntOnly('upspeed', true);
+        bindPositiveIntOnly('dataamount', false);
+        bindPositiveIntOnly('vouchernumber', false);
+    })();
+
 </script>
 </html>

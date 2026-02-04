@@ -2516,9 +2516,10 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             }
         }
         write_config("{$username} change password applied");
-        sleep(1);
-        freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
         captiveportal_disconnect_client($sessionid);
+        sleep(2);
+        freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
+
         portal_reply_page($redirurl, "login","PW Reset", $clientmac, $clientip);
     } else if ($type == "connected") {
         $userindex= -1;
@@ -2682,8 +2683,10 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
     if ($type === "connected") {
         $schedule_suspended = get_suspend_timeschedule($username);
         if($schedule_suspended == true){
-            freeradius_users_resync(false,"user suspend applied");//-> Freeradius 에다가 리싱크 명령함.
             captiveportal_disconnect_client($sessionid);
+            sleep(2);
+            freeradius_users_resync(false,"user suspend applied");//-> Freeradius 에다가 리싱크 명령함.
+
         }
         $htmltext .= "\n<script>
             setTimeout(function () {
@@ -3266,7 +3269,7 @@ function remainder($bytes) {
     return $bytes;
 }
 
-function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $username = null, $clientip = null, $clientmac = null, $sessionid = null, $start_time = null, $stop_time = null, $term_cause = null) {
+/*function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $username = null, $clientip = null, $clientmac = null, $sessionid = null, $start_time = null, $stop_time = null, $term_cause = null) {
     global $cpzone, $config;
 
     $cpcfg = $config['captiveportal'][$cpzone];
@@ -3395,6 +3398,172 @@ function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $use
     $racct->close();
     return $result;
 }
+*/
+function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $username = null, $clientip = null, $clientmac = null, $sessionid = null, $start_time = null, $stop_time = null, $term_cause = null) {
+    global $cpzone, $config;
+
+    $cpcfg = $config['captiveportal'][$cpzone];
+    $acctcfg = auth_get_authserver($cpcfg['radacct_server']);
+    if (!isset($cpcfg['radacct_enable']) || empty($acctcfg) ||
+        captiveportal_ha_is_node_in_backup_mode($cpzone)) {
+        return null;
+    }
+
+    // ---- retry 정책 (너 환경에 맞춘 보수적 값) ----
+    $max_retry = 3;          // 2~3 추천 (너무 크면 포털 응답이 느려짐)
+    $retry_delay_us = 300000; // 0.3초
+    $first_try_ts = time();
+
+    $should_retry = function($err) {
+        return (bool)preg_match('/No valid RADIUS responses received|timed? out|timeout/i', (string)$err);
+    };
+
+    if ($type === 'on') {
+        $racct = new Auth_RADIUS_Acct_On;
+    } elseif ($type === 'off') {
+        $racct = new Auth_RADIUS_Acct_Off;
+    } elseif ($type === 'start') {
+        $racct = new Auth_RADIUS_Acct_Start;
+        if (!is_int($start_time)) {
+            $start_time = time();
+        }
+        add_crew_linked_rule($clientip, $username);
+        write_config("{$username} crew wifi login");
+    } elseif ($type === 'stop') {
+        $racct = new Auth_RADIUS_Acct_Stop;
+        if (!is_int($stop_time)) {
+            $stop_time = time();
+        }
+        del_crew_linked_rule($clientip, $username);
+        write_config("{$username} crew wifi log out");
+    } elseif ($type === 'update') {
+        $racct = new Auth_RADIUS_Acct_Update;
+        if (!is_int($stop_time)) {
+            $stop_time = time();
+        }
+    } else {
+        return null;
+    }
+
+    $racct->addServer($acctcfg['host'], $acctcfg['radius_acct_port'],
+        $acctcfg['radius_secret'], $acctcfg['radius_timeout']);
+
+    $racct->authentic = RADIUS_AUTH_RADIUS;
+    if ($cpcfg['auth_method'] === 'radmac' && $username === "unauthenticated" && !empty($clientmac)) {
+        $racct->username = mac_format($clientmac);
+    } elseif (!empty($username)) {
+        $racct->username = $username;
+    }
+
+    // ---- start() retry ----
+    $started = false;
+    for ($i = 1; $i <= $max_retry; $i++) {
+        $res = $racct->start();
+        if (!PEAR::isError($res)) {
+            $started = true;
+            break;
+        }
+
+        $err = $racct->getError();
+        if (!$should_retry($err) || $i === $max_retry) {
+            captiveportal_syslog('RADIUS ACCOUNTING FAILED : '.$err);
+            $racct->close();
+            return null;
+        }
+
+        usleep($retry_delay_us);
+    }
+
+    // ---- 이하 attribute 세팅은 그대로 ----
+    $nasip = $acctcfg['radius_nasip_attribute'];
+    if (!is_ipaddr($nasip)) {
+        $nasip = get_interface_ip($nasip);
+        if (!is_ipaddr($nasip)) {
+            $nasip = get_interface_ip();
+        }
+    }
+    $nasmac = get_interface_mac(find_ip_interface($nasip));
+    $racct->putAttribute(RADIUS_NAS_IP_ADDRESS, $nasip, "addr");
+    $racct->putAttribute(RADIUS_NAS_IDENTIFIER, empty($cpcfg["radiusnasid"]) ? "CaptivePortal-{$cpzone}" : $cpcfg["radiusnasid"]);
+
+    if (is_int($ruleno)) {
+        $racct->putAttribute(RADIUS_NAS_PORT_TYPE, RADIUS_ETHERNET);
+        $racct->putAttribute(RADIUS_NAS_PORT, intval($ruleno), 'integer');
+    }
+
+    if (!empty($sessionid)) {
+        $racct->putAttribute(RADIUS_ACCT_SESSION_ID, $sessionid);
+    }
+
+    if (!empty($clientip) && is_ipaddr($clientip)) {
+        $racct->putAttribute(RADIUS_FRAMED_IP_ADDRESS, $clientip, "addr");
+    }
+    if (!empty($clientmac)) {
+        $racct->putAttribute(RADIUS_CALLING_STATION_ID, mac_format($clientmac));
+    }
+    if (!empty($nasmac)) {
+        $racct->putAttribute(RADIUS_CALLED_STATION_ID, mac_format($nasmac).':'.gethostname());
+    }
+
+    if (($type === 'stop' || $type === 'update') && is_int($start_time)) {
+        $volume = getVolume($clientip);
+        $session_time = $stop_time - $start_time;
+        $volume['input_bytes_radius'] = remainder($volume['input_bytes']);
+        $volume['input_gigawords'] = gigawords($volume['input_bytes']);
+        $volume['output_bytes_radius'] = remainder($volume['output_bytes']);
+        $volume['output_gigawords'] = gigawords($volume['output_bytes']);
+
+        $racct->putAttribute(RADIUS_ACCT_INPUT_PACKETS, intval($volume['input_pkts']), "integer");
+        $racct->putAttribute(RADIUS_ACCT_INPUT_OCTETS, intval($volume['input_bytes_radius']), "integer");
+        $racct->putAttribute(RADIUS_ACCT_OUTPUT_PACKETS, intval($volume['output_pkts']), "integer");
+        $racct->putAttribute(RADIUS_ACCT_OUTPUT_OCTETS, intval($volume['output_bytes_radius']), "integer");
+        $racct->putAttribute(RADIUS_ACCT_SESSION_TIME, intval($session_time), "integer");
+
+        $racct->putAttribute(CUSTOM_RADIUS_ACCT_OUTPUT_GIGAWORDS, intval($volume['output_gigawords']), "integer");
+        $racct->putAttribute(CUSTOM_RADIUS_ACCT_INPUT_GIGAWORDS, intval($volume['input_gigawords']), "integer");
+        $racct->session_time = $session_time;
+    }
+
+    if ($type === 'stop') {
+        if (empty($term_cause)) {
+            $term_cause = 1;
+        }
+        $racct->putAttribute(RADIUS_ACCT_TERMINATE_CAUSE, $term_cause);
+    }
+
+    // ---- send() retry (응답 없음/timeout일 때만) ----
+    $result = null;
+    for ($i = 1; $i <= $max_retry; $i++) {
+        // (선택) 지연시간 힌트: 재시도일 때만 Delay-Time 넣고 싶으면 주석 해제
+        // if ($i > 1) {
+        //     $racct->putAttribute(RADIUS_ACCT_DELAY_TIME, max(0, time() - $first_try_ts), "integer");
+        // }
+
+        $result = $racct->send();
+
+        if (!PEAR::isError($result)) {
+            // 기존 로직 유지
+            if ($result === true) {
+                break;
+            } else {
+                $result = false;
+                break;
+            }
+        }
+
+        $err = $racct->getError();
+        if (!$should_retry($err) || $i === $max_retry) {
+            captiveportal_syslog('RADIUS ACCOUNTING FAILED : '.$err);
+            $result = null;
+            break;
+        }
+
+        usleep($retry_delay_us);
+    }
+
+    $racct->close();
+    return $result;
+}
 
 function captiveportal_isip_logged($clientip) {
     global $g, $cpzone;
@@ -3486,6 +3655,7 @@ function getcurquota($sessionid, $clientip){
 }
 function check_quota($username, $timerange){
     global $config;
+
     $filepathall = "/var/log/radacct/datacounter/$timerange/used-octets-$username";
     $usagenum = 0;
     $files = glob($filepathall);
