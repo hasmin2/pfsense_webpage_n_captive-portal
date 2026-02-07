@@ -22,7 +22,7 @@ class APIFreeRADIUSUserRead extends APIModel {
           $this->privileges = ["page-all", "page-services-freeradius"];
     }
     public function action() {
-        if(isset($this->$this->initial_data["freeradius_username"])){
+        if(isset($this->initial_data["freeradius_username"])){
             foreach($this->config["installedpackages"]["freeradius"]["config"] as $eachuser){
                 if($eachuser['varusersusername']===$this->initial_data['freeradius_username']){
                     return $eachuser;
