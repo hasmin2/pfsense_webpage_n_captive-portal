@@ -851,7 +851,7 @@ function captiveportal_prune_old() {
     /* Read database */
     /* NOTE: while this can be simplified in non radius case keep as is for now */
     $cpdb = captiveportal_read_db();
-
+    datacounter_process_kick_spool("/var/run/datacounter-kick", 20);
     $unsetindexes = array();
     $voucher_needs_sync = false;
     /*
@@ -1089,13 +1089,12 @@ function captiveportal_prune_old() {
         captiveportal_remove_entries($unsetindexes);
     }
 }
-function getcurquota_cached(string $user, string $range): int {
+function getcurquota_cached(string $sessionid, string $clientip): int {
     static $c = [];
-    $k = $user.'|'.$range;
-    if (!isset($c[$k])) $c[$k] = (int)getcurquota($user, $range);
+    $k = $sessionid.'|'.$clientip;
+    if (!isset($c[$k])) $c[$k] = (int)getcurquota($sessionid, $clientip);
     return $c[$k];
 }
-
 function getmaxquota_cached(string $user): int {
     static $c = [];
     if (!isset($c[$user])) $c[$user] = (int)getmaxquota($user);
@@ -1318,7 +1317,7 @@ function captiveportal_disconnect_all($term_cause = 6, $logoutReason = "DISCONNE
 }
 
 /* send RADIUS acct stop for all current clients connected with RADIUS servers */
-function captiveportal_radius_stop_all($term_cause = 6, $logoutReason = "DISCONNECT") {
+/*function captiveportal_radius_stop_all($term_cause = 6, $logoutReason = "DISCONNECT") {
     global $g, $config, $cpzone, $cpzoneid;
 
     $cpdb = captiveportal_read_db();
@@ -1345,7 +1344,39 @@ function captiveportal_radius_stop_all($term_cause = 6, $logoutReason = "DISCONN
         captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], $logoutReason);
     }
     unset($cpdb);
+}*/
+function captiveportal_radius_stop_all($term_cause = 6, $logoutReason = "DISCONNECT") {
+    global $g, $config, $cpzone, $cpzoneid;
+
+    $cpdb = captiveportal_read_db();
+    $radacct = isset($config['captiveportal'][$cpzone]['radacct_enable']);
+    $stop_time = time(); // ✅ 추가
+
+    foreach ($cpdb as $cpentry) {
+        if ($cpentry['authmethod'] === 'radius' && $radacct) {
+            if ($config['captiveportal'][$cpzone]['reauthenticateacct'] == "stopstartfreeradius") {
+                $session_time = (time() - $cpentry[0]) % 60;
+                $start_time = time() - $session_time;
+            } else {
+                $start_time = $cpentry[0];
+            }
+            captiveportal_send_server_accounting('stop',
+                $cpentry[1],
+                $cpentry[4],
+                $cpentry[2],
+                $cpentry[3],
+                $cpentry[5],
+                $start_time,
+                $stop_time,   // ✅ 이제 정상
+                $term_cause
+            );
+        }
+        captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], $logoutReason);
+    }
+    unset($cpdb);
 }
+
+
 
 function captiveportal_passthrumac_configure_entry($macent, $pipeinrule = false) {
     global $config, $g, $cpzone;
@@ -3786,4 +3817,158 @@ function add_crew_linked_rule($sourceip, $userid){
     array_push($config['filter']['rule'], $newrule);
     filter_configure();
 }
+
+/* ---------- datacounter kick spool processor ---------- */
+
+function datacounter_kicklog($msg) {
+    // pfSense는 systemlog가 있기도 하고, 없으면 syslog로
+    if (function_exists('log_error')) {
+        log_error($msg);
+    } else {
+        syslog(LOG_NOTICE, $msg);
+    }
+}
+
+/**
+ * Captive Portal DB에서 username/acctsessionid로 매칭되는 클라이언트를 찾아 끊음.
+ * - zone 지정 가능, zone이 null이면 모든 zone을 훑어봄(추천)
+ * - 성공하면 true
+ */
+function datacounter_disconnect_user($username, $acctsessionid, $zone = null) {
+    global $config;
+
+    if ($username === '' && $acctsessionid === '') return false;
+
+    // 1) zone 목록 수집
+    $zones = [];
+    if ($zone !== null && $zone !== '') {
+        $zones[] = $zone;
+    } else {
+        if (!empty($config['captiveportal']) && is_array($config['captiveportal'])) {
+            foreach ($config['captiveportal'] as $zname => $zcfg) {
+                // pfSense 구조에 따라 key가 zone명이거나 ['zone'] 필드일 수 있음
+                if (is_string($zname) && $zname !== '') {
+                    $zones[] = $zname;
+                } elseif (!empty($zcfg['zone'])) {
+                    $zones[] = $zcfg['zone'];
+                }
+            }
+        }
+        $zones = array_values(array_unique(array_filter($zones)));
+    }
+
+    // zone을 못 찾으면 그냥 실패 처리
+    if (!$zones) return false;
+
+    // 2) 각 zone의 captive portal DB 훑어서 매칭 찾기
+    foreach ($zones as $cpzone) {
+        // 환경에 따라 함수명이 다를 수 있어 2개 패턴을 시도
+        $entries = null;
+        if (function_exists('captiveportal_read_db')) {
+            $entries = @captiveportal_read_db($cpzone);
+        } elseif (function_exists('captiveportal_db_read')) {
+            $entries = @captiveportal_db_read($cpzone);
+        }
+
+        if (!is_array($entries)) continue;
+
+        foreach ($entries as $e) {
+            // 흔히 $e에 ip/mac/username/sessionid 등이 들어있음 (환경마다 키명이 다름)
+            $e_user = $e['username'] ?? $e['user'] ?? '';
+            $e_sid  = $e['sessionid'] ?? $e['acctsessionid'] ?? $e['session_id'] ?? '';
+            $e_ip   = $e['ip'] ?? $e['clientip'] ?? '';
+            $e_mac  = $e['mac'] ?? $e['clientmac'] ?? '';
+
+            $user_match = ($username !== '' && $e_user !== '' && $e_user === $username);
+            $sid_match  = ($acctsessionid !== '' && $e_sid !== '' && $e_sid === $acctsessionid);
+
+            // username 또는 acctsessionid 둘 중 하나라도 맞으면 끊는다(둘 다 있으면 둘 다 맞을 때가 더 정확)
+            $ok = false;
+            if ($username !== '' && $acctsessionid !== '') {
+                $ok = ($user_match && $sid_match);
+            } else {
+                $ok = ($user_match || $sid_match);
+            }
+
+            if (!$ok) continue;
+
+            // 3) 실제 disconnect 호출 (환경별로 함수명이 조금 다름)
+            $did = false;
+            if (function_exists('captiveportal_disconnect')) {
+                // 보통 (zone, ip, mac) 형태가 많음
+                $did = @captiveportal_disconnect($cpzone, $e_ip, $e_mac);
+            } elseif (function_exists('captiveportal_disconnect_client')) {
+                $did = @captiveportal_disconnect_client($cpzone, $e_ip, $e_mac);
+            }
+
+            datacounter_kicklog(sprintf(
+                "DATACOUNTER KICK: zone=%s user=%s sid=%s ip=%s mac=%s result=%s",
+                $cpzone, $username, $acctsessionid, $e_ip, $e_mac, ($did ? "OK" : "CALLED")
+            ));
+
+            // 한 명 찾으면 끝(필요하면 여러 세션 끊도록 바꿀 수 있음)
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * /var/run/datacounter-kick/*.kick 스풀 처리
+ * - .kick -> .work로 rename(atomic) 후 처리
+ * - 처리 완료 시 .work 삭제
+ */
+function datacounter_process_kick_spool($kickDir = "/var/run/datacounter-kick", $maxPerRun = 50, $zone = 'crew') {
+    if (!is_dir($kickDir)) return 0;
+
+    $files = glob(rtrim($kickDir, "/") . "/*.kick");
+    if (!$files) return 0;
+
+    sort($files, SORT_STRING);
+
+    $done = 0;
+    foreach ($files as $kickPath) {
+        if ($done >= $maxPerRun) break;
+
+        $workPath = $kickPath . ".work";
+        if (!@rename($kickPath, $workPath)) {
+            continue; // 다른 프로세스가 잡았음
+        }
+
+        $raw = @file_get_contents($workPath);
+        if ($raw === false) {
+            @unlink($workPath);
+            continue;
+        }
+
+        // key=value 파싱
+        $data = [];
+        foreach (preg_split("/\r\n|\n|\r/", trim($raw)) as $line) {
+            $line = trim($line);
+            if ($line === '' || $line[0] === '#') continue;
+            $kv = explode("=", $line, 2);
+            if (count($kv) === 2) $data[trim($kv[0])] = trim($kv[1]);
+        }
+
+        $username = $data['username'] ?? '';
+        $sid      = $data['acctsessionid'] ?? '';
+        $reason   = $data['reason'] ?? '';
+        $ts       = $data['ts'] ?? '';
+
+        // 실제 kick
+        $ok = datacounter_disconnect_user($username, $sid, $zone);
+
+        datacounter_kicklog(sprintf(
+            "DATACOUNTER KICK-REQUEST consumed file=%s user=%s sid=%s reason=%s ts=%s match=%s",
+            basename($workPath), $username, $sid, $reason, $ts, ($ok ? "YES" : "NO")
+        ));
+
+        @unlink($workPath);
+        $done++;
+    }
+
+    return $done;
+}
+
 ?>

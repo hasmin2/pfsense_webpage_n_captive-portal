@@ -120,7 +120,8 @@ else{
     }
 }
 ///////////////////
-$timestamp = (floor(time()/300))*5;
+$timestamp = intdiv(time(), 60);          // epoch minutes
+$timestamp = intdiv($timestamp, 5) * 5;   // 5분 경계로 내림 (분 단위)
 foreach (json_decode($json_string, true)["interfaces"] as $value) {
     if(strpos($value['name'], "vtnet")!== false || strpos($value['name'], "ovpn")!==false){
         $alias = $value['alias']==='' ? "none" : $value['alias'];
@@ -139,71 +140,6 @@ foreach (json_decode($json_string, true)["interfaces"] as $value) {
         }
         $datastring .= $value['name']. "_rx=" . $rxdata.",".$value['name']. "_tx=" .$txdata.",";
         $crew_interface = $config['captiveportal']['crew']['interface'];
-        /*foreach ($config['interfaces'] as $crew_key => $crew_value){
-            if($crew_key === $crew_interface){
-                $crew_rootinterface = $crew_value['if'];
-                break;
-            }
-        }
-        if($value['name']=== $crew_rootinterface){
-            if(file_exists($filepath."crew_tx") && ($crew_file = fopen($filepath."crew_tx", "w"))!==false ){
-                $fivemintx = $value['traffic']['fiveminute'][0]['tx'];
-                fwrite ($crew_file, round ($fivemintx/38400,0));
-            }
-            else {
-                touch($filepath."crew_tx");
-                fwrite ($crew_file, 0);
-            }
-            fclose($crew_file);
-            if(file_exists($filepath."crew_rx") && ($crew_file = fopen($filepath."crew_rx", "w"))!==false ){
-                $fiveminrx = $value['traffic']['fiveminute'][0]['rx'];
-                fwrite ($crew_file, round ($fiveminrx/38400,0));
-            }
-            else {
-                touch($filepath."crew_rx");
-                fwrite ($crew_file, 0);
-            }
-            fclose($crew_file);
-            echo "crew : tx".$fivemintx.",      rx".$fiveminrx."\n";
-        }
-    }
-    foreach ($interface as $key => $item) {
-        //if($value['name'] === $item['rootinterface']){
-            if(file_exists($filepath.$item['rootinterface']."_cumulative") && ($cumulative_file = fopen($filepath.$item['rootinterface']."_cumulative", "r"))!==false ){
-                $cur_usage = fgets($cumulative_file);
-            }
-            else {
-                touch($filepath.$item['rootinterface']."_cumulative");
-                $cur_usage=0;
-            }
-            fclose($cumulative_file);
-            if(file_exists($filepath.$item['rootinterface']."_tx") && ($use_file = fopen($filepath.$item['rootinterface']."_tx", "w"))!==false ){
-                $fivemintx = $value['traffic']['fiveminute'][0]['tx'];
-                fwrite ($use_file, round ($fivemintx/38400,0));
-            }
-            else {
-                $fivemintx=0;
-                touch($filepath.$item['rootinterface']."_tx");
-                fwrite ($use_file, 0);
-            }
-            fclose($use_file);
-            if(file_exists($filepath.$item['rootinterface']."_rx") && ($use_file = fopen($filepath.$item['rootinterface']."_rx", "w"))!==false ){
-                $fiveminrx = $value['traffic']['fiveminute'][0]['rx'];
-                fwrite ($use_file, round ($value['traffic']['fiveminute'][0]['rx']/38400,0));
-            }
-            else {
-                $fiveminrx=0;
-                touch($filepath.$item['rootinterface']."_rx");
-                fwrite ($use_file, 0);
-            }
-            fclose($use_file);
-
-            $currentusagegb = floatval($cur_usage) + round(($fivemintx + $fiveminrx)/1000000000, 6);
-            $cumulative_file = fopen($filepath.$item['rootinterface']."_cumulative", "w");
-            fwrite($cumulative_file, sprintf('%.6f',$currentusagegb));
-            fclose($cumulative_file);
-            echo $item['rootinterface'].":".$currentusagegb.",   tx".$fivemintx.",      rx".$fiveminrx."\n";*/
-        //}
     }
 }
 
@@ -233,7 +169,7 @@ curl_setopt_array($ch, array(
     CURLOPT_URL => "http://192.168.209.210:8086/write?db=acustatus&precision=m",
     CURLOPT_TIMEOUT => 1,
     CURLOPT_MAXREDIRS => 10,
-    CURLOPT_CUSTOMREQUEST => POST,
+    CURLOPT_CUSTOMREQUEST => "POST",
     CURLOPT_RETURNTRANSFER => TRUE,
     CURLOPT_POSTFIELDS => $datastring,
     CURLOPT_HTTPHEADER => array('Content-Type: text/plain')

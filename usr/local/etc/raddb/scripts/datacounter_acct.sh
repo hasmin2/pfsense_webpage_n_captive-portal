@@ -158,6 +158,10 @@ BASE="/var/log/radacct/datacounter/$TIMERANGE"
 MAXFILE="$BASE/max-octets-$USERNAME"
 USEDFILE="$BASE/used-octets-$USERNAME"
 SESSFILE="$BASE/used-octets-$USERNAME-$SESSIONID"
+# ---------- kick/health tracking ----------
+KICKDIR="/var/run/datacounter-kick"
+STATEFILE="$BASE/state-$USERNAME-$SESSIONID"   # per session tracking
+mkdir -p "$KICKDIR" 2>/dev/null || true
 
 # Ensure base dir exists
 [ -d "$BASE" ] || mkdir -p "$BASE" 2>/dev/null
@@ -199,42 +203,120 @@ fi
 
 # ---------- STOP zero-guard ----------
 if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
+  NOW_TS="$(date +%s)"
+  tmp="${STATEFILE}.$$"
+  {
+    echo "last_seen_ts=$NOW_TS"
+    echo "last_stop_zero_ts=$NOW_TS"
+    echo "username=$USERNAME"
+    echo "timerange=$TIMERANGE"
+    echo "sessionid=$SESSIONID"
+  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATEFILE" 2>/dev/null || true
+
+  # 선택: stop_zero도 kick 요청 남겨두기(오탐 가능성은 낮음)
+  KICKFILE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick"
+  if [ ! -f "$KICKFILE" ]; then
+    {
+      echo "ts=$NOW_TS"
+      echo "reason=stop_zero"
+      echo "username=$USERNAME"
+      echo "timerange=$TIMERANGE"
+      echo "acctsessionid=$SESSIONID"
+    } > "${KICKFILE}.$$" 2>/dev/null && mv -f "${KICKFILE}.$$" "$KICKFILE" 2>/dev/null || true
+  fi
+
   log "DATACOUNTER IGNORE STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets)"
   exit 0
 fi
 
 # ---------- INTERIM ----------
 if [ "$STATUS" = "Interim-Update" ]; then
-  # 0 interim 무시 (선택)
+  NOW_TS="$(date +%s)"
+
+  # ---- load previous state (best-effort) ----
+  last_nonzero_ts=0
+  zero_streak=0
+  if [ -f "$STATEFILE" ]; then
+    last_nonzero_ts="$(grep -E '^last_nonzero_ts=' "$STATEFILE" 2>/dev/null | tail -n1 | cut -d= -f2)"
+    zero_streak="$(grep -E '^zero_streak=' "$STATEFILE" 2>/dev/null | tail -n1 | cut -d= -f2)"
+    [ -z "$last_nonzero_ts" ] && last_nonzero_ts=0
+    [ -z "$zero_streak" ] && zero_streak=0
+  fi
+
+  # ---- update streak ----
   if [ "$CUR_TOTAL" -eq 0 ]; then
+    zero_streak=$((zero_streak + 1))
+  else
+    zero_streak=0
+    last_nonzero_ts="$NOW_TS"
+  fi
+
+  # ---- persist state (atomic) ----
+  tmp="${STATEFILE}.$$"
+  {
+    echo "last_seen_ts=$NOW_TS"
+    echo "last_nonzero_ts=$last_nonzero_ts"
+    echo "zero_streak=$zero_streak"
+    echo "username=$USERNAME"
+    echo "timerange=$TIMERANGE"
+    echo "sessionid=$SESSIONID"
+  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATEFILE" 2>/dev/null || true
+
+  # ---- if zero, do NOT overwrite SESSFILE, do NOT export influx ----
+  # 대신 로그만 남기고(너무 시끄러우면 주석), 조건 만족 시 kick 요청 생성
+  ZERO_STREAK_KICK=2
+  ZERO_MIN_AGE_KICK=1200  # 20min
+
+  if [ "$CUR_TOTAL" -eq 0 ]; then
+    # 필요하면 주석 해제해서 관측
+    log "DATACOUNTER INTERIM ZERO user=$USERNAME range=$TIMERANGE sid=$SESSIONID streak=$zero_streak"
+
+    age=$(( NOW_TS - last_nonzero_ts ))
+    if [ "$zero_streak" -ge "$ZERO_STREAK_KICK" ] || { [ "$last_nonzero_ts" -gt 0 ] && [ "$age" -ge "$ZERO_MIN_AGE_KICK" ]; }; then
+      KICKFILE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick"
+      # 중복 생성 방지
+      if [ ! -f "$KICKFILE" ]; then
+        {
+          echo "ts=$NOW_TS"
+          echo "reason=interim_zero"
+          echo "zero_streak=$zero_streak"
+          echo "last_nonzero_age_sec=$age"
+          echo "username=$USERNAME"
+          echo "timerange=$TIMERANGE"
+          echo "acctsessionid=$SESSIONID"
+        } > "${KICKFILE}.$$" 2>/dev/null && mv -f "${KICKFILE}.$$" "$KICKFILE" 2>/dev/null || true
+        log "DATACOUNTER KICK-REQUEST user=$USERNAME range=$TIMERANGE sid=$SESSIONID reason=interim_zero streak=$zero_streak age=${age}s"
+      fi
+    fi
     exit 0
   fi
 
+  # ---- 정상(non-zero) 처리: SESSFILE 기록 + 로그 + Influx export ----
   echo "$CUR_TOTAL" > "$SESSFILE"
 
   log "DATACOUNTER INTERIM user=$USERNAME range=$TIMERANGE sid=$SESSIONID in=$((CUR_IN/1048576))MB out=$((CUR_OUT/1048576))MB total=$((CUR_TOTAL/1048576))MB"
 
-  # ===== InfluxDB 1.8 export (healthcheck + ensure DB + write) =====
+  # ===== InfluxDB 1.8 export =====
   MEASUREMENT="datacounter_interim"
 
-  now_s=$(date +%s)
-  bucket_s=$(( (now_s / 600) * 600 ))   # 10분 내림
-  ts_m=$(( bucket_s / 60 ))             # precision=m 이므로 "분" 단위 epoch
+  now_s="$NOW_TS"
+  bucket_s=$(( (now_s / 600) * 600 ))
+  ts_m=$(( bucket_s / 60 ))
 
-  # 필드값은 bytes 그대로 (정수 i)
   in_bytes=$(( CUR_IN ))
   out_bytes=$(( CUR_OUT ))
   total_bytes=$(( CUR_TOTAL ))
 
   line="${MEASUREMENT},user=$(esc_tag "$USERNAME"),range=$(esc_tag "$TIMERANGE") in_bytes=${in_bytes}i,out_bytes=${out_bytes}i,total_bytes=${total_bytes}i ${ts_m}"
 
-  # 준비(헬스/DB 생성) 후 write. 실패해도 accounting 흐름은 계속.
   influx_prepare >/dev/null 2>&1 || true
   influx_write_line "$line" || true
   # ===== /Influx export =====
 
   exit 0
 fi
+
+
 
 # ---------- STOP / others ----------
 LOCK="/tmp/datacounter_${TIMERANGE}_${USERNAME}.lock"

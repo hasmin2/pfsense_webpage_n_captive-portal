@@ -299,13 +299,6 @@ if($_POST['data_update']){
                 $("#fbb_info").html(result.drawing_fbb_info);
                 $("#biz_total_data").html(result.biztotaldata);
                 $("#iot_total_data").html(result.iottotaldata);
-                /*if(result.toggle_crew_wifi === "true") { $("#crew").prop('checked', true); }
-                else { $("#crew").prop('checked', false); }
-                if(result.terminate_crew_internet === "true") { $("#terminate_crewinternet").prop('checked', true); }
-                else { $("#terminate_crewinternet").prop('checked', false); }
-                if(result.terminate_biz_internet === "true") { $("#terminate_bizinternet").prop('checked', true); }
-                else { $("#terminate_bizinternet").prop('checked', false); }
-                $("#ipaddr").val(result.ban_all_ip);*/
                 $("#wan_status").html(result.wan_status);
                 //$("#terminate_remaintime").html(result.print_crewwifi_duration);
             },
