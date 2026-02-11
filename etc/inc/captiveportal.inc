@@ -3829,75 +3829,61 @@ function datacounter_kicklog($msg) {
     }
 }
 
-/**
- * Captive Portal DB에서 username/acctsessionid로 매칭되는 클라이언트를 찾아 끊음.
- * - zone 지정 가능, zone이 null이면 모든 zone을 훑어봄(추천)
- * - 성공하면 true
- */
 function datacounter_disconnect_user($username, $acctsessionid, $zone = null) {
     global $config;
 
     if ($username === '' && $acctsessionid === '') return false;
 
-    // 1) zone 목록 수집
+    // 1) zone 목록
     $zones = [];
     if ($zone !== null && $zone !== '') {
         $zones[] = $zone;
     } else {
         if (!empty($config['captiveportal']) && is_array($config['captiveportal'])) {
             foreach ($config['captiveportal'] as $zname => $zcfg) {
-                // pfSense 구조에 따라 key가 zone명이거나 ['zone'] 필드일 수 있음
-                if (is_string($zname) && $zname !== '') {
-                    $zones[] = $zname;
-                } elseif (!empty($zcfg['zone'])) {
-                    $zones[] = $zcfg['zone'];
-                }
+                if (is_string($zname) && $zname !== '') $zones[] = $zname;
+                elseif (!empty($zcfg['zone'])) $zones[] = $zcfg['zone'];
             }
         }
         $zones = array_values(array_unique(array_filter($zones)));
     }
-
-    // zone을 못 찾으면 그냥 실패 처리
     if (!$zones) return false;
 
-    // 2) 각 zone의 captive portal DB 훑어서 매칭 찾기
+    // 2) captive portal DB에서 매칭 찾기
     foreach ($zones as $cpzone) {
-        // 환경에 따라 함수명이 다를 수 있어 2개 패턴을 시도
         $entries = null;
         if (function_exists('captiveportal_read_db')) {
             $entries = @captiveportal_read_db($cpzone);
         } elseif (function_exists('captiveportal_db_read')) {
             $entries = @captiveportal_db_read($cpzone);
         }
-
         if (!is_array($entries)) continue;
 
-        foreach ($entries as $e) {
-            // 흔히 $e에 ip/mac/username/sessionid 등이 들어있음 (환경마다 키명이 다름)
-            $e_user = $e['username'] ?? $e['user'] ?? '';
-            $e_sid  = $e['sessionid'] ?? $e['acctsessionid'] ?? $e['session_id'] ?? '';
-            $e_ip   = $e['ip'] ?? $e['clientip'] ?? '';
-            $e_mac  = $e['mac'] ?? $e['clientmac'] ?? '';
+        foreach ($entries as $dbent) {
+            // pfSense CP dbent는 종종 숫자 인덱스 배열 형태:
+            // [0]=start, [1]=ruleno, [2]=ip, [3]=mac, [4]=username, [5]=sessionid ...
+            $e_user = $dbent[4] ?? ($dbent['username'] ?? $dbent['user'] ?? '');
+            $e_sid  = $dbent[5] ?? ($dbent['sessionid'] ?? $dbent['acctsessionid'] ?? $dbent['session_id'] ?? '');
+            $e_ip   = $dbent[2] ?? ($dbent['ip'] ?? $dbent['clientip'] ?? '');
+            $e_mac  = $dbent[3] ?? ($dbent['mac'] ?? $dbent['clientmac'] ?? '');
 
             $user_match = ($username !== '' && $e_user !== '' && $e_user === $username);
             $sid_match  = ($acctsessionid !== '' && $e_sid !== '' && $e_sid === $acctsessionid);
 
-            // username 또는 acctsessionid 둘 중 하나라도 맞으면 끊는다(둘 다 있으면 둘 다 맞을 때가 더 정확)
             $ok = false;
-            if ($username !== '' && $acctsessionid !== '') {
-                $ok = ($user_match && $sid_match);
-            } else {
-                $ok = ($user_match || $sid_match);
-            }
+            if ($username !== '' && $acctsessionid !== '') $ok = ($user_match && $sid_match);
+            else $ok = ($user_match || $sid_match);
 
             if (!$ok) continue;
 
-            // 3) 실제 disconnect 호출 (환경별로 함수명이 조금 다름)
+            // ✅ 핵심: 너 환경의 captiveportal_disconnect()는 (dbent, ...) 시그니처
             $did = false;
             if (function_exists('captiveportal_disconnect')) {
-                // 보통 (zone, ip, mac) 형태가 많음
-                $did = @captiveportal_disconnect($cpzone, $e_ip, $e_mac);
+                // captiveportal_disconnect 내부에서 $cpzone 글로벌을 쓰는 환경이 많아 세팅
+                $GLOBALS['cpzone'] = $cpzone;
+                $did = @captiveportal_disconnect($dbent, 1);
             } elseif (function_exists('captiveportal_disconnect_client')) {
+                // 일부 변형 환경 (zone, ip, mac) 인 경우
                 $did = @captiveportal_disconnect_client($cpzone, $e_ip, $e_mac);
             }
 
@@ -3906,7 +3892,6 @@ function datacounter_disconnect_user($username, $acctsessionid, $zone = null) {
                 $cpzone, $username, $acctsessionid, $e_ip, $e_mac, ($did ? "OK" : "CALLED")
             ));
 
-            // 한 명 찾으면 끝(필요하면 여러 세션 끊도록 바꿀 수 있음)
             return true;
         }
     }
@@ -3914,11 +3899,8 @@ function datacounter_disconnect_user($username, $acctsessionid, $zone = null) {
     return false;
 }
 
-/**
- * /var/run/datacounter-kick/*.kick 스풀 처리
- * - .kick -> .work로 rename(atomic) 후 처리
- * - 처리 완료 시 .work 삭제
- */
+
+
 function datacounter_process_kick_spool($kickDir = "/var/run/datacounter-kick", $maxPerRun = 50, $zone = 'crew') {
     if (!is_dir($kickDir)) return 0;
 
@@ -3942,7 +3924,6 @@ function datacounter_process_kick_spool($kickDir = "/var/run/datacounter-kick", 
             continue;
         }
 
-        // key=value 파싱
         $data = [];
         foreach (preg_split("/\r\n|\n|\r/", trim($raw)) as $line) {
             $line = trim($line);
@@ -3956,7 +3937,6 @@ function datacounter_process_kick_spool($kickDir = "/var/run/datacounter-kick", 
         $reason   = $data['reason'] ?? '';
         $ts       = $data['ts'] ?? '';
 
-        // 실제 kick
         $ok = datacounter_disconnect_user($username, $sid, $zone);
 
         datacounter_kicklog(sprintf(
@@ -3964,11 +3944,15 @@ function datacounter_process_kick_spool($kickDir = "/var/run/datacounter-kick", 
             basename($workPath), $username, $sid, $reason, $ts, ($ok ? "YES" : "NO")
         ));
 
+        $donePath = preg_replace('/\.kick\.work$/', '.kick.done', $workPath);
+        @file_put_contents($donePath, "ts=" . time() . "\nresult=" . ($ok ? "YES" : "NO") . "\n");
+
         @unlink($workPath);
         $done++;
     }
 
     return $done;
 }
+
 
 ?>

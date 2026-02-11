@@ -4095,9 +4095,6 @@ total=$((CUR_TOTAL/1048576))MB accum=$((NEW_TOTAL/1048576))MB"
 
 exit $?
 
-
-
-
 EOD;
 
 	$filename = FREERADIUS_SCRIPTS . '/datacounter_acct.sh';

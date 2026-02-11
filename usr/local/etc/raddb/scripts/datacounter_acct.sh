@@ -10,6 +10,8 @@
 # - Adds per-interim session file (SESSFILE) and accumulates on Stop.
 # - Includes strong sanity guards to prevent overflow/garbage attributes from corrupting totals.
 # - Logs are unified with logger -t datacounter (and include range/status/sid).
+# - ✅ state 파일은 /var/run 아래로 이동: 리부트 시 자동 청소됨.
+# - ✅ Stop이 안 오는 세션 대비로 /var/run state TTL 청소(가볍게, 1시간에 1번) 포함.
 #
 
 # ---------- helpers ----------
@@ -48,8 +50,6 @@ INFLUX_QUERY_URL="${INFLUX_BASE}/query"
 INFLUX_READY_MARK="/tmp/influx_ready_${INFLUX_DB}.stamp"
 
 curl_influx() {
-  # Usage: curl_influx [curl args...]
-  # 공통 타임아웃/조용한 옵션 + (필요시) 인증 옵션을 통일
   if [ -n "$INFLUX_USER" ] && [ -n "$INFLUX_PASS" ]; then
     curl -sS -m "$INFLUX_TIMEOUT" --connect-timeout "$INFLUX_TIMEOUT" -u "${INFLUX_USER}:${INFLUX_PASS}" "$@"
   else
@@ -58,14 +58,12 @@ curl_influx() {
 }
 
 influx_healthcheck() {
-  # /ping 우선, 실패하면 /health 시도
   curl_influx -I "${INFLUX_BASE}/ping" >/dev/null 2>&1 && return 0
   curl_influx "${INFLUX_BASE}/health" >/dev/null 2>&1 && return 0
   return 1
 }
 
 influx_db_exists() {
-  # SHOW DATABASES 응답에 "name":"<db>"가 있는지 확인
   resp="$(curl_influx -G "${INFLUX_QUERY_URL}" --data-urlencode "q=SHOW DATABASES" 2>/dev/null)"
   echo "$resp" | grep -q "\"name\":\"${INFLUX_DB}\""
 }
@@ -75,7 +73,6 @@ influx_create_db() {
 }
 
 influx_prepare() {
-  # 캐시: 최근에 준비 완료면 바로 OK
   now="$(date +%s)"
   if [ -f "$INFLUX_READY_MARK" ]; then
     last="$(cat "$INFLUX_READY_MARK" 2>/dev/null)"
@@ -86,12 +83,10 @@ influx_prepare() {
     fi
   fi
 
-  # 헬스체크 실패면 포기(스크립트 흐름은 유지)
   if ! influx_healthcheck; then
     return 1
   fi
 
-  # DB 없으면 생성
   if ! influx_db_exists; then
     influx_create_db
     influx_db_exists || return 1
@@ -101,17 +96,8 @@ influx_prepare() {
   return 0
 }
 
-#influx_write_line() {
-  # Usage: influx_write_line "line protocol..."
-  #line="$1"
-  # -f: HTTP 4xx/5xx면 실패로 처리. 실패해도 상위에서 || true로 무시 가능
-  #curl_influx -f -H 'Content-Type: text/plain' --data-binary "$line" "${INFLUX_WRITE_URL}" >/dev/null 2>&1
-
-#}
 influx_write_line() {
   line="$1"
-
-  # 응답/에러를 잠깐이라도 잡아서 원인을 남김
   resp="$(curl_influx -i -H 'Content-Type: text/plain' --data-binary "$line" "${INFLUX_WRITE_URL}" 2>&1)"
   rc=$?
 
@@ -120,7 +106,6 @@ influx_write_line() {
     return 1
   fi
 
-  # 성공이면 보통 HTTP/1.1 204 No Content
   echo "$resp" | grep -q " 204 " || {
     log "INFLUX WRITE NON-204 url=${INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '\n' ' ' | cut -c1-300)"
     return 1
@@ -153,21 +138,28 @@ STATUS="$RAW_STATUS"
 SESSIONID="$RAW_SID"
 [ -z "$SESSIONID" ] && SESSIONID="nosession"
 
-# ---------- paths ----------
+# ---------- paths (log/base) ----------
 BASE="/var/log/radacct/datacounter/$TIMERANGE"
 MAXFILE="$BASE/max-octets-$USERNAME"
 USEDFILE="$BASE/used-octets-$USERNAME"
 SESSFILE="$BASE/used-octets-$USERNAME-$SESSIONID"
-# ---------- kick/health tracking ----------
+
+# ---------- kick spool (in /var/run => reboot clears) ----------
 KICKDIR="/var/run/datacounter-kick"
-STATEFILE="$BASE/state-$USERNAME-$SESSIONID"   # per session tracking
 mkdir -p "$KICKDIR" 2>/dev/null || true
+
+# ---------- state (✅ move to /var/run => reboot clears) ----------
+STATE_ROOT="/var/run/datacounter-state"
+STATE_DIR="${STATE_ROOT}/${TIMERANGE}"
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+STATEFILE="${STATE_DIR}/state-${USERNAME}-${SESSIONID}"
+
+# ✅ 핵심: kick 파일이 소비/삭제돼도 재생성하지 않도록 마커 유지 (also in /var/run)
+KICKMARK="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.sent"
+KICKDONE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.done"
 
 # Ensure base dir exists
 [ -d "$BASE" ] || mkdir -p "$BASE" 2>/dev/null
-
-# ---------- debug: RAW (always) ----------
-#log "RAW user=[$USERNAME] range=[$TIMERANGE] in_oct=[$IN_OCTETS] out_oct=[$OUT_OCTETS] in_gw=[$IN_GW] out_gw=[$OUT_GW] status=[$STATUS] sid=[$SESSIONID]"
 
 # ---------- quota not enabled ----------
 [ ! -f "$MAXFILE" ] && exit 0
@@ -175,6 +167,21 @@ mkdir -p "$KICKDIR" 2>/dev/null || true
 # ---------- init total file ----------
 if [ ! -f "$USEDFILE" ]; then
   echo 0 > "$USEDFILE"
+fi
+
+# ---------- state TTL cleanup (lightweight) ----------
+# Stop이 안 오는 세션이 계속 state를 남길 수 있으니,
+# 1시간에 1번만, 12시간 이상 된 state를 /var/run에서 청소.
+CLEAN_STAMP="${STATE_ROOT}/.cleanup_stamp"
+NOW_TS="$(date +%s)"
+last_clean=0
+if [ -f "$CLEAN_STAMP" ]; then
+  last_clean="$(cat "$CLEAN_STAMP" 2>/dev/null)"
+  [ -z "$last_clean" ] && last_clean=0
+fi
+if [ $((NOW_TS - last_clean)) -ge 3600 ] 2>/dev/null; then
+  echo "$NOW_TS" > "$CLEAN_STAMP" 2>/dev/null || true
+  find "$STATE_ROOT" -type f -name "state-*" -mmin +720 -delete >/dev/null 2>&1 || true
 fi
 
 # ---------- sanity guards ----------
@@ -198,12 +205,8 @@ if [ "$CUR_IN" -lt 0 ] || [ "$CUR_OUT" -lt 0 ] || [ "$CUR_TOTAL" -lt 0 ]; then
   exit 0
 fi
 
-# ---------- debug: CALC ----------
-#log "CALC user=$USERNAME range=$TIMERANGE status=$STATUS sid=$SESSIONID IN_GW=$IN_GW OUT_GW=$OUT_GW IN_O=$IN_OCTETS OUT_O=$OUT_OCTETS CUR_IN=$CUR_IN CUR_OUT=$CUR_OUT CUR_TOTAL=$CUR_TOTAL"
-
 # ---------- STOP zero-guard ----------
 if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
-  NOW_TS="$(date +%s)"
   tmp="${STATEFILE}.$$"
   {
     echo "last_seen_ts=$NOW_TS"
@@ -213,7 +216,13 @@ if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
     echo "sessionid=$SESSIONID"
   } > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATEFILE" 2>/dev/null || true
 
-  # 선택: stop_zero도 kick 요청 남겨두기(오탐 가능성은 낮음)
+  # ✅ 이미 kick 요청 만든 적 있으면 재생성 금지
+  if [ -f "$KICKMARK" ] || [ -f "$KICKDONE" ]; then
+    log "DATACOUNTER IGNORE STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets; kick already marked)"
+    exit 0
+  fi
+
+  # (선택) stop_zero도 kick 요청 남기기
   KICKFILE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick"
   if [ ! -f "$KICKFILE" ]; then
     {
@@ -223,6 +232,9 @@ if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
       echo "timerange=$TIMERANGE"
       echo "acctsessionid=$SESSIONID"
     } > "${KICKFILE}.$$" 2>/dev/null && mv -f "${KICKFILE}.$$" "$KICKFILE" 2>/dev/null || true
+
+    # ✅ 마커 생성(핵심)
+    : > "$KICKMARK" 2>/dev/null || true
   fi
 
   log "DATACOUNTER IGNORE STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets)"
@@ -231,8 +243,6 @@ fi
 
 # ---------- INTERIM ----------
 if [ "$STATUS" = "Interim-Update" ]; then
-  NOW_TS="$(date +%s)"
-
   # ---- load previous state (best-effort) ----
   last_nonzero_ts=0
   zero_streak=0
@@ -249,6 +259,10 @@ if [ "$STATUS" = "Interim-Update" ]; then
   else
     zero_streak=0
     last_nonzero_ts="$NOW_TS"
+
+    # ✅ traffic이 다시 나오면 과거 kick 마커는 해제(일시적 오류 복구)
+    [ -f "$KICKMARK" ] && rm -f "$KICKMARK" 2>/dev/null || true
+    [ -f "$KICKDONE" ] && rm -f "$KICKDONE" 2>/dev/null || true
   fi
 
   # ---- persist state (atomic) ----
@@ -263,18 +277,20 @@ if [ "$STATUS" = "Interim-Update" ]; then
   } > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATEFILE" 2>/dev/null || true
 
   # ---- if zero, do NOT overwrite SESSFILE, do NOT export influx ----
-  # 대신 로그만 남기고(너무 시끄러우면 주석), 조건 만족 시 kick 요청 생성
   ZERO_STREAK_KICK=2
   ZERO_MIN_AGE_KICK=1200  # 20min
 
   if [ "$CUR_TOTAL" -eq 0 ]; then
-    # 필요하면 주석 해제해서 관측
+    # ✅ 이미 kick 요청 만든 적 있으면 로그/재요청 자체를 멈춤(로그 폭주 방지)
+    if [ -f "$KICKMARK" ] || [ -f "$KICKDONE" ]; then
+      exit 0
+    fi
+
     log "DATACOUNTER INTERIM ZERO user=$USERNAME range=$TIMERANGE sid=$SESSIONID streak=$zero_streak"
 
     age=$(( NOW_TS - last_nonzero_ts ))
     if [ "$zero_streak" -ge "$ZERO_STREAK_KICK" ] || { [ "$last_nonzero_ts" -gt 0 ] && [ "$age" -ge "$ZERO_MIN_AGE_KICK" ]; }; then
       KICKFILE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick"
-      # 중복 생성 방지
       if [ ! -f "$KICKFILE" ]; then
         {
           echo "ts=$NOW_TS"
@@ -285,6 +301,10 @@ if [ "$STATUS" = "Interim-Update" ]; then
           echo "timerange=$TIMERANGE"
           echo "acctsessionid=$SESSIONID"
         } > "${KICKFILE}.$$" 2>/dev/null && mv -f "${KICKFILE}.$$" "$KICKFILE" 2>/dev/null || true
+
+        # ✅ 마커 생성(핵심)
+        : > "$KICKMARK" 2>/dev/null || true
+
         log "DATACOUNTER KICK-REQUEST user=$USERNAME range=$TIMERANGE sid=$SESSIONID reason=interim_zero streak=$zero_streak age=${age}s"
       fi
     fi
@@ -316,8 +336,6 @@ if [ "$STATUS" = "Interim-Update" ]; then
   exit 0
 fi
 
-
-
 # ---------- STOP / others ----------
 LOCK="/tmp/datacounter_${TIMERANGE}_${USERNAME}.lock"
 
@@ -335,13 +353,20 @@ lockf -t 10 "$LOCK" sh -c '
   USEDFILE="$BASE/used-octets-$USERNAME"
   SESSFILE="$BASE/used-octets-$USERNAME-$SESSIONID"
 
+  # ✅ state/kick 마커 정리 (Stop 들어오면 세션 종료로 보고 청소)
+  STATEFILE="/var/run/datacounter-state/$TIMERANGE/state-${USERNAME}-${SESSIONID}"
+  rm -f "$STATEFILE" 2>/dev/null || true
+
+  KICKDIR="/var/run/datacounter-kick"
+  rm -f "$KICKDIR/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.sent" 2>/dev/null || true
+  rm -f "$KICKDIR/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.done" 2>/dev/null || true
+
   OLD_TOTAL=$(cat "$USEDFILE" 2>/dev/null)
   [ -z "$OLD_TOTAL" ] && OLD_TOTAL=0
 
   NEW_TOTAL=$(( OLD_TOTAL + CUR_TOTAL ))
 
   [ -f "$SESSFILE" ] && rm -f "$SESSFILE"
-
   echo "$NEW_TOTAL" > "$USEDFILE"
 
   logger -t datacounter \

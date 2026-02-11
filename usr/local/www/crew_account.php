@@ -1,4 +1,5 @@
 <?php
+require_once('guiconfig.inc');
 include_once("auth.inc");
 include_once("common_ui.inc");
 include_once("terminal_status.inc");
