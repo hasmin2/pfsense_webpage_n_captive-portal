@@ -79,9 +79,24 @@ $quotaRemain    = pick_value($flash, 'quota_remaining');
 $loginUserValue = req_value('auth_user');
 $quotaUserValue = $quotaUser !== '' ? $quotaUser : req_value('quota_user');
 
-$accountTypeValue = strtolower(pick_value($flash, 'account_type', req_value('account_type', 'normal')));
-if (!in_array($accountTypeValue, ['normal', 'prepaid'], true)) {
-$accountTypeValue = 'normal';
+$loginAccountTypeValue = strtolower(pick_value(
+$flash,
+'login_account_type',
+req_value('login_account_type', 'normal')
+));
+
+if (!in_array($loginAccountTypeValue, ['normal', 'prepaid'], true)) {
+$loginAccountTypeValue = 'normal';
+}
+
+$quotaAccountTypeValue = strtolower(pick_value(
+$flash,
+'quota_account_type',
+req_value('quota_account_type', 'normal')
+));
+
+if (!in_array($quotaAccountTypeValue, ['normal', 'prepaid'], true)) {
+$quotaAccountTypeValue = 'normal';
 }
 
 $showQuotaResult = (
@@ -795,7 +810,8 @@ $quotaRemain !== ''
 			syncLoginToQuota: <?= !empty($uiConfig['syncLoginToQuota']) ? 'true' : 'false' ?>
 	};
 
-		var accountTypeDefault = <?= json_encode($accountTypeValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+		var loginAccountTypeDefault = <?= json_encode($loginAccountTypeValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+		var quotaAccountTypeDefault = <?= json_encode($quotaAccountTypeValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
 
 		function $(id) {
 			return document.getElementById(id);
@@ -880,8 +896,8 @@ $quotaRemain !== ''
 			return null;
 		}
 
-		function buildAccountTypeField(selectId) {
-			var selected = accountTypeDefault === 'prepaid' ? 'prepaid' : 'normal';
+		function buildAccountTypeField(selectId, fieldName, selectedValue) {
+			var selected = selectedValue === 'prepaid' ? 'prepaid' : 'normal';
 
 			var field = document.createElement('div');
 			field.className = 'field account-type-field';
@@ -892,7 +908,7 @@ $quotaRemain !== ''
 
 			var select = document.createElement('select');
 			select.className = 'account-type-select';
-			select.name = 'account_type';
+			select.name = fieldName;
 			select.id = selectId;
 
 			var normal = document.createElement('option');
@@ -913,7 +929,7 @@ $quotaRemain !== ''
 			return field;
 		}
 
-		function moveAccountTypeNextToInput(inputId, selectId, rowClass, fieldClass) {
+		function moveAccountTypeNextToInput(inputId, selectId, fieldName, selectedValue, rowClass, fieldClass) {
 			var input = $(inputId);
 			if (!input) return;
 
@@ -934,13 +950,15 @@ $quotaRemain !== ''
 			}
 
 			row.appendChild(inputField);
-			row.appendChild(buildAccountTypeField(selectId));
+			row.appendChild(buildAccountTypeField(selectId, fieldName, selectedValue));
 		}
 
 		function moveAccountTypesNextToInputs() {
 			moveAccountTypeNextToInput(
 					'login_user',
 					'login_account_type',
+					'login_account_type',
+					loginAccountTypeDefault,
 					'username-account-row',
 					'username-field'
 			);
@@ -948,6 +966,8 @@ $quotaRemain !== ''
 			moveAccountTypeNextToInput(
 					'quota_user',
 					'quota_account_type',
+					'quota_account_type',
+					quotaAccountTypeDefault,
 					'quota-account-row',
 					'quota-field'
 			);

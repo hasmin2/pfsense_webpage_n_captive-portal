@@ -45,17 +45,22 @@ function cp_flash_get(): ?array
 	unset($_SESSION['cp_flash']);
 	return $d;
 }
-if($_POST['auth_user'] && $_POST['login_account_type'] === "prepaid"){
-	$auth_user='crewpay-'.$_POST['auth_user'];
+$auth_user = trim((string)($_POST['auth_user'] ?? ''));
+$login_account_type = strtolower(trim((string)($_POST['login_account_type'] ?? '')));
+
+if ($auth_user !== '' && $login_account_type === 'prepaid') {
+	if (strpos($auth_user, 'crewpay-') !== 0) {
+		$auth_user = 'crewpay-' . $auth_user;
+	}
 }
-else{
-	$auth_user = $_POST['auth_user'];
-}
-if($_POST['quota_user'] && $_POST['quota_account_type'] === "prepaid"){
-	$quota_user='crewpay-'.$_POST['quota_user'];
-}
-else{
-	$quota_user = $_POST['quota_user'];
+
+$quota_user = trim((string)($_POST['quota_user'] ?? ''));
+$quota_account_type = strtolower(trim((string)($_POST['quota_account_type'] ?? '')));
+
+if ($quota_user !== '' && $quota_account_type === 'prepaid') {
+	if (strpos($quota_user, 'crewpay-') !== 0) {
+		$quota_user = 'crewpay-' . $quota_user;
+	}
 }
 function cp_redirect_self(array $query = []): void
 {

@@ -1667,7 +1667,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
             'attributes'    => $reply_attributes,
             'auth_method'   => $auth_method,
             'login_status'  => $login_status,
-            'login_message' => "User doesn't exist!!"
+            'login_message' => "$login - User doesn't exist!!"
         );
     } else {
         // 사용자 확인됨. 넘어감
@@ -2713,22 +2713,25 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
                                 echo $htmltext;
                             }
                             else{
-                                if($usernickname==""){
-                                    if (strpos($username, 'crewpay-') === 0) {
-                                        $loginname = substr($username, strlen('crewpay-'));
-                                        $title = 'You are currently logged in with a Prepaid ID.';
-                                    } else {
 
-                                        $loginname = $username;
-                                    }
-                                }else{
-                                    $loginname = $usernickname;
+                                if (strpos($username, 'crewpay-') === 0) {
+                                    $title = 'You are currently logged in with a Prepaid ID.';
+                                    $displayname = substr($username, strlen('crewpay-'));
                                 }
+                                else{
+                                    $displayname = $username;
+                                }
+                                if ($usernickname !== ''){
+                                    $displayname = $usernickname;
+                                }
+
+
                                 $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLogoutPortalHtml([
                                     'logo'     => $logo,
-                                    'portalError'     => "",
+                                    'portalError'     => '',
+                                    'displayname'     => $displayname,
                                     'portalInfo'      => $title,
-                                    'loginUserValue'  => $loginname,
+                                    'loginUserValue'  => $username,
                                     'quotaUsed'       => $currentquota,
                                     'quotaAllocated'     => $maxquota,
                                     'loginUsers'     => $usercount,
@@ -4440,6 +4443,7 @@ function renderLogoutPortalHtml(array $data = []): string
     $curUsage   = $data['quotaUsed'] ?? '';
     $maxUsage   = $data['quotaAllocated'] ?? '';
     $portalError    = $data['portalError'] ?? '';
+    $displayname    = $data['displayname'] ?? '';
     $portalInfo     = $data['portalInfo'] ?? '';
     $loginUserValue = $data['loginUserValue'] ?? '';
     $loginUsers = $data['loginUsers'] ?? '';
@@ -4482,7 +4486,7 @@ function renderLogoutPortalHtml(array $data = []): string
     <div class="card">
         <div class="card-head">
             <div>
-                <h1 class="page-title"><?php echo ($loginUserValue);?> is online!</h1>
+                <h1 class="page-title"><?php echo ($displayname);?> is online!</h1>
                 <p class="page-subtitle"></p>
             </div>
         </div>
