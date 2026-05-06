@@ -959,7 +959,7 @@ function captiveportal_prune_old() {
 
         if ($timedout) {
             captiveportal_disconnect($cpentry, $term_cause, $stop_time);
-            captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], $logout_cause);
+            cp_wireless_auth($cpentry[4], $cpentry[3], $cpentry[2], $logout_cause);
             $unsetindexes[] = $cpentry[5];
         }
 
@@ -1257,7 +1257,8 @@ function captiveportal_disconnect_client($sessionid, $term_cause = 1, $logoutRea
 
         foreach ($result as $cpentry) {
             captiveportal_disconnect($cpentry, $term_cause);
-            captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], "DISCONNECT");
+            cp_wireless_auth($cpentry[4], $cpentry[3], $cpentry[2], "DISCONNECT");
+
         }
         captiveportal_remove_entries(array($sessionid));
         unset($result);
@@ -1615,16 +1616,28 @@ function captiveportal_get_last_activity($ip) {
 
     return 0;
 }
+
+
 if (!function_exists('cp_wireless_log')) {
-    function cp_wireless_log(string $message, string $tag = 'captiveportal'): bool
+    function cp_wireless_log(string $message, string $tag = 'logportal', string $process = 'captiveportal'): bool
     {
         global $cpzone;
 
         $logfile = '/var/log/wireless.log';
 
-        // 로그 인젝션/줄바꿈 방지
-        $message = str_replace(["\r", "\n"], ' ', $message);
+        // 로그 인젝션/줄바꿈/탭 방지
+        $message = trim(str_replace(["\r", "\n", "\t"], ' ', $message));
+        $message = preg_replace('/\s+/', ' ', $message);
+
         $tag = preg_replace('/[^a-zA-Z0-9_.:-]/', '_', $tag);
+        if ($tag === '') {
+            $tag = 'logportal';
+        }
+
+        $process = preg_replace('/[^a-zA-Z0-9_.:-]/', '_', $process);
+        if ($process === '') {
+            $process = 'logportal';
+        }
 
         $zone = '';
         if (!empty($cpzone)) {
@@ -1632,17 +1645,29 @@ if (!function_exists('cp_wireless_log')) {
         }
 
         $pid = getmypid();
+
+        /*
+         * pfSense log viewer 정상 인식 포맷:
+         * May 6 03:50:04  capt: CAPt[45228] CaptivePortal zone=crew - DISCONNECT: ...
+         */
         $line = sprintf(
-                "%s\t%s\t%d\t%s%s - %s\n",
+                "%s %s: %s[%d] CaptivePortal%s - %s\n",
                 date('M j H:i:s'),
                 $tag,
+                $process,
                 $pid,
-                'CaptivePortal',
                 $zone,
                 $message
         );
 
-        return (@file_put_contents($logfile, $line, FILE_APPEND | LOCK_EX) !== false);
+        $ret = @file_put_contents($logfile, $line, FILE_APPEND | LOCK_EX);
+
+        if ($ret === false) {
+            error_log("[cp_wireless_log] failed to write {$logfile}: {$message}");
+            return false;
+        }
+
+        return true;
     }
 }
 
@@ -1658,6 +1683,32 @@ function captiveportal_logportalauth($user, $mac, $ip, $status, $message = null)
         $message = "{$status}: {$user}, {$mac}, {$ip}, {$message}";
     }
     captiveportal_syslog($message);
+}
+function cp_wireless_auth($user, $mac, $ip, $status, $message = null): bool {
+    $user   = trim((string)$user);
+    $mac    = trim((string)$mac);
+    $ip     = trim((string)$ip);
+    $status = trim((string)$status);
+
+    if ($message === null || $message === '') {
+        $logmsg = "{$status}: {$user}, {$mac}, {$ip}";
+    } else {
+        $message = trim((string)$message);
+        $logmsg = "{$status}: {$user}, {$mac}, {$ip}, {$message}";
+    }
+
+    if (!function_exists('cp_wireless_log')) {
+        error_log("[CP] cp_wireless_auth failed: cp_wireless_log() not found");
+        return false;
+    }
+
+    $ret = cp_wireless_log($logmsg);
+
+    if ($ret === false) {
+        error_log("[CP] cp_wireless_auth failed to write log: {$logmsg}");
+    }
+
+    return $ret;
 }
 
 /* log simple messages to syslog */
@@ -1716,8 +1767,6 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                 $allowed_ranges = array('daily', 'weekly', 'monthly');
                 if (in_array($timerange, $allowed_ranges, true)) {
 
-                    // login 안전성 체크 (계정명 규칙에 맞게 조정 가능)
-                    // 예: 영문/숫자/_-. 만 허용
                     if (preg_match('/^[A-Za-z0-9_.-]+$/', $login)) {
                         $dir  = "/var/log/radacct/datacounter/{$timerange}";
                         $base = "{$dir}/used-octets-{$login}";

@@ -366,15 +366,22 @@ lockf -t 10 "$LOCK" sh -c '
   rm -f "$KICKDIR/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.sent" 2>/dev/null || true
   rm -f "$KICKDIR/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.done" 2>/dev/null || true
 
-  OLD_TOTAL=$(cat "$USEDFILE" 2>/dev/null)
-  [ -z "$OLD_TOTAL" ] && OLD_TOTAL=0
+  OLD_TOTAL=$(head -n 1 "$USEDFILE" 2>/dev/null | tr -d "\r" | tr -cd "0-9")
+  CUR_TOTAL=$(printf "%s" "$CUR_TOTAL" | tr -cd "0-9")
+  CUR_IN=$(printf "%s" "$CUR_IN" | tr -cd "0-9")
+  CUR_OUT=$(printf "%s" "$CUR_OUT" | tr -cd "0-9")
 
-  NEW_TOTAL=$(( OLD_TOTAL + CUR_TOTAL ))
+  [ -z "$OLD_TOTAL" ] && OLD_TOTAL=0
+  [ -z "$CUR_TOTAL" ] && CUR_TOTAL=0
+  [ -z "$CUR_IN" ] && CUR_IN=0
+  [ -z "$CUR_OUT" ] && CUR_OUT=0
+
+  NEW_TOTAL=$(( ${OLD_TOTAL:-0} + ${CUR_TOTAL:-0} ))
 
   [ -f "$SESSFILE" ] && rm -f "$SESSFILE"
-  echo "$NEW_TOTAL" > "$USEDFILE"
+  printf "%s\n" "$NEW_TOTAL" > "$USEDFILE"
 
-  printf '%s datacounter: %s\n' "$(date '+%b %e %H:%M:%S')" \
+  printf "%s datacounter: %s\n" "$(date "+%b %e %H:%M:%S")" \
 "DATACOUNTER STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID \
 in=$((CUR_IN/1048576))MB out=$((CUR_OUT/1048576))MB \
 total=$((CUR_TOTAL/1048576))MB accum=$((NEW_TOTAL/1048576))MB" >> "$LOGFILE" 2>/dev/null

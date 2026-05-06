@@ -91,10 +91,10 @@ function freeradius_deinstall_command() {
 	/* Remove package settings from config if 'Keep Settings' is disabled */
 	init_config_arr(array('installedpackages', 'freeradiussettings', 'config', 0));
 	if (isset($config['installedpackages']['freeradiussettings']['config'][0]['keep_settings']) &&
-	    empty($config['installedpackages']['freeradiussettings']['config'][0]['keep_settings'])) {
+		empty($config['installedpackages']['freeradiussettings']['config'][0]['keep_settings'])) {
 		log_error("[freeRADIUS] Removing all FreeRADIUS settings since 'Keep Settings/Data' is disabled...");
 		$uninstall = array('freeradius', 'freeradiusauthorizedmacs', 'freeradiusclients', 'freeradiusinterfaces',
-		'freeradiussettings', 'freeradiuseapconf', 'freeradiussqlconf', 'freeradiusmodulesldap', 'freeradiussync');
+			'freeradiussettings', 'freeradiuseapconf', 'freeradiussqlconf', 'freeradiusmodulesldap', 'freeradiussync');
 		foreach ($uninstall as $unin) {
 			if (is_array($config['installedpackages'][$unin])) {
 				unset($config['installedpackages'][$unin]);
@@ -2295,7 +2295,7 @@ EOD;
 				file_put_contents(FREERADIUS_CERTS . "/server_key.pem", base64_decode($svr_cert['prv']));
 			}
 			if (base64_decode($svr_cert['crt'])) {
-				file_put_contents(FREERADIUS_CERTS . "/server_cert.pem", 
+				file_put_contents(FREERADIUS_CERTS . "/server_cert.pem",
 					base64_decode($svr_cert['crt']) . "\n" .
 					ca_chain($svr_cert));
 			}
@@ -2324,8 +2324,8 @@ EOD;
 	if ($eapconf['vareapconfenablecheckcertissuer'] == 'on') {
 		$ca_subject = "";
 		if (empty($eapconf['vareapconfcasubject'] &&
-		    ($ca_cert != false) &&
-		    !$cert_error)) {
+			($ca_cert != false) &&
+			!$cert_error)) {
 			$ca_details = openssl_x509_parse(base64_decode($ca_cert['crt']));
 			if (is_array($ca_details) && !empty($ca_details['name'])) {
 				$ca_subject = $ca_details['name'];
@@ -2898,7 +2898,7 @@ EOD;
 
 	/* Only write this out if accounting is enabled on one of the SQL instances */
 	if ((($sqlconf['varsqlconfincludeenable'] == 'on') && ($sqlconf['varsqlconfenableaccounting'] == 'Enable')) ||
-	    (($sqlconf['varsqlconf2includeenable'] == 'on') && ($sqlconf['varsqlconf2enableaccounting'] == 'Enable'))) {
+		(($sqlconf['varsqlconf2includeenable'] == 'on') && ($sqlconf['varsqlconf2enableaccounting'] == 'Enable'))) {
 		safe_mkdir(FREERADIUS_MODSENABLED);
 		file_put_contents($filename, $conf);
 		chmod($filename, 0640);
@@ -2980,7 +2980,7 @@ EOD;
 
 	/* If neither LDAP mode or server is configured, do not activate the LDAP module */
 	if (!$arrmodulesldap['varmodulesldapenableauthorize'] && !$arrmodulesldap['varmodulesldapenableauthenticate'] &&
-	    !$arrmodulesldap['varmodulesldap2enableauthorize'] && !$arrmodulesldap['varmodulesldap2enableauthenticate']) {
+		!$arrmodulesldap['varmodulesldap2enableauthorize'] && !$arrmodulesldap['varmodulesldap2enableauthenticate']) {
 		/* Deactivate LDAP module if it is not enabled */
 		@unlink_if_exists(FREERADIUS_MODSENABLED . '/ldap');
 	}
@@ -3042,7 +3042,7 @@ EOD;
 	if (notfound || noop) {
 
 EOD;
-	$varsqlconfauthcounters = <<<EOD
+		$varsqlconfauthcounters = <<<EOD
 
 	dailycounter
 	monthlycounter
@@ -3056,7 +3056,7 @@ EOD;
 	if (true) {
 
 EOD;
-	$varsqlconfauthcounters = <<<EOD
+		$varsqlconfauthcounters = <<<EOD
 
 	-daily
 	-weekly
@@ -3199,7 +3199,7 @@ EOD;
 
 			// if interface-type = coa
 			if ($item['varinterfacetype'] == 'coa') {
-			// Enables virtual-server coa because interface-type is coa
+				// Enables virtual-server coa because interface-type is coa
 				symlink(FREERADIUS_SITESAVAIL . "/coa", FREERADIUS_SITESENABLED);
 				$conf .= <<<EOD
 listen {
@@ -3544,7 +3544,7 @@ function freeradius_do_xmlrpc_sync($sync_to_ip, $username, $password, $varsyncpo
 	$xml = array();
 
 	$syncsections = array('freeradius', 'freeradiusauthorizedmacs', 'freeradiusclients', 'freeradiusinterfaces',
-	'freeradiussettings', 'freeradiuseapconf', 'freeradiussqlconf', 'freeradiusmodulesldap');
+		'freeradiussettings', 'freeradiuseapconf', 'freeradiussqlconf', 'freeradiusmodulesldap');
 	foreach ($syncsections as $section) {
 		if (is_array($config['installedpackages'][$section])) {
 			$xml[$section] = $config['installedpackages'][$section];
@@ -4554,9 +4554,9 @@ exit 11
 
 EOD;
 
-	$filename = FREERADIUS_SCRIPTS . '/otpverify.sh';
-	file_put_contents($filename, $conf);
-	chmod($filename, 0750);
+		$filename = FREERADIUS_SCRIPTS . '/otpverify.sh';
+		file_put_contents($filename, $conf);
+		chmod($filename, 0750);
 	}
 }
 
@@ -4667,42 +4667,23 @@ EOD;
 
 function freeradius_datacounter_auth_resync() {
 	global $config;
-	$conf = '';
 
-/*	$conf .= <<<EOD
+	$conf = <<<'DATACOUNTER_AUTH_SH'
 #!/bin/sh
-### USAGE: datacounter_auth.sh USERNAME TIMERANGE
-### We need this parameters from freeradius users file and ../raddb/modules/datacounter_acct
-USERNAME=`echo -n "\\$1" | sed 's/[^0-9a-zA-Z._:-]/X/g' `
-TIMERANGE=`echo -n "\\$2" | sed 's/[^a-z]//g' `
-
-
-### This is to make sure there is a used-octets file after the cronjob resetted the counter
-if [ -e "/var/log/radacct/datacounter/\$TIMERANGE/max-octets-\$USERNAME" ] && [ ! -e "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME" ]; then
-	echo 0 > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"
-	rm "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-"*
-fi
-
-### The next two lines are just for getting values for logging output
-MAXOCTETSUSERNAMEMB=$((`/bin/cat "/var/log/radacct/datacounter/\$TIMERANGE/max-octets-\$USERNAME"`/1024/1024))
-USEDOCTETSUSERNAMEMB=`/bin/cat "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\${USERNAME}"-* | /usr/bin/awk '{ SUM += \$1; } END { print int(SUM/1024/1024); }'`
-
-### We check if MAX-OCTETS-USERNAME is greater than USED-OCTETS-USERNAME and accept or reject the user
-if [ \$MAXOCTETSUSERNAMEMB -gt \$USEDOCTETSUSERNAMEMB ]; then
-	logger -f /var/log/system.log "FreeRADIUS: User \$USERNAME has used \$USEDOCTETSUSERNAMEMB MB of \$MAXOCTETSUSERNAMEMB MB \$TIMERANGE allotted traffic. The login request was accepted."
-	exit 0
-else
-	logger -f /var/log/system.log "FreeRADIUS: User \$USERNAME has reached the \$TIMERANGE amount of upload and download traffic (\$USEDOCTETSUSERNAMEMB MB of \$MAXOCTETSUSERNAMEMB MB). The login request was denied."
-	exit 99
-fi
-
-EOD;*/
-	#!/bin/sh
 ### USAGE: datacounter_auth.sh USERNAME TIMERANGE
 ### Example: datacounter_auth.sh crewpay-crust01 monthly
 
-$conf .= <<<EOD
-	USERNAME=`echo -n "$1" | sed 's/[^0-9a-zA-Z._:-]/X/g'`
+LOGFILE="/var/log/wireless.log"
+
+log() {
+	printf '%s datacounter_auth: %s
+' "$(date '+%b %e %H:%M:%S')" "$*" >> "$LOGFILE" 2>/dev/null
+}
+
+# 로그 파일 없으면 생성 시도
+: >> "$LOGFILE" 2>/dev/null || true
+
+USERNAME=`echo -n "$1" | sed 's/[^0-9a-zA-Z._:-]/X/g'`
 TIMERANGE=`echo -n "$2" | sed 's/[^a-z]//g'`
 
 BASE_DIR="/var/log/radacct/datacounter/$TIMERANGE"
@@ -4711,7 +4692,7 @@ USED_FILE="$BASE_DIR/used-octets-$USERNAME"
 
 ### Invalid argument guard
 if [ -z "$USERNAME" ] || [ -z "$TIMERANGE" ]; then
-	logger -f /var/log/system.log "FreeRADIUS: datacounter_auth.sh invalid arguments. USERNAME='$USERNAME', TIMERANGE='$TIMERANGE'"
+	log "FreeRADIUS: datacounter_auth.sh invalid arguments. USERNAME='$USERNAME', TIMERANGE='$TIMERANGE'"
 	exit 1
 fi
 
@@ -4724,25 +4705,27 @@ fi
 if [ ! -e "$USED_FILE" ]; then
 	echo 0 > "$USED_FILE"
 	rm -f "$USED_FILE-"*
-	fi
+fi
 
 ### Read max bytes
 MAXOCTETSUSERNAME=`/bin/cat "$MAX_FILE" 2>/dev/null | sed 's/[^0-9]//g'`
 
 if [ -z "$MAXOCTETSUSERNAME" ]; then
-	logger -f /var/log/system.log "FreeRADIUS: User $USERNAME has invalid max-octets value. Login request was denied."
+	log "FreeRADIUS: User $USERNAME has invalid max-octets value. Login request was denied."
 	exit 1
 fi
 
 ### Sum used bytes
 ### Important:
 ### Do NOT use: cat used-octets-* | awk ...
+### Because files without newline can be concatenated like 3374670277 + 371347344 => 3374670277371347344
 USEDOCTETSUSERNAME=`/usr/bin/awk '
 	/^[0-9]+$/ {
 		SUM += $1
 	}
 	END {
-		printf "%.0f\n", SUM
+		printf "%.0f
+", SUM
 	}
 ' "$USED_FILE"* 2>/dev/null`
 
@@ -4751,18 +4734,20 @@ if [ -z "$USEDOCTETSUSERNAME" ]; then
 fi
 
 ### Convert bytes to MB only for log output
-MAXOCTETSUSERNAMEMB=`/usr/bin/awk -v v="$MAXOCTETSUSERNAME" 'BEGIN { printf "%.2f\n", v / 1048576 }'`
-USEDOCTETSUSERNAMEMB=`/usr/bin/awk -v v="$USEDOCTETSUSERNAME" 'BEGIN { printf "%.2f\n", v / 1048576 }'`
+MAXOCTETSUSERNAMEMB=`/usr/bin/awk -v v="$MAXOCTETSUSERNAME" 'BEGIN { printf "%.2f
+", v / 1048576 }'`
+USEDOCTETSUSERNAMEMB=`/usr/bin/awk -v v="$USEDOCTETSUSERNAME" 'BEGIN { printf "%.2f
+", v / 1048576 }'`
 
 ### Compare bytes, not MB
 if [ "$MAXOCTETSUSERNAME" -gt "$USEDOCTETSUSERNAME" ]; then
-	logger -f /var/log/system.log "FreeRADIUS: User $USERNAME has used $USEDOCTETSUSERNAMEMB MB of $MAXOCTETSUSERNAMEMB MB $TIMERANGE allotted traffic. The login request was accepted."
+	log "FreeRADIUS: User $USERNAME has used $USEDOCTETSUSERNAMEMB MB of $MAXOCTETSUSERNAMEMB MB $TIMERANGE allotted traffic. The login request was accepted."
 	exit 0
 else
-	logger -f /var/log/system.log "FreeRADIUS: User $USERNAME has reached the $TIMERANGE amount of upload and download traffic ($USEDOCTETSUSERNAMEMB MB of $MAXOCTETSUSERNAMEMB MB). The login request was denied."
+	log "FreeRADIUS: User $USERNAME has reached the $TIMERANGE amount of upload and download traffic ($USEDOCTETSUSERNAMEMB MB of $MAXOCTETSUSERNAMEMB MB). The login request was denied."
 	exit 1
 fi
-EOD;
+DATACOUNTER_AUTH_SH;
 
 	$filename = FREERADIUS_SCRIPTS . '/datacounter_auth.sh';
 	file_put_contents($filename, $conf);
@@ -4771,9 +4756,8 @@ EOD;
 
 function freeradius_datacounter_acct_resync() {
 	global $config;
-	$conf = '';
 
-	$conf .= <<<EOD
+	$conf = <<<'DATACOUNTER_ACCT_SH'
 #!/bin/sh
 #
 # datacounter_acct.sh
@@ -4785,25 +4769,32 @@ function freeradius_datacounter_acct_resync() {
 # - Uses 64-bit value = (GW << 32) + OCTETS
 # - Adds per-interim session file (SESSFILE) and accumulates on Stop.
 # - Includes strong sanity guards to prevent overflow/garbage attributes from corrupting totals.
-# - Logs are unified with logger -t datacounter (and include range/status/sid).
+# - Logs are written to /var/log/wireless.log (and include range/status/sid).
+# - ✅ state 파일은 /var/run 아래로 이동: 리부트 시 자동 청소됨.
+# - ✅ Stop이 안 오는 세션 대비로 /var/run state TTL 청소(가볍게, 1시간에 1번) 포함.
 #
 
 # ---------- helpers ----------
 numonly() { echo -n "$1" | tr -cd '0-9'; }
 
+# All datacounter logs generated by this script are written here.
+LOGFILE="/var/log/wireless.log"
+: >> "$LOGFILE" 2>/dev/null || true
+
 log() {
   # Usage: log "message..."
-  logger -t datacounter "$*"
+  printf '%s datacounter: %s
+' "$(date '+%b %e %H:%M:%S')" "$*" >> "$LOGFILE" 2>/dev/null
 }
 
 # Influx line protocol tag escape (space, comma, equal, backslash)
 esc_tag() {
   # tag escape: \ , space =
   printf '%s' "$1" | sed \
-    -e 's/\\/\\\\/g' \
-    -e 's/,/\\,/g' \
-    -e 's/ /\\ /g' \
-    -e 's/=/\\=/g'
+    -e 's/\/\\/g' \
+    -e 's/,/\,/g' \
+    -e 's/ /\ /g' \
+    -e 's/=/\=/g'
 }
 
 # ---------- InfluxDB helpers (1.8.x) ----------
@@ -4824,8 +4815,6 @@ INFLUX_QUERY_URL="${INFLUX_BASE}/query"
 INFLUX_READY_MARK="/tmp/influx_ready_${INFLUX_DB}.stamp"
 
 curl_influx() {
-  # Usage: curl_influx [curl args...]
-  # 공통 타임아웃/조용한 옵션 + (필요시) 인증 옵션을 통일
   if [ -n "$INFLUX_USER" ] && [ -n "$INFLUX_PASS" ]; then
     curl -sS -m "$INFLUX_TIMEOUT" --connect-timeout "$INFLUX_TIMEOUT" -u "${INFLUX_USER}:${INFLUX_PASS}" "$@"
   else
@@ -4834,14 +4823,12 @@ curl_influx() {
 }
 
 influx_healthcheck() {
-  # /ping 우선, 실패하면 /health 시도
   curl_influx -I "${INFLUX_BASE}/ping" >/dev/null 2>&1 && return 0
   curl_influx "${INFLUX_BASE}/health" >/dev/null 2>&1 && return 0
   return 1
 }
 
 influx_db_exists() {
-  # SHOW DATABASES 응답에 "name":"<db>"가 있는지 확인
   resp="$(curl_influx -G "${INFLUX_QUERY_URL}" --data-urlencode "q=SHOW DATABASES" 2>/dev/null)"
   echo "$resp" | grep -q "\"name\":\"${INFLUX_DB}\""
 }
@@ -4851,7 +4838,6 @@ influx_create_db() {
 }
 
 influx_prepare() {
-  # 캐시: 최근에 준비 완료면 바로 OK
   now="$(date +%s)"
   if [ -f "$INFLUX_READY_MARK" ]; then
     last="$(cat "$INFLUX_READY_MARK" 2>/dev/null)"
@@ -4862,12 +4848,10 @@ influx_prepare() {
     fi
   fi
 
-  # 헬스체크 실패면 포기(스크립트 흐름은 유지)
   if ! influx_healthcheck; then
     return 1
   fi
 
-  # DB 없으면 생성
   if ! influx_db_exists; then
     influx_create_db
     influx_db_exists || return 1
@@ -4877,28 +4861,20 @@ influx_prepare() {
   return 0
 }
 
-#influx_write_line() {
-  # Usage: influx_write_line "line protocol..."
-  #line="$1"
-  # -f: HTTP 4xx/5xx면 실패로 처리. 실패해도 상위에서 || true로 무시 가능
-  #curl_influx -f -H 'Content-Type: text/plain' --data-binary "$line" "${INFLUX_WRITE_URL}" >/dev/null 2>&1
-
-#}
 influx_write_line() {
   line="$1"
-
-  # 응답/에러를 잠깐이라도 잡아서 원인을 남김
   resp="$(curl_influx -i -H 'Content-Type: text/plain' --data-binary "$line" "${INFLUX_WRITE_URL}" 2>&1)"
   rc=$?
 
   if [ $rc -ne 0 ]; then
-    log "INFLUX WRITE FAIL rc=$rc url=${INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '\n' ' ' | cut -c1-300)"
+    log "INFLUX WRITE FAIL rc=$rc url=${INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '
+' ' ' | cut -c1-300)"
     return 1
   fi
 
-  # 성공이면 보통 HTTP/1.1 204 No Content
   echo "$resp" | grep -q " 204 " || {
-    log "INFLUX WRITE NON-204 url=${INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '\n' ' ' | cut -c1-300)"
+    log "INFLUX WRITE NON-204 url=${INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '
+' ' ' | cut -c1-300)"
     return 1
   }
 
@@ -4929,21 +4905,28 @@ STATUS="$RAW_STATUS"
 SESSIONID="$RAW_SID"
 [ -z "$SESSIONID" ] && SESSIONID="nosession"
 
-# ---------- paths ----------
+# ---------- paths (log/base) ----------
 BASE="/var/log/radacct/datacounter/$TIMERANGE"
 MAXFILE="$BASE/max-octets-$USERNAME"
 USEDFILE="$BASE/used-octets-$USERNAME"
 SESSFILE="$BASE/used-octets-$USERNAME-$SESSIONID"
-# ---------- kick/health tracking ----------
+
+# ---------- kick spool (in /var/run => reboot clears) ----------
 KICKDIR="/var/run/datacounter-kick"
-STATEFILE="$BASE/state-$USERNAME-$SESSIONID"   # per session tracking
 mkdir -p "$KICKDIR" 2>/dev/null || true
+
+# ---------- state (✅ move to /var/run => reboot clears) ----------
+STATE_ROOT="/var/run/datacounter-state"
+STATE_DIR="${STATE_ROOT}/${TIMERANGE}"
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+STATEFILE="${STATE_DIR}/state-${USERNAME}-${SESSIONID}"
+
+# ✅ 핵심: kick 파일이 소비/삭제돼도 재생성하지 않도록 마커 유지 (also in /var/run)
+KICKMARK="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.sent"
+KICKDONE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.done"
 
 # Ensure base dir exists
 [ -d "$BASE" ] || mkdir -p "$BASE" 2>/dev/null
-
-# ---------- debug: RAW (always) ----------
-#log "RAW user=[$USERNAME] range=[$TIMERANGE] in_oct=[$IN_OCTETS] out_oct=[$OUT_OCTETS] in_gw=[$IN_GW] out_gw=[$OUT_GW] status=[$STATUS] sid=[$SESSIONID]"
 
 # ---------- quota not enabled ----------
 [ ! -f "$MAXFILE" ] && exit 0
@@ -4951,6 +4934,21 @@ mkdir -p "$KICKDIR" 2>/dev/null || true
 # ---------- init total file ----------
 if [ ! -f "$USEDFILE" ]; then
   echo 0 > "$USEDFILE"
+fi
+
+# ---------- state TTL cleanup (lightweight) ----------
+# Stop이 안 오는 세션이 계속 state를 남길 수 있으니,
+# 1시간에 1번만, 12시간 이상 된 state를 /var/run에서 청소.
+CLEAN_STAMP="${STATE_ROOT}/.cleanup_stamp"
+NOW_TS="$(date +%s)"
+last_clean=0
+if [ -f "$CLEAN_STAMP" ]; then
+  last_clean="$(cat "$CLEAN_STAMP" 2>/dev/null)"
+  [ -z "$last_clean" ] && last_clean=0
+fi
+if [ $((NOW_TS - last_clean)) -ge 3600 ] 2>/dev/null; then
+  echo "$NOW_TS" > "$CLEAN_STAMP" 2>/dev/null || true
+  find "$STATE_ROOT" -type f -name "state-*" -mmin +720 -delete >/dev/null 2>&1 || true
 fi
 
 # ---------- sanity guards ----------
@@ -4974,12 +4972,8 @@ if [ "$CUR_IN" -lt 0 ] || [ "$CUR_OUT" -lt 0 ] || [ "$CUR_TOTAL" -lt 0 ]; then
   exit 0
 fi
 
-# ---------- debug: CALC ----------
-#log "CALC user=$USERNAME range=$TIMERANGE status=$STATUS sid=$SESSIONID IN_GW=$IN_GW OUT_GW=$OUT_GW IN_O=$IN_OCTETS OUT_O=$OUT_OCTETS CUR_IN=$CUR_IN CUR_OUT=$CUR_OUT CUR_TOTAL=$CUR_TOTAL"
-
 # ---------- STOP zero-guard ----------
 if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
-  NOW_TS="$(date +%s)"
   tmp="${STATEFILE}.$$"
   {
     echo "last_seen_ts=$NOW_TS"
@@ -4989,7 +4983,13 @@ if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
     echo "sessionid=$SESSIONID"
   } > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATEFILE" 2>/dev/null || true
 
-  # 선택: stop_zero도 kick 요청 남겨두기(오탐 가능성은 낮음)
+  # ✅ 이미 kick 요청 만든 적 있으면 재생성 금지
+  if [ -f "$KICKMARK" ] || [ -f "$KICKDONE" ]; then
+    log "DATACOUNTER IGNORE STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets; kick already marked)"
+    exit 0
+  fi
+
+  # (선택) stop_zero도 kick 요청 남기기
   KICKFILE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick"
   if [ ! -f "$KICKFILE" ]; then
     {
@@ -4999,6 +4999,9 @@ if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
       echo "timerange=$TIMERANGE"
       echo "acctsessionid=$SESSIONID"
     } > "${KICKFILE}.$$" 2>/dev/null && mv -f "${KICKFILE}.$$" "$KICKFILE" 2>/dev/null || true
+
+    # ✅ 마커 생성(핵심)
+    : > "$KICKMARK" 2>/dev/null || true
   fi
 
   log "DATACOUNTER IGNORE STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets)"
@@ -5007,8 +5010,6 @@ fi
 
 # ---------- INTERIM ----------
 if [ "$STATUS" = "Interim-Update" ]; then
-  NOW_TS="$(date +%s)"
-
   # ---- load previous state (best-effort) ----
   last_nonzero_ts=0
   zero_streak=0
@@ -5025,6 +5026,10 @@ if [ "$STATUS" = "Interim-Update" ]; then
   else
     zero_streak=0
     last_nonzero_ts="$NOW_TS"
+
+    # ✅ traffic이 다시 나오면 과거 kick 마커는 해제(일시적 오류 복구)
+    [ -f "$KICKMARK" ] && rm -f "$KICKMARK" 2>/dev/null || true
+    [ -f "$KICKDONE" ] && rm -f "$KICKDONE" 2>/dev/null || true
   fi
 
   # ---- persist state (atomic) ----
@@ -5039,18 +5044,20 @@ if [ "$STATUS" = "Interim-Update" ]; then
   } > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATEFILE" 2>/dev/null || true
 
   # ---- if zero, do NOT overwrite SESSFILE, do NOT export influx ----
-  # 대신 로그만 남기고(너무 시끄러우면 주석), 조건 만족 시 kick 요청 생성
   ZERO_STREAK_KICK=2
   ZERO_MIN_AGE_KICK=1200  # 20min
 
   if [ "$CUR_TOTAL" -eq 0 ]; then
-    # 필요하면 주석 해제해서 관측
+    # ✅ 이미 kick 요청 만든 적 있으면 로그/재요청 자체를 멈춤(로그 폭주 방지)
+    if [ -f "$KICKMARK" ] || [ -f "$KICKDONE" ]; then
+      exit 0
+    fi
+
     log "DATACOUNTER INTERIM ZERO user=$USERNAME range=$TIMERANGE sid=$SESSIONID streak=$zero_streak"
 
     age=$(( NOW_TS - last_nonzero_ts ))
     if [ "$zero_streak" -ge "$ZERO_STREAK_KICK" ] || { [ "$last_nonzero_ts" -gt 0 ] && [ "$age" -ge "$ZERO_MIN_AGE_KICK" ]; }; then
       KICKFILE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick"
-      # 중복 생성 방지
       if [ ! -f "$KICKFILE" ]; then
         {
           echo "ts=$NOW_TS"
@@ -5061,6 +5068,10 @@ if [ "$STATUS" = "Interim-Update" ]; then
           echo "timerange=$TIMERANGE"
           echo "acctsessionid=$SESSIONID"
         } > "${KICKFILE}.$$" 2>/dev/null && mv -f "${KICKFILE}.$$" "$KICKFILE" 2>/dev/null || true
+
+        # ✅ 마커 생성(핵심)
+        : > "$KICKMARK" 2>/dev/null || true
+
         log "DATACOUNTER KICK-REQUEST user=$USERNAME range=$TIMERANGE sid=$SESSIONID reason=interim_zero streak=$zero_streak age=${age}s"
       fi
     fi
@@ -5092,12 +5103,10 @@ if [ "$STATUS" = "Interim-Update" ]; then
   exit 0
 fi
 
-
-
 # ---------- STOP / others ----------
 LOCK="/tmp/datacounter_${TIMERANGE}_${USERNAME}.lock"
 
-lockf -t 10 "$LOCK" sh -c '
+lockf -t 10 "$LOCK" /bin/sh -c '
   USERNAME="$1"
   TIMERANGE="$2"
   SESSIONID="$3"
@@ -5106,32 +5115,56 @@ lockf -t 10 "$LOCK" sh -c '
   CUR_TOTAL="$6"
   IN_GW="$7"
   OUT_GW="$8"
+  LOGFILE="$9"
 
   BASE="/var/log/radacct/datacounter/$TIMERANGE"
   USEDFILE="$BASE/used-octets-$USERNAME"
   SESSFILE="$BASE/used-octets-$USERNAME-$SESSIONID"
 
-  OLD_TOTAL=$(cat "$USEDFILE" 2>/dev/null)
-  [ -z "$OLD_TOTAL" ] && OLD_TOTAL=0
+  # ✅ state/kick 마커 정리 (Stop 들어오면 세션 종료로 보고 청소)
+  STATEFILE="/var/run/datacounter-state/$TIMERANGE/state-${USERNAME}-${SESSIONID}"
+  rm -f "$STATEFILE" 2>/dev/null || true
 
-  NEW_TOTAL=$(( OLD_TOTAL + CUR_TOTAL ))
+  KICKDIR="/var/run/datacounter-kick"
+  rm -f "$KICKDIR/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.sent" 2>/dev/null || true
+  rm -f "$KICKDIR/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.done" 2>/dev/null || true
+
+  OLD_TOTAL=$(head -n 1 "$USEDFILE" 2>/dev/null | tr -d "
+" | tr -cd "0-9")
+  CUR_TOTAL=$(printf "%s" "$CUR_TOTAL" | tr -cd "0-9")
+  CUR_IN=$(printf "%s" "$CUR_IN" | tr -cd "0-9")
+  CUR_OUT=$(printf "%s" "$CUR_OUT" | tr -cd "0-9")
+
+  [ -z "$OLD_TOTAL" ] && OLD_TOTAL=0
+  [ -z "$CUR_TOTAL" ] && CUR_TOTAL=0
+  [ -z "$CUR_IN" ] && CUR_IN=0
+  [ -z "$CUR_OUT" ] && CUR_OUT=0
+
+  NEW_TOTAL=$(( ${OLD_TOTAL:-0} + ${CUR_TOTAL:-0} ))
 
   [ -f "$SESSFILE" ] && rm -f "$SESSFILE"
+  printf "%s
+" "$NEW_TOTAL" > "$USEDFILE"
 
-  echo "$NEW_TOTAL" > "$USEDFILE"
-
-  logger -t datacounter \
+  printf "%s datacounter: %s
+" "$(date "+%b %e %H:%M:%S")" \
 "DATACOUNTER STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID \
 in=$((CUR_IN/1048576))MB out=$((CUR_OUT/1048576))MB \
-total=$((CUR_TOTAL/1048576))MB accum=$((NEW_TOTAL/1048576))MB"
+total=$((CUR_TOTAL/1048576))MB accum=$((NEW_TOTAL/1048576))MB" >> "$LOGFILE" 2>/dev/null
 ' sh \
 "$USERNAME" "$TIMERANGE" "$SESSIONID" \
 "$CUR_IN" "$CUR_OUT" "$CUR_TOTAL" \
-"$IN_GW" "$OUT_GW"
+"$IN_GW" "$OUT_GW" "$LOGFILE"
+RC=$?
 
-exit $?
+if [ "$RC" -ne 0 ]; then
+  log "DATACOUNTER SCRIPT FAIL user=$USERNAME range=$TIMERANGE sid=$SESSIONID status=$STATUS rc=$RC"
+fi
 
-EOD;
+# Accounting script must not make FreeRADIUS withhold Accounting-Response.
+# Quota enforcement belongs to datacounter_auth.sh.
+exit 0
+DATACOUNTER_ACCT_SH;
 
 	$filename = FREERADIUS_SCRIPTS . '/datacounter_acct.sh';
 	file_put_contents($filename, $conf);
@@ -5286,7 +5319,7 @@ function freeradius_validate_users($post, &$input_errors) {
 
 	// IPv6 Address
 	if ($post['varusersframedip6address'] && !is_subnetv6($post['varusersframedip6address']) &&
-	    !is_ipaddrv6($post['varusersframedip6address'])) {
+		!is_ipaddrv6($post['varusersframedip6address'])) {
 		$input_errors[] = "The 'IPv6 Address' field must contain a valid IPv6 address or IPv6 prefix.";
 	}
 
@@ -5316,8 +5349,8 @@ function freeradius_validate_users($post, &$input_errors) {
 		$expires = date_parse_from_format("M d Y", $post['varusersexpiration']);
 		if ($expires['error_count'] > 0 || $expires['warning_count'] > 0) {
 			$input_errors[] = "The 'Expiration Date' format is invalid. | Error(s): " .
-			    implode('. ', $expires['errors']) . " | Warning(s): " .
-			    implode('. ', $expires['warnings']);
+				implode('. ', $expires['errors']) . " | Warning(s): " .
+				implode('. ', $expires['warnings']);
 		}
 		// Hack around date_parse_from_format() bugs, such as expanding "Jan 199" to "Jan 1 99"
 		if ($expires['year'] < 1970) {
@@ -5440,7 +5473,7 @@ function freeradius_validate_macs($post, &$input_errors) {
 
 	// IPv6 Address
 	if ($post['varmacsframedip6address'] && !is_subnetv6($post['varmacsframedip6address']) &&
-	    !is_ipaddrv6($post['varmacsframedip6address'])) {
+		!is_ipaddrv6($post['varmacsframedip6address'])) {
 		$input_errors[] = "The 'IPv6 Address' field must contain a valid IPv6 address or IPv6 prefix.";
 	}
 
@@ -5479,8 +5512,8 @@ function freeradius_validate_macs($post, &$input_errors) {
 		$expires = date_parse_from_format("M d Y", $post['varmacsexpiration']);
 		if ($expires['error_count'] > 0 || $expires['warning_count'] > 0) {
 			$input_errors[] = "The 'Expiration Date' format is invalid. | Error(s): " .
-			    implode('. ', $expires['errors']) . " | Warning(s): " .
-			    implode('. ', $expires['warnings']);
+				implode('. ', $expires['errors']) . " | Warning(s): " .
+				implode('. ', $expires['warnings']);
 		}
 		// Hack around date_parse_from_format() bugs, such as expanding "Jan 199" to "Jan 1 99"
 		if ($expires['year'] < 1970) {
@@ -5540,11 +5573,11 @@ function freeradius_validate_clients($post, &$input_errors) {
 	if ($post['varclientip'] != '*') {
 		if (preg_match('/^(.+)\/(\d+)$/',$post['varclientip'], $matches)) {
 			if ($post['varclientipversion'] == 'ipaddr' && (!is_ipaddrv4($matches[1]) ||
-			    !is_numeric($matches[2]) || ($matches[2] > 32) || ($matches[2] < 1))) {
+					!is_numeric($matches[2]) || ($matches[2] > 32) || ($matches[2] < 1))) {
 				$input_errors[] = "The 'Client IP Address' field must contain a valid IPv4 address and CIDR prefix when IPv4 is selected under 'Client IP Version'.";
 			}
 			if ($post['varclientipversion'] == 'ipv6addr' && (!is_ipaddrv6($matches[1]) ||
-			    !is_numeric($matches[2]) || ($matches[2] > 128) || ($matches[2] < 1))) {
+					!is_numeric($matches[2]) || ($matches[2] > 128) || ($matches[2] < 1))) {
 				$input_errors[] = "The 'Client IP Address' field must contain a valid IPv6 address and prefix when IPv6 is selected under 'Client IP Version'.";
 			}
 		} else {
@@ -5727,15 +5760,15 @@ function freeradius_validate_eap($post, &$input_errors) {
 		$input_errors[] = "The 'Maximum Sessions Tracking Per Server' field must contain an integer value.";
 	}
 
-/*
-	// Certificates for TLS
-	if ($post['ssl_ca_cert'] == 'none') {
-		$input_errors[] = "SSL CA Certificate must not be set to 'none'. Create a CA certificate if needed and select it here.";
-	}
-	if ($post['ssl_server_cert'] == 'none') {
-		$input_errors[] = "SSL Server Certificate must not be set to 'none'. Create a server certificate if needed and select it here.";
-	}
-*/
+	/*
+        // Certificates for TLS
+        if ($post['ssl_ca_cert'] == 'none') {
+            $input_errors[] = "SSL CA Certificate must not be set to 'none'. Create a CA certificate if needed and select it here.";
+        }
+        if ($post['ssl_server_cert'] == 'none') {
+            $input_errors[] = "SSL Server Certificate must not be set to 'none'. Create a server certificate if needed and select it here.";
+        }
+    */
 
 	// EAP-TLS Fragment Size
 	if ($post['vareapconffragmentsize'] != '') {

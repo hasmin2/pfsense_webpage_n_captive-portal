@@ -284,7 +284,7 @@ if ($flash) {
 if ($macfilter || isset($cpcfg['passthrumacadd'])) {
 	$tmpres = pfSense_ip_to_mac($clientip);
 	if (!is_array($tmpres) || empty($tmpres['macaddr'])) {
-		captiveportal_logportalauth("unauthenticated", "noclientmac", $clientip, "ERROR");
+		cp_wireless_auth("unauthenticated", "noclientmac", $clientip, "ERROR");
 		echo "An error occurred.  Please check the system logs for more information.";
 		log_error("Zone: {$cpzone} - Captive portal could not determine client's MAC address.  Disable MAC address filtering in captive portal if you do not need this functionality.");
 		ob_flush();
@@ -355,7 +355,7 @@ if ((
 		!empty($cpcfg['blockedmacsurl'])
 	) && $macfilter && $clientmac && captiveportal_blocked_mac($clientmac)
 ) {
-	captiveportal_logportalauth($clientmac, $clientmac, $clientip, "Blocked MAC address");
+	cp_wireless_auth($clientmac, $clientmac, $clientip, "Blocked MAC address");
 	if (!empty($cpcfg['blockedmacsurl'])) {
 		cp_flash_set([
 			'redirurl' => $cpcfg['blockedmacsurl'],
@@ -383,7 +383,7 @@ if ((
  * ---- Passthrough credit ----
  */
 if ($clientmac && portal_consume_passthrough_credit($clientmac)) {
-	captiveportal_logportalauth("unauthenticated", $clientmac, $clientip, "ACCEPT-PASSTHORUGH");
+	cp_wireless_auth("unauthenticated", $clientmac, $clientip, "ACCEPT-PASSTHORUGH");
 	portal_allow($clientip, $clientmac, "unauthenticated", null, $redirurl);
 
 	cp_flash_set([
@@ -433,7 +433,7 @@ if (!empty($config['voucher'][$cpzone]['enable']) && ((!empty($_POST['accept']) 
 				'ip' => $clientip,
 			]);
 		} elseif ($allowret) {
-			captiveportal_logportalauth($voucher, $clientmac, $clientip, "Voucher login good for $timecredit min.");
+			cp_wireless_auth($voucher, $clientmac, $clientip, "Voucher login good for $timecredit min.");
 			cp_flash_set([
 				'redirurl' => $redirurl,
 				'type' => 'connected',
@@ -453,7 +453,7 @@ if (!empty($config['voucher'][$cpzone]['enable']) && ((!empty($_POST['accept']) 
 		}
 		cp_redirect_self(['zone' => $cpzone]);
 	} elseif ($timecredit == -1) {
-		captiveportal_logportalauth($voucher, $clientmac, $clientip, "FAILURE", "voucher expired");
+		cp_wireless_auth($voucher, $clientmac, $clientip, "FAILURE", "voucher expired");
 		$m = !empty($config['voucher'][$cpzone]['descrmsgexpired']) ? $config['voucher'][$cpzone]['descrmsgexpired'] : $errormsg;
 		cp_flash_set([
 			'redirurl' => $redirurl,
@@ -464,7 +464,7 @@ if (!empty($config['voucher'][$cpzone]['enable']) && ((!empty($_POST['accept']) 
 		]);
 		cp_redirect_self(['zone' => $cpzone]);
 	} else {
-		captiveportal_logportalauth($voucher, $clientmac, $clientip, "FAILURE");
+		cp_wireless_auth($voucher, $clientmac, $clientip, "FAILURE");
 		$m = !empty($config['voucher'][$cpzone]['descrmsgnoaccess']) ? $config['voucher'][$cpzone]['descrmsgnoaccess'] : $errormsg;
 		cp_flash_set([
 			'redirurl' => $redirurl,
@@ -535,14 +535,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || (($cpcfg['auth_method'] ?? '') === 
 			'ip' => $clientip,
 
 		]);
-		captiveportal_logportalauth($user, $clientmac, $clientip, $auth_result['login_status'] ?? 'ACCEPT-LOGIN');
+		cp_wireless_auth($user, $clientmac, $clientip, $auth_result['login_status'] ?? 'ACCEPT-LOGIN');
 		cp_redirect_self(['zone' => $cpzone]);
 		ob_flush();
 		exit;
 	} else {
 		captiveportal_free_dn_ruleno($pipeno);
 		$replymsg = $auth_result['login_message'] ?? gettext("Invalid credentials specified.");
-		captiveportal_logportalauth($user, $clientmac, $clientip, ($auth_result['login_status'] ?? 'FAILURE'), $replymsg);
+		cp_wireless_auth($user, $clientmac, $clientip, ($auth_result['login_status'] ?? 'FAILURE'), $replymsg);
 		cp_flash_set([
 			'redirurl' => $redirurl,
 			'type' => 'error',
