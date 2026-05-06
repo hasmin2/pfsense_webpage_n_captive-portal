@@ -914,7 +914,6 @@ function modify_wifi_user($userlist, $modifydata){
     global $config;
     foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
         foreach ($userlist as $user) {
-            cp_wireless_log("Modifydata: $user - to ".$modifydata['datalimit'].'MBytes');
             if ($user === $userentry['varusersusername']) {
                 $halftimeperiod = explode('-', $modifydata['timeperiod']);
                 if (count($halftimeperiod) == 2) {
@@ -926,12 +925,13 @@ function modify_wifi_user($userlist, $modifydata){
                 }
 
                 if ($modifydata['datalimit'] != '') {
+                    cp_wireless_log("Modify allowed data: $user - to ".$modifydata['datalimit'].'MBytes');
                     $config["installedpackages"]["freeradius"]["config"][$item]['varusersmaxtotaloctets'] = $modifydata['datalimit'];
                 }
                 if ($modifydata['timeperiod'] != '') {
+                    cp_wireless_log("Modify allowed time: $user - to ".$modifydata['datalimit'].'minutes');
                     //$config["installedpackages"]["freeradius"]["config"][$item]['varusersamountoftime']=$modifydata['timelimit'];
                 }
-
                 $config["installedpackages"]["freeradius"]["config"][$item]['varusershalftimeperiod'] = $varusershalftimeperiod;
                 $config["installedpackages"]["freeradius"]["config"][$item]['varuserspointoftime'] = $varuserstimeperiod;
                 $config["installedpackages"]["freeradius"]["config"][$item]['varusersmaxtotaloctetstimerange'] = strtolower($varuserstimeperiod);
@@ -939,7 +939,7 @@ function modify_wifi_user($userlist, $modifydata){
                 $config["installedpackages"]["freeradius"]["config"][$item]['varusersmaxbandwidthup'] = $modifydata['upspeed'];
                 $config["installedpackages"]["freeradius"]["config"][$item]['varusersterminaltype'] = $modifydata['terminaltype'];
                 $config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
-                cp_wireless_log("User setting changed: ".$userentry['varusersusername']);
+
             }
         }
     }

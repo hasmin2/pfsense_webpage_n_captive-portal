@@ -825,7 +825,88 @@ $quotaRemain !== ''
 					'linear-gradient(135deg, rgba(4,10,20,0.72), rgba(9,18,32,0.55)), url(' +
 					window.location.origin + config.backgroundImagePath + ')';
 		}
+		function isBlockedCrewpayAuthId(value) {
+			return /^crewpay-/i.test((value || '').trim());
+		}
 
+		function getOrCreateAuthIdError(input) {
+			var id = 'auth_user_block_error';
+			var error = $(id);
+
+			if (error) return error;
+
+			error = document.createElement('div');
+			error.id = id;
+			error.className = 'notice notice-error hidden';
+			error.style.marginTop = '10px';
+			error.textContent = "Auth ID cannot start with 'crewpay-'.";
+
+			var field = closestByClass(input, 'field');
+			if (field) {
+				field.appendChild(error);
+			} else if (input.parentNode) {
+				input.parentNode.appendChild(error);
+			}
+
+			return error;
+		}
+
+		function setAuthIdBlockState(showError) {
+			var input = $('login_user');
+			if (!input) return false;
+
+			var blocked = isBlockedCrewpayAuthId(input.value);
+			var error = getOrCreateAuthIdError(input);
+
+			if (blocked) {
+				input.setCustomValidity("Auth ID cannot start with 'crewpay-'.");
+				input.setAttribute('aria-invalid', 'true');
+				error.classList.remove('hidden');
+
+				if (showError && typeof input.reportValidity === 'function') {
+					input.reportValidity();
+				}
+			} else {
+				input.setCustomValidity('');
+				input.removeAttribute('aria-invalid');
+				error.classList.add('hidden');
+			}
+
+			return blocked;
+		}
+
+		function bindAuthIdBlock() {
+			var input = $('login_user');
+			var loginForm = document.forms['login_form'];
+
+			if (!input) return;
+
+			input.addEventListener('input', function () {
+				setAuthIdBlockState(false);
+			});
+
+			input.addEventListener('change', function () {
+				setAuthIdBlockState(false);
+			});
+
+			if (loginForm) {
+				loginForm.addEventListener('submit', function (e) {
+					if (setAuthIdBlockState(true)) {
+						e.preventDefault();
+						e.stopImmediatePropagation();
+
+						var loginBtn = $('loginBtn');
+						if (loginBtn) {
+							loginBtn.disabled = false;
+							loginBtn.value = 'Login';
+						}
+
+						input.focus();
+						return false;
+					}
+				}, true);
+			}
+		}
 		function normalizeLogo() {
 			var img = $('main_logo');
 			if (!img) return;
@@ -1011,6 +1092,17 @@ $quotaRemain !== ''
 			bindQuotaButton();
 			bindUsernameSync();
 			moveAccountTypesNextToInputs();
+			bindSubmitLoading();
+			hideEmptyStateButton();
+		});
+		document.addEventListener('DOMContentLoaded', function () {
+			setBackground();
+			normalizeLogo();
+			bindPasswordToggle();
+			bindQuotaButton();
+			bindUsernameSync();
+			moveAccountTypesNextToInputs();
+			bindAuthIdBlock();
 			bindSubmitLoading();
 			hideEmptyStateButton();
 		});
