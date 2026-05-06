@@ -1615,6 +1615,36 @@ function captiveportal_get_last_activity($ip) {
 
     return 0;
 }
+if (!function_exists('cp_wireless_log')) {
+    function cp_wireless_log(string $message, string $tag = 'captiveportal'): bool
+    {
+        global $cpzone;
+
+        $logfile = '/var/log/wireless.log';
+
+        // 로그 인젝션/줄바꿈 방지
+        $message = str_replace(["\r", "\n"], ' ', $message);
+        $tag = preg_replace('/[^a-zA-Z0-9_.:-]/', '_', $tag);
+
+        $zone = '';
+        if (!empty($cpzone)) {
+            $zone = " zone={$cpzone}";
+        }
+
+        $pid = getmypid();
+        $line = sprintf(
+                "%s\t%s\t%d\t%s%s - %s\n",
+                date('M j H:i:s'),
+                $tag,
+                $pid,
+                'CaptivePortal',
+                $zone,
+                $message
+        );
+
+        return (@file_put_contents($logfile, $line, FILE_APPEND | LOCK_EX) !== false);
+    }
+}
 
 
 /* log successful captive portal authentication to syslog */
@@ -1892,7 +1922,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                     }
                     else if ($schedule_suspended){
                         $msg = "Your ID has been suspended by admin schedule policy.";
-                        captiveportal_syslog("$login has been suspended due to schedule");
+                        cp_wireless_log("$login has been suspended due to schedule");
                     }
                     else  {
                         $msg.="Unknown error, contact administrator : ".$result. $status;
@@ -3681,16 +3711,6 @@ function getsession($username) {
         }
     }
     return false;
-}
-
-
-function captiveportal_fxuser_disconnect(){
-    foreach ($this->config['installedpackages']['freeradius']['config'] as $value) {
-        if (!isset($value['varusersterminaltype']) || $value['varusersterminaltype'] === "") {
-            captiveportal_disconnect_client(getsession($value['varusersusername']));
-            captiveportal_syslog(getsession($value['varusersusername']));
-        }
-    }
 }
 
 function getcurquota($sessionid) {

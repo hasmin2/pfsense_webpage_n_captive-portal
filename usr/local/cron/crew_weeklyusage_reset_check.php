@@ -11,7 +11,7 @@ if (
     !is_array($config['installedpackages']['freeradius']['config']) ||
     empty($config['installedpackages']['freeradius']['config'])
 ) {
-    captiveportal_syslog("Reset Weekly datausage Wifi user: FreeRADIUS config not found or empty");
+    cp_wireless_log("Reset Weekly datausage Wifi user: FreeRADIUS config not found or empty");
     exit;
 }
 
@@ -62,7 +62,6 @@ foreach (array_keys($radiusUsers) as $item) {
     if ($resetQuota !== 'true' || $modified !== 'update') {
         $userEntry['varusersresetquota'] = "true";
         $userEntry['varusersmodified'] = "update";
-        $changed = true;
     }
 
     unset($userEntry);
@@ -71,18 +70,15 @@ foreach (array_keys($radiusUsers) as $item) {
 /*
  * 변경이 있을 때만 반영
  */
-if ($changed) {
 
     if (function_exists('freeradius_users_resync')) {
         freeradius_users_resync();
+        cp_wireless_log("Reset Weekly datausage Wifi user");
     } else {
-        captiveportal_syslog("Reset Weekly datausage Wifi user: freeradius_users_resync() function not found");
+        cp_wireless_log("Reset Weekly datausage Wifi user: freeradius_users_resync() function not found");
     }
 
-    captiveportal_syslog("Reset Weekly datausage Wifi user");
     write_config("Reset Weekly datausage Wifi user");
 
-} else {
-    captiveportal_syslog("Reset Weekly datausage Wifi user: no changes");
-}
+
 ?>

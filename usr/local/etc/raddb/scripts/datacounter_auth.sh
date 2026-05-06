@@ -2,6 +2,15 @@
 ### USAGE: datacounter_auth.sh USERNAME TIMERANGE
 ### Example: datacounter_auth.sh crewpay-crust01 monthly
 
+LOGFILE="/var/log/wireless.log"
+
+log() {
+	printf '%s datacounter_auth: %s\n' "$(date '+%b %e %H:%M:%S')" "$*" >> "$LOGFILE" 2>/dev/null
+}
+
+# 로그 파일 없으면 생성 시도
+: >> "$LOGFILE" 2>/dev/null || true
+
 USERNAME=`echo -n "$1" | sed 's/[^0-9a-zA-Z._:-]/X/g'`
 TIMERANGE=`echo -n "$2" | sed 's/[^a-z]//g'`
 
@@ -11,7 +20,7 @@ USED_FILE="$BASE_DIR/used-octets-$USERNAME"
 
 ### Invalid argument guard
 if [ -z "$USERNAME" ] || [ -z "$TIMERANGE" ]; then
-	logger -f /var/log/system.log "FreeRADIUS: datacounter_auth.sh invalid arguments. USERNAME='$USERNAME', TIMERANGE='$TIMERANGE'"
+	log "FreeRADIUS: datacounter_auth.sh invalid arguments. USERNAME='$USERNAME', TIMERANGE='$TIMERANGE'"
 	exit 1
 fi
 
@@ -30,7 +39,7 @@ fi
 MAXOCTETSUSERNAME=`/bin/cat "$MAX_FILE" 2>/dev/null | sed 's/[^0-9]//g'`
 
 if [ -z "$MAXOCTETSUSERNAME" ]; then
-	logger -f /var/log/system.log "FreeRADIUS: User $USERNAME has invalid max-octets value. Login request was denied."
+	log "FreeRADIUS: User $USERNAME has invalid max-octets value. Login request was denied."
 	exit 1
 fi
 
@@ -57,9 +66,9 @@ USEDOCTETSUSERNAMEMB=`/usr/bin/awk -v v="$USEDOCTETSUSERNAME" 'BEGIN { printf "%
 
 ### Compare bytes, not MB
 if [ "$MAXOCTETSUSERNAME" -gt "$USEDOCTETSUSERNAME" ]; then
-	logger -f /var/log/system.log "FreeRADIUS: User $USERNAME has used $USEDOCTETSUSERNAMEMB MB of $MAXOCTETSUSERNAMEMB MB $TIMERANGE allotted traffic. The login request was accepted."
+	log "FreeRADIUS: User $USERNAME has used $USEDOCTETSUSERNAMEMB MB of $MAXOCTETSUSERNAMEMB MB $TIMERANGE allotted traffic. The login request was accepted."
 	exit 0
 else
-	logger -f /var/log/system.log "FreeRADIUS: User $USERNAME has reached the $TIMERANGE amount of upload and download traffic ($USEDOCTETSUSERNAMEMB MB of $MAXOCTETSUSERNAMEMB MB). The login request was denied."
+	log "FreeRADIUS: User $USERNAME has reached the $TIMERANGE amount of upload and download traffic ($USEDOCTETSUSERNAMEMB MB of $MAXOCTETSUSERNAMEMB MB). The login request was denied."
 	exit 1
 fi

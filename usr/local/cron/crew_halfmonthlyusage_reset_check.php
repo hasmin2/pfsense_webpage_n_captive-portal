@@ -11,7 +11,7 @@ if (
     !is_array($config['installedpackages']['freeradius']['config']) ||
     empty($config['installedpackages']['freeradius']['config'])
 ) {
-    captiveportal_syslog("Reset half monthly: FreeRADIUS config not found or empty");
+    cp_wireless_log("Reset half monthly: FreeRADIUS config not found or empty");
     exit;
 }
 
@@ -56,42 +56,27 @@ foreach (array_keys($radiusUsers) as $idx) {
     $resetQuota = strtolower(trim((string)(
     isset($userEntry['varusersresetquota'])
         ? $userEntry['varusersresetquota']
-        : ''
+        : 'true'
     )));
 
     $modified = strtolower(trim((string)(
     isset($userEntry['varusersmodified'])
         ? $userEntry['varusersmodified']
-        : ''
+        : 'Update'
     )));
-
-    /*
-     * 이미 설정되어 있으면 불필요한 변경 방지
-     */
-    if ($resetQuota !== 'true' || $modified !== 'update') {
-        $userEntry['varusersresetquota'] = 'true';
-        $userEntry['varusersmodified'] = 'update';
-        $changed = true;
-    }
 
     unset($userEntry);
 }
 
-/*
- * 변경이 있을 때만 resync / write_config 수행
- */
-if ($changed) {
 
-    if (function_exists('freeradius_users_resync')) {
-        freeradius_users_resync();
-    } else {
-        captiveportal_syslog("Reset half monthly: freeradius_users_resync() function not found");
-    }
-
-    captiveportal_syslog("Reset half monthly datausage Wifi user (updated)");
-    write_config("Reset half monthly datausage Wifi user");
-
+if (function_exists('freeradius_users_resync')) {
+    freeradius_users_resync();
+    cp_wireless_log("Reset half monthly datausage Wifi user (updated)");
 } else {
-    captiveportal_syslog("Reset half monthly datausage Wifi user (no changes)");
+    cp_wireless_log("Reset half monthly: freeradius_users_resync() function not found");
 }
+
+
+write_config("Reset half monthly datausage Wifi user");
+
 ?>

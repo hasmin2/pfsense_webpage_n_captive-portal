@@ -6,7 +6,7 @@ global $config;
 // FreeRADIUS users config가 없으면 아무 것도 하지 않음
 $radiusUsers = $config['installedpackages']['freeradius']['config'] ?? null;
 if (!is_array($radiusUsers) || empty($radiusUsers)) {
-    captiveportal_syslog("Reset half monthly: FreeRADIUS config not found or empty");
+    cp_wireless_log("crewpay - Reset half monthly: FreeRADIUS config not found or empty");
     exit;
 }
 
@@ -38,8 +38,8 @@ foreach ($radiusUsers as $idx => $userEntry) {
 // 변경이 있을 때만 반영 작업 수행
 if ($changed) {
     freeradius_users_resync();
-    captiveportal_syslog("Reset PREPAID datausage / allocation (Updated)");
+    cp_wireless_log("crewpay - Reset PREPAID datausage / allocation (Updated)");
     write_config("Reset half monthly datausage Wifi user");
 } else {
-    captiveportal_syslog("Reset PREPAID datausage / allocation (no changes)");
+    cp_wireless_log("crewpay - Reset PREPAID datausage / allocation (no changes)");
 }

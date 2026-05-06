@@ -99,7 +99,7 @@ if ($_POST['widgetkey']) {//???????????
 				if ($user === $userentry['varusersusername']) {
 					unset($config["installedpackages"]["freeradius"]["config"][$item]);  // flag for remove DB for when anyone who is in site is open webpage.
 					unlink_if_exists("/var/log/radacct/datacounter/{$userentry['varusersmaxtotaloctetstimerange']}/used-octets-$user*");
-					captiveportal_syslog("Deleted user".$user);
+					cp_wireless_log("Deleted user: ".$user);
 				}
 			}
 		}
@@ -110,7 +110,7 @@ if ($_POST['widgetkey']) {//???????????
 				if ($user === $userentry['varusersusername']) {
 					$config['installedpackages']['freeradius']['config'][$item]['varusersresetquota'] = "true";
 					$config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
-					captiveportal_syslog("Reset Datausage for".$userentry['varusersusername']);
+					cp_wireless_log("Reset Datausage for: ".$userentry['varusersusername']);
 				}
 			}
 		}
@@ -120,7 +120,7 @@ if ($_POST['widgetkey']) {//???????????
 			foreach ($userlist as $user) {
 				if ($user === $userentry['varusersusername']) {
 					$config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword'] = "1111";
-					captiveportal_syslog("Reset password for".$userentry['varusersusername']);
+					cp_wireless_log("Reset password for: ".$userentry['varusersusername']);
 				}
 			}
 		}

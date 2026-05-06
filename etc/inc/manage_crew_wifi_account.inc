@@ -902,7 +902,7 @@ function del_wifi_user($userlist){
                 unlink_if_exists("/var/log/radacct/datacounter/monthly/max-octets-$user");
                 unlink_if_exists("/var/log/radacct/datacounter/forever/used-octets-$user*");
                 unlink_if_exists("/var/log/radacct/datacounter/forever/max-octets-$user");
-                captiveportal_syslog("Deleted user".$user);
+                cp_wireless_log("Deleted user: ".$user);
             }
         }
     }
@@ -912,9 +912,9 @@ function del_wifi_user($userlist){
 
 function modify_wifi_user($userlist, $modifydata){
     global $config;
-    captiveportal_syslog("modifydata:::".$modifydata['datalimit']);
     foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
         foreach ($userlist as $user) {
+            cp_wireless_log("Modifydata: $user - to ".$modifydata['datalimit'].'MBytes');
             if ($user === $userentry['varusersusername']) {
                 $halftimeperiod = explode('-', $modifydata['timeperiod']);
                 if (count($halftimeperiod) == 2) {
@@ -939,7 +939,7 @@ function modify_wifi_user($userlist, $modifydata){
                 $config["installedpackages"]["freeradius"]["config"][$item]['varusersmaxbandwidthup'] = $modifydata['upspeed'];
                 $config["installedpackages"]["freeradius"]["config"][$item]['varusersterminaltype'] = $modifydata['terminaltype'];
                 $config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
-                captiveportal_syslog("User setting changed".$userentry['varusersusername']);
+                cp_wireless_log("User setting changed: ".$userentry['varusersusername']);
             }
         }
     }
@@ -954,7 +954,7 @@ function reset_wifi_user($userlist){
             if ($user === $userentry['varusersusername']) {
                 $config['installedpackages']['freeradius']['config'][$item]['varusersresetquota'] = "true";
                 $config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
-                captiveportal_syslog("Reset Datausage for".$userentry['varusersusername']);
+                cp_wireless_log("Reset Datausage: ".$userentry['varusersusername']);
             }
         }
     }
@@ -968,10 +968,9 @@ function reset_wifi_user_pw($userlist){
         foreach ($userlist as $user) {
             if ($user === $userentry['varusersusername']) {
                 $config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword'] = "1111";
-                captiveportal_syslog("Reset password for".$userentry['varusersusername']);
+                cp_wireless_log("Reset initial password: ".$userentry['varusersusername']);
             }
         }
-        captiveportal_syslog("Reset password for".$userentry['varusersusername']);
         freeradius_update_user($user);
     }
     write_config("Reset password Wifi user");
@@ -991,10 +990,10 @@ function reset_random_wifi_user_pw($userlist){
                     $pass[] = $alphabet[$n];
                 }
                 $config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword'] = implode($pass);
-                captiveportal_syslog("Reset password for".$userentry['varusersusername']);
-                freeradius_update_user($user);
+                cp_wireless_log("Reset random password: ".$userentry['varusersusername']);
             }
         }
+        freeradius_update_user($user);
     }
     write_config("Reset password Wifi user");
 }

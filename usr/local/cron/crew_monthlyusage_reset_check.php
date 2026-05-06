@@ -123,7 +123,7 @@ if (is_array($radiusUsers) && !empty($radiusUsers)) {
             }
 
             unset($radiusUsers[$item]);
-            captiveportal_syslog("Deleted user: " . $user);
+            cp_wireless_log("Deleted user: " . $user);
 
             $changed = true;
 
@@ -181,11 +181,7 @@ if (
     }
 }
 
-captiveportal_syslog(
-    "Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset"
-);
+cp_wireless_log("Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset");
 
-write_config(
-    "Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset"
-);
+write_config(    "Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset");
 ?>

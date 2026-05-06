@@ -535,7 +535,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || (($cpcfg['auth_method'] ?? '') === 
 			'ip' => $clientip,
 
 		]);
-		//captiveportal_logportalauth($user, $clientmac, $clientip, $auth_result['login_status'] ?? 'ACCEPT-LOGIN');
+		captiveportal_logportalauth($user, $clientmac, $clientip, $auth_result['login_status'] ?? 'ACCEPT-LOGIN');
 		cp_redirect_self(['zone' => $cpzone]);
 		ob_flush();
 		exit;
