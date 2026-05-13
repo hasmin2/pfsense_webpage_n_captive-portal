@@ -79,8 +79,7 @@ class APIFreeRADIUSUserCreate extends APIModel {
 		else { $this->errors[] = APIResponse\get(5000); }
         if (
             empty($this->initial_data['freeradius_username']) ||
-            preg_match("/^crewpay-/i", $this->initial_data['freeradius_username']) ||
-            preg_match("/[^a-zA-Z0-9\.\-_]/", $this->initial_data['freeradius_username'])
+            !preg_match("/[^a-zA-Z0-9\.\-_]/", $this->initial_data['freeradius_username'])
         ) {		# Ensure username is not reserved by the system
 			if (!$this->is_username_reserved($this->initial_data["freeradius_username"])) {
 			# Ensure username is not longer that 32 characters
@@ -103,7 +102,7 @@ class APIFreeRADIUSUserCreate extends APIModel {
 		}
 		else { $this->errors[] = APIResponse\get(5036); }
 
-
+o
     }
 
     private function __validate_priv() {
