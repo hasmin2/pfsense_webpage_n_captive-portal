@@ -349,6 +349,8 @@ if [ $((NOW_TS - last_clean)) -ge 3600 ] 2>/dev/null; then
   echo "$NOW_TS" > "$CLEAN_STAMP" 2>/dev/null || true
   find "$STATE_ROOT" -type f -name "state-*" -mmin +720 -delete >/dev/null 2>&1 || true
   find "$STATE_ROOT" -type f -name "prev-*" -mmin +720 -delete >/dev/null 2>&1 || true
+  # kick 파일 TTL 정리 (24시간 이상 된 파일 삭제)
+  find "$KICKDIR" -type f -mmin +1440 -delete >/dev/null 2>&1 || true
 fi
 
 # ---------- sanity guards ----------
@@ -382,6 +384,9 @@ if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
     echo "timerange=$TIMERANGE"
     echo "sessionid=$SESSIONID"
   } > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATEFILE" 2>/dev/null || true
+
+  # PREVFILE 정리: zero Stop이라도 세션 종료이므로 다음 세션의 delta 오염 방지
+  rm -f "$PREVFILE" 2>/dev/null || true
 
   if [ -f "$KICKMARK" ] || [ -f "$KICKDONE" ]; then
     log "DATACOUNTER IGNORE STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets; kick already marked)"
@@ -449,6 +454,30 @@ if [ "$STATUS" = "Interim-Update" ]; then
     fi
 
     log "DATACOUNTER INTERIM ZERO user=$USERNAME range=$TIMERANGE sid=$SESSIONID streak=$zero_streak"
+
+    # PREVFILE의 ts/sid를 현재 시각으로 갱신한다.
+    # in/out/total은 직전 정상값을 그대로 유지해야 다음 정상 Interim에서
+    # delta = CUR - PREV_정상값 으로 올바르게 계산된다.
+    # (ts만 밀어주지 않으면 zero 구간이 끝난 뒤 delta가 과소 집계됨)
+    if [ -f "$PREVFILE" ]; then
+      # 기존 in/out/total을 읽어서 ts/sid만 교체한다.
+      _p_in="$(grep -E '^in=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      _p_out="$(grep -E '^out=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      _p_total="$(grep -E '^total=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      [ -z "$_p_in" ]    && _p_in=0
+      [ -z "$_p_out" ]   && _p_out=0
+      [ -z "$_p_total" ] && _p_total=0
+      tmp="${PREVFILE}.$$"
+      {
+        echo "ts=$NOW_TS"
+        echo "sid=$SESSIONID"
+        echo "in=$_p_in"
+        echo "out=$_p_out"
+        echo "total=$_p_total"
+      } > "$tmp" 2>/dev/null && mv -f "$tmp" "$PREVFILE" 2>/dev/null || true
+    fi
+    # PREVFILE이 없는 경우(세션 첫 Interim이 zero): 갱신할 기준값이 없으므로 그냥 둔다.
+    # 다음 정상 Interim에서 HAS_PREV=0 → FIRST_POINT=1 로 현재값 전체를 delta로 사용한다.
 
     age=$(( NOW_TS - last_nonzero_ts ))
     if [ "$zero_streak" -ge "$ZERO_STREAK_KICK" ] || { [ "$last_nonzero_ts" -gt 0 ] && [ "$age" -ge "$ZERO_MIN_AGE_KICK" ]; }; then
@@ -606,6 +635,7 @@ lockf -t 10 "$LOCK" sh -c '
   IN_GW="$7"
   OUT_GW="$8"
   LOGFILE="$9"
+  STATE_DIR="${10}"
 
   BASE="/var/log/radacct/datacounter/$TIMERANGE"
   USEDFILE="$BASE/used-octets-$USERNAME"
@@ -614,6 +644,11 @@ lockf -t 10 "$LOCK" sh -c '
   # state/kick 마커 정리 (Stop 들어오면 세션 종료로 보고 청소)
   STATEFILE="/var/run/datacounter-state/$TIMERANGE/state-${USERNAME}-${SESSIONID}"
   rm -f "$STATEFILE" 2>/dev/null || true
+
+  # PREVFILE 정리: Stop 수신 시 다음 세션의 첫 Interim이 잘못된 prev 값을
+  # 참조하지 않도록 반드시 삭제한다.
+  PREVFILE="${STATE_DIR}/prev-${USERNAME}"
+  rm -f "$PREVFILE" 2>/dev/null || true
 
   KICKDIR="/var/run/datacounter-kick"
   rm -f "$KICKDIR/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.sent" 2>/dev/null || true
@@ -643,7 +678,7 @@ total=$((CUR_TOTAL/1048576))MB accum=$((NEW_TOTAL/1048576))MB" >> "$LOGFILE" 2>/
 ' sh \
 "$USERNAME" "$TIMERANGE" "$SESSIONID" \
 "$CUR_IN" "$CUR_OUT" "$CUR_TOTAL" \
-"$IN_GW" "$OUT_GW" "$LOGFILE"
+"$IN_GW" "$OUT_GW" "$LOGFILE" "$STATE_DIR"
 
 RC=$?
 

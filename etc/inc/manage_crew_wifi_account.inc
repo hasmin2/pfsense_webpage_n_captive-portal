@@ -364,12 +364,15 @@ function render_duty_scheduler_html(array $r) {
     return $html;
 }
 
-function build_wifi_rows() {
+function build_wifi_rows(string $isPrepaid): array {
     global $config, $cpzone;
     $cpzone = "crew";
 
+    // ── 1. RADIUS 유저 맵 구성 ──────────────────────────────
     $radiususers = $config['installedpackages']['freeradius']['config'] ?? [];
-    if (!is_array($radiususers)) $radiususers = [];
+    if (!is_array($radiususers)) {
+        $radiususers = [];
+    }
 
     $usersByName = [];
     foreach ($radiususers as $u) {
@@ -378,10 +381,9 @@ function build_wifi_rows() {
             $usersByName[$uname] = $u;
         }
     }
+    ksort($usersByName); // sort($names) + array_keys 대신 직접 정렬
 
-    $names = array_keys($usersByName);
-    sort($names);
-
+    // ── 2. 온라인 세션 맵 구성 ──────────────────────────────
     $cpdb = captiveportal_read_db();
     $onlineByUser = [];
     if (is_array($cpdb)) {
@@ -392,58 +394,63 @@ function build_wifi_rows() {
         }
     }
 
+    // ── 3. 필터 헬퍼 ────────────────────────────────────────
     $searchKeyword = get_userid_search_keyword();
+    $isPrepaidMode = $isPrepaid === 'prepaid';
 
-    $rows = [];
-    foreach ($names as $name) {
+    $shouldSkip = function (string $name) use ($searchKeyword, $isPrepaidMode): bool {
         if ($searchKeyword !== '' && stripos($name, $searchKeyword) === false) {
+            return true;
+        }
+        if ($isPrepaidMode) {
+            return !preg_match('/^crewpay-/i', $name);         // prepaid: crewpay- 만 허용
+        }
+        return (bool)preg_match('/^(crewpay-|synersat)/i', $name); // 일반: 두 패턴 제외
+    };
+
+    // ── 4. 행 구성 ──────────────────────────────────────────
+    $rows = [];
+    foreach ($usersByName as $name => $user) {
+        if ($shouldSkip($name)) {
             continue;
         }
 
-        $eachuser = $usersByName[$name];
+        $timerangeperiod = (string)($user['varusersmaxtotaloctetstimerange'] ?? '');
+        $pointoftime     = strtolower((string)($user['varuserspointoftime'] ?? ''));
+        $used_quota      = (float)check_quota($name, $timerangeperiod);
+        $maxtotal        = (float)($user['varusersmaxtotaloctets'] ?? 0);
 
-        if (!preg_match("/[a-z]*[0-9]{5}/", $name)) continue;
+        if ($used_quota > $maxtotal && $pointoftime === 'forever') {
+            continue;
+        }
 
-        $used_quota = (float)check_quota($name, $eachuser['varusersmaxtotaloctetstimerange']);
-        $maxtotal   = (float)($eachuser['varusersmaxtotaloctets'] ?? 0);
+        $terminaltype = ($user['varusersterminaltype'] ?? '') ?: 'Auto';
+        $timerange    = strtolower($timerangeperiod) === 'forever' ? 'one-time' : $timerangeperiod;
 
-        $pointoftime = strtolower((string)($eachuser['varuserspointoftime'] ?? ''));
-        if ($used_quota > $maxtotal && $pointoftime === 'forever') continue;
-
-        $descr = (string)($eachuser['varusersdescription'] ?? '');
-
-        $terminaltype    = ($eachuser['varusersterminaltype'] ?? '') === '' ? 'Auto' : $eachuser['varusersterminaltype'];
-        $halftime        = (string)($eachuser['varusershalftimeperiod'] ?? '');
-        $accountmodified = (string)($eachuser['varusersmodified'] ?? '');
-        $accountreset    = (string)($eachuser['varusersresetquota'] ?? '');
-        $timerangeperiod = $eachuser['varusersmaxtotaloctetstimerange'] ?? '';
-        $timerange       = strtolower((string)$timerangeperiod) === "forever" ? "one-time" : $timerangeperiod;
-
-        /*$schedule = get_scheduler($name);
-        $scheduleJson = htmlspecialchars(json_encode($schedule, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');*/
-        $scheduleRaw = get_scheduler($name);
-        $scheduleJson = htmlspecialchars(json_encode($scheduleRaw, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
-
-        $sessionId = $onlineByUser[$name] ?? null;
+        $scheduleRaw  = get_scheduler($name);
+        $sessionId    = $onlineByUser[$name] ?? null;
 
         $rows[] = [
-            'ID'            => $name,
-            'Description'   => $descr,
-            'Timerange'     => $timerange,
-            'Type'          => $terminaltype,
-            'Half'          => $halftime,
-            'Modified'      => $accountmodified,
-            'Reset'         => $accountreset,
-            'Used(MB)'      => $used_quota,
-            'Quota(MB)'     => $maxtotal,
-            'Online'        => $sessionId ? 'Y' : 'N',
-            'ScheduleRaw'   => $scheduleRaw,
-            'ScheduleJson'  => $scheduleJson,
-            'SessionId'     => $sessionId,
+            'ID'          => $name,
+            'Description' => (string)($user['varusersdescription'] ?? ''),
+            'Timerange'   => $timerange,
+            'Type'        => $terminaltype,
+            'Half'        => (string)($user['varusershalftimeperiod'] ?? ''),
+            'Modified'    => (string)($user['varusersmodified'] ?? ''),
+            'Reset'       => (string)($user['varusersresetquota'] ?? ''),
+            'Used(MB)'    => $used_quota,
+            'Quota(MB)'   => $maxtotal,
+            'Online'      => $sessionId ? 'Y' : 'N',
+            'ScheduleRaw'  => $scheduleRaw,
+            'ScheduleJson' => htmlspecialchars(
+                json_encode($scheduleRaw, JSON_UNESCAPED_UNICODE),
+                ENT_QUOTES, 'UTF-8'
+            ),
+            'SessionId'   => $sessionId,
             'UsageTooltipExtra' => [
-                'Created At'     => (string)($eachuser['varuserscreatedate'] ?? '-'),
-                'Upload Limit'   => (string)($eachuser['varusersmaxbandwidthup'] ?? ''),
-                'Download Limit' => (string)($eachuser['varusersmaxbandwidthdown'] ?? ''),
+                'Created At'     => (string)($user['varuserscreatedate']        ?? '-'),
+                'Upload Limit'   => (string)($user['varusersmaxbandwidthup']    ?? ''),
+                'Download Limit' => (string)($user['varusersmaxbandwidthdown']  ?? ''),
             ],
         ];
     }
@@ -451,8 +458,8 @@ function build_wifi_rows() {
     return $rows;
 }
 
-function export_wifi_csv() {
-    $rows = build_wifi_rows();
+function export_wifi_csv($isPrepaid) {
+    $rows = build_wifi_rows($isPrepaid);
     global $config;
     $vesselname = $config['system']['vesselinfo']['vesselname'];
     $filename = $vesselname . "_" . date("Ymd_His") . ".csv";
@@ -520,8 +527,8 @@ function export_wifi_csv() {
     exit;
 }
 
-function draw_wifi_contents() {
-    $rows = build_wifi_rows();
+function draw_wifi_contents($isPrepaid) {
+    $rows = build_wifi_rows($isPrepaid);
     $rtnstr = '';
 
     $queryParams = [];
@@ -541,6 +548,11 @@ function draw_wifi_contents() {
     }
 
     foreach ($rows as $r) {
+        $rawId       = $r['ID'];
+        $displayname = htmlspecialchars(
+            strncasecmp($rawId, 'crewpay-', 8) === 0 ? substr($rawId, 8) : $rawId,
+            ENT_QUOTES, 'UTF-8'
+        );
         $name  = htmlspecialchars($r['ID'], ENT_QUOTES, 'UTF-8');
         $descr = htmlspecialchars($r['Description'], ENT_QUOTES, 'UTF-8');
 
@@ -548,7 +560,7 @@ function draw_wifi_contents() {
         $rtnstr .= '<td data-th="" data-th-width="0" data-width="100"><div class="check v1">';
         $rtnstr .= '<input type="checkbox" name="userlist[]" id="'.$name.'" value="'.$name.'">';
         $rtnstr .= '<label for="'.$name.'"></label></div></td>';
-        $rtnstr .= '<td data-th="ID" data-th-width="100" data-width="100">'.$name.'</td>';
+        $rtnstr .= '<td data-th="ID" data-th-width="100" data-width="100">'.$displayname.'</td>';
         $rtnstr .= '<td><form action="crew_account.php" method="post" style="display:flex; align-items:center; gap:10px; margin:0;">
           <input type="text" name="description" value="'.$descr.'" style="border:1px solid #ccc; outline:none; padding:5px;">
           <input type="hidden" name="userid" value="'.$name.'">

@@ -6,28 +6,13 @@ include_once("terminal_status.inc");
 include_once("manage_crew_wifi_account.inc");
 
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
-    export_wifi_csv("non-Prepaid");
+    export_wifi_csv("prepaid");
 }
 
 global $adminlogin;
 $controldisplay="";
 $addbutton="";
-if($adminlogin==="admin"||$adminlogin==="vesseladmin") {
-    $controldisplay = '<button class="btn md line-gray" onclick="confirm_exportCsv()"><i class="ic-reset gray"></i>Export CSV</button>
-                       <button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>
-                       <button class="btn md line-gray" onclick="confirm_setRandomPw()"><i class="ic-reset gray"></i>SET RANDOM PW</button>
-                       <button class="btn md line-gray" onclick="confirm_resetData()"><i class="ic-reset gray"></i>Reset Data</button>
-                            <button class="btn md line-gray" onclick="confirm_checkPw()"><i class="ic-check gray"></i>Check PW</button>
-                            <button class="btn md line-gray" onclick="confirm_delUser()"><i class="ic-delete gray"></i>Delete</button></>';
-    $setupbutton = '<button class="btn-setting" onclick="popOpenAndDim(\'pop-modify-manage\', true)">Modify Voucher</button>';
-    $addbutton = '<button class="btn-setting" onclick="popOpenAndDim(\'pop-set-manage\', true)">Add Voucher</button>';
-}
-else if($adminlogin==="customer"){
-    $controldisplay = '<button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>';
-}
-else{
-    $controldisplay="";
-}
+
 $cpzone='crew';
 
 if (isset($cpzone) && !empty($cpzone) && isset($a_cp[$cpzone]['zoneid'])) {
@@ -46,16 +31,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['userid'], $_POST['sch
         if (is_array($decoded)) {
             $schedulePost = [];
 
-            /*
-             * schedule_json 구조 예:
-             * [
-             *   {"userid":"crewpay-Sktl00700"},
-             *   {"active":1,"from_hour":"00","from_min":"30","to_hour":"13","to_min":"00","days":["wed","thu"]},
-             *   ...
-             * ]
-             *
-             * userid 객체는 건너뛰고, active/from_hour가 있는 row만 처리
-             */
             $rowIndex = 0;
 
             foreach ($decoded as $row) {
@@ -142,40 +117,10 @@ if ($_POST['description'] && $_POST['userid']) {
 }
 //print_r($_POST);
 
-$table_contents = draw_wifi_contents("non-Prepaid");
+$table_contents = draw_wifi_contents("prepaid");
 $gateways = return_gateways_array();
 $gateways_status = return_gateways_status(true);
-$terminaltypeoption='<option value="">Auto</option>';
-foreach ($gateways as $gname => $gateway){
-    if (!startswith($gateway['terminal_type'], 'vpn')){
-        $terminaltypeoption .= '<option value="'.$gname.'">'.$gname.'</option>';
-    }
-}
 
-if (isset($_POST['modifyusers'])) {
-
-    // 1) 기본 POST 값
-    $userlist = $_POST['userlist'] ?? [];
-
-    // 2) modifydata 파싱
-    $modifydata = [];
-    if (!empty($_POST['modifydata'])) {
-        parse_str($_POST['modifydata'], $modifydata);
-    }
-
-    // 이후 처리
-    modify_wifi_user($userlist, $modifydata);
-    exit;
-}
-
-if(isset($_POST['resetpw'])){ reset_wifi_user_pw($_POST['userlist']); exit(0);}
-if(isset($_POST['setrandompw'])){ reset_random_wifi_user_pw($_POST['userlist']); exit(0);}
-if(isset($_POST['resetdata'])){reset_wifi_user($_POST['userlist']);exit(0);}
-if(isset($_POST['deluser'])){del_wifi_user($_POST['userlist']);exit(0);}
-if ($_POST['dataamount']){
-    create_wifi_user($_POST['dataamount'], $_POST['vouchernumber'], $_POST['randpwd'], $_POST['terminaltype'], $_POST['timeperiod']);
-    echo '<script> location.replace("crew_account_processing.php");</script>';
-}
 ?>
 <!DOCTYPE html>
 <html lang="ko">
@@ -495,7 +440,7 @@ if ($_POST['dataamount']){
     <div id="content">
         <div class="headline-wrap">
             <div class="title-area">
-                <p class="headline">Manage Crew Account</p>
+                <p class="headline">PrePaid Account</p>
             </div>
             <div class="etc-area">
                 <div style="display:flex; align-items:center; gap:20px;">
@@ -504,7 +449,6 @@ if ($_POST['dataamount']){
                     <?= $addbutton ?>
                 </div>            </div>
         </div>
-
         <div class="contents">
             <div class="container">
                 <div class="manage-wrap">
@@ -654,102 +598,6 @@ if ($_POST['dataamount']){
         </div>
     </div>
 </form>
-<form name="registerusers" id='registerusers' method="post" action="/crew_account.php">
-    <div class="popup layer pop-set-manage">
-        <div class="pop-head">
-            <p class="title">Create Voucher</p>
-        </div>
-        <div class="pop-cont">
-            <div class="form">
-                <div class="form-tit">
-                    <p class="tit">Allow data (MB)</p>
-                </div>
-                <div class="form-cont">
-                    <input type="text" name="dataamount" id="dataamount"
-                           inputmode="numeric" autocomplete="off" pattern="[0-9]*">                </div>
-            </div>
-            <div class="form mt20">
-                <div class="form-tit">
-                    <p class="tit"># of Vouchers</p>
-                </div>
-                <div class="form-cont">
-                    <input type="text" name="vouchernumber" id="vouchernumber"
-                           inputmode="numeric" autocomplete="off" pattern="[0-9]*">                </div>
-            </div>
-
-            <div class="check v1 mt30">
-                <input type="checkbox" name="randpwd" id="randpwd" value="randpwd">
-                <label for="randpwd">
-                    <p>Generate random password?</p>
-                </label>
-            </div>
-            <hr class="line v1 mt30">
-            <div class="form mt30">
-                <div class="form-tit">
-                    <p class="tit">Terminal Type</p>
-                </div>
-                <div class="form-cont">
-                    <select name="terminaltype" id="terminaltype" class="select v1">
-                        <?php echo $terminaltypeoption;?>
-
-
-                    </select>
-                </div>
-                <div class="form-tit">
-                    <p class="tit">Reset every...</p>
-                </div>
-                <div class="form-cont">
-                    <select name="timeperiod" id="timeperiod" class="select v1">
-                        <option value="Monthly">Monthly</option>
-                        <option value="half-Monthly">Half-Monthly</option>
-                        <option value="Weekly">Weekly</option>
-                        <option value="Daily">Daily</option>
-                        <option value="Forever">one-time</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-        <div class="pop-foot">
-            <button type='button' class="btn md fill-mint" onclick="submit_registerusers()"><i class="ic-submit"></i>APPLY</button>
-            <button type='button' class="btn md fill-dark" onclick="popClose('pop-set-manage')"><i class="ic-cancel"></i>CANCEL</button>
-        </div>
-    </div>
-</form>
-
-<form name="crewscheduler" id="crewscheduler" method="post" action="/crew_account.php">
-    <input type="hidden" name="userid" id="userIdHidden">
-    <input type="hidden" name="schedule_json" id="scheduleJsonHidden">
-
-    <div class="popup layer pop-set-scheduler sched-popup">
-        <div class="pop-head">
-            <p class="title">Suspension Setup</p>
-            <button type="button" class="sched-close" onclick="popClose('pop-set-scheduler')">×</button>
-        </div>
-
-        <div class="pop-cont sched-modal-body">
-            <table class="sched-setup-table">
-                <thead>
-                <tr>
-                    <th style="width:40px">#</th>
-                    <th style="width:50px">ACT</th>
-                    <th style="width:180px">FROM</th>
-                    <th style="width:30px"></th>
-                    <th style="width:180px">TO</th>
-                    <th style="width:200px">DAY</th>
-                </tr>
-                </thead>
-                <tbody id="sched-body"></tbody>
-            </table>
-        </div>
-
-        <div class="pop-foot sched-modal-footer">
-            <button type="button" class="btn md fill-mint" onclick="submit_crewscheduler()">APPLY</button>
-            <button type="button" class="btn md fill-dark" onclick="popClose('pop-set-scheduler')">CANCEL</button>
-        </div>
-    </div>
-</form>
-
-
 </body>
 <script type="text/javascript">
     function initCrewScheduler() {

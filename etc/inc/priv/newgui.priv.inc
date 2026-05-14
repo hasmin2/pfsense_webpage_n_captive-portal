@@ -30,5 +30,6 @@ $priv_list['page-newGUIAccess']['match'][] = "network_control.php*";
 $priv_list['page-newGUIAccess']['match'][] = "terminal.php*";
 $priv_list['page-newGUIAccess']['match'][] = "lan_svrstatus.php*";
 $priv_list['page-newGUIAccess']['match'][] = "crew_account.php*";
+$priv_list['page-newGUIAccess']['match'][] = "prepaid_account.php*";
 $priv_list['page-newGUIAccess']['match'][] = "download_center.php*";
 ?>
