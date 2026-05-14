@@ -52,7 +52,7 @@ foreach ($config['interfaces'] as $ifname => $ifcfg) {
 if(isset($_POST['gmt'])){
     $config['time_offset_enabled']['time_offset'] = $_POST['gmt'];
     write_config("time_offset changed to ", $config['time_offset_enabled']['time_offset']);
-    echo '<script> location.replace("index_processing.php");</script>';
+    echo '<script> location.replace("processing.php?to=index.php");</script>';
 }
 if(isset($_POST['gmtcheck'])){
     $config['time_offset_enabled']['gmtcheck'] = $_POST['gmtcheck'];

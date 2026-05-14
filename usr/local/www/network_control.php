@@ -43,7 +43,7 @@ if($adminlogin==='admin'){
 init_config_arr(array('captiveportal'));
 if(isset($_POST['crewcheckboxvalue'])){
     toggle_crew_wifi($_POST['crewcheckboxvalue']);
-    echo '<script> location.replace("network_control_processing.php");</script>';
+    echo '<script> location.replace("processing.php?to=network_control.php");</script>';
 
 }
 if(isset($_POST['terminate_crewinternetvalue'])){
@@ -51,17 +51,17 @@ if(isset($_POST['terminate_crewinternetvalue'])){
     if($_POST['terminate_crewinternetvalue']==1) {
         captiveportal_disconnect_all($term_cause = 6, $logoutReason = "DISCONNECT", $carp_loop = false);
     }
-    echo '<script> location.replace("network_control_processing.php");</script>';
+    echo '<script> location.replace("processing.php?to=network_control.php");</script>';
 }
 if($_POST['ban_all_ip']){
     $config['ban_all_ip'] = $_POST['ban_all_ip'];
     write_config("Ban all IP address");
-    echo '<script> location.replace("network_control_processing.php");</script>';
+    echo '<script> location.replace("processing.php?to=network_control.php");</script>';
 }
 
 if(isset($_POST['terminate_bizinternetvalue'])){
     terminate_biz_internet($_POST['terminate_bizinternetvalue'], $config['ban_all_ip']);
-    echo '<script> location.replace("network_control_processing.php");</script>';
+    echo '<script> location.replace("processing.php?to=network_control.php");</script>';
 }
 
 $gateways = return_gateways_array();

@@ -101,8 +101,6 @@ class APIFreeRADIUSUserCreate extends APIModel {
 			else { $this->errors[] = APIResponse\get(5037);	}
 		}
 		else { $this->errors[] = APIResponse\get(5036); }
-
-o
     }
 
     private function __validate_priv() {

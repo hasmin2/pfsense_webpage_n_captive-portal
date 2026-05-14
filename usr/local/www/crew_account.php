@@ -46,16 +46,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['userid'], $_POST['sch
         if (is_array($decoded)) {
             $schedulePost = [];
 
-            /*
-             * schedule_json 구조 예:
-             * [
-             *   {"userid":"crewpay-Sktl00700"},
-             *   {"active":1,"from_hour":"00","from_min":"30","to_hour":"13","to_min":"00","days":["wed","thu"]},
-             *   ...
-             * ]
-             *
-             * userid 객체는 건너뛰고, active/from_hour가 있는 row만 처리
-             */
             $rowIndex = 0;
 
             foreach ($decoded as $row) {
@@ -127,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['userid'], $_POST['sch
 
             set_scheduler($userid, $schedulePost);
 
-            echo '<script> location.replace("crew_account_processing.php");</script>';
+            echo '<script> location.replace("processing.php?to=crew_account.php");</script>';
             exit;
         }
     }
@@ -138,7 +128,7 @@ if ($_POST['description'] && $_POST['userid']) {
     $description=$_POST['description'];
     $userid=$_POST['userid'];
     set_description($userid, $description);
-    echo '<script> location.replace("crew_account_processing.php");</script>';
+    echo '<script> location.replace("processing.php?to=crew_account.php");</script>';
 }
 //print_r($_POST);
 
@@ -173,8 +163,8 @@ if(isset($_POST['setrandompw'])){ reset_random_wifi_user_pw($_POST['userlist']);
 if(isset($_POST['resetdata'])){reset_wifi_user($_POST['userlist']);exit(0);}
 if(isset($_POST['deluser'])){del_wifi_user($_POST['userlist']);exit(0);}
 if ($_POST['dataamount']){
-    create_wifi_user($_POST['dataamount'], $_POST['vouchernumber'], $_POST['randpwd'], $_POST['terminaltype'], $_POST['timeperiod']);
-    echo '<script> location.replace("crew_account_processing.php");</script>';
+    create_wifi_user($_POST['dataamount'], $_POST['vouchernumber'], $_POST['randpwd'], $_POST['terminaltype'], $_POST['timeperiod'], $_POST['issimplefied']);
+    echo '<script> location.replace("processing.php?to=crew_account.php");</script>';
 }
 ?>
 <!DOCTYPE html>
@@ -681,6 +671,11 @@ if ($_POST['dataamount']){
                 <input type="checkbox" name="randpwd" id="randpwd" value="randpwd">
                 <label for="randpwd">
                     <p>Generate random password?</p>
+                </label>
+                <br>
+                <input type="checkbox" name="issimplefied" id="issimplefied" value="issimplefied">
+                <label for="issimplefied">
+                    <p>Create simplefied ID?</p>
                 </label>
             </div>
             <hr class="line v1 mt30">

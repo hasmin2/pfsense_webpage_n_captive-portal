@@ -102,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['userid'], $_POST['sch
 
             set_scheduler($userid, $schedulePost);
 
-            echo '<script> location.replace("crew_account_processing.php");</script>';
+            echo '<script> location.replace("processing.php?to=prepaid_account.php");</script>';
             exit;
         }
     }
@@ -113,7 +113,7 @@ if ($_POST['description'] && $_POST['userid']) {
     $description=$_POST['description'];
     $userid=$_POST['userid'];
     set_description($userid, $description);
-    echo '<script> location.replace("crew_account_processing.php");</script>';
+    echo '<script> location.replace("processing.php?to=prepaid_account.php");</script>';
 }
 //print_r($_POST);
 
@@ -507,7 +507,7 @@ $gateways_status = return_gateways_status(true);
                                 <!--<th><button class="btn-ic btn-sort"></button></th>-->
                             </tr>
                             </thead>
-                            <tbody id="crew_account_table">
+                            <tbody id="prepaid_account_table">
                             <?= $table_contents;?>
                             </tbody>
                         </table>
@@ -517,7 +517,7 @@ $gateways_status = return_gateways_status(true);
         </div>
     </div>
 </div>
-<form name="modifyusers" id='modifyusers' method="post" action="/crew_account.php">
+<form name="modifyusers" id='modifyusers' method="post" action="/prepaid_account.php">
     <div class="popup layer pop-modify-manage">
         <div class="pop-head">
             <p class="title">Modify Voucher</p>
@@ -598,6 +598,39 @@ $gateways_status = return_gateways_status(true);
         </div>
     </div>
 </form>
+<form name="crewscheduler" id="crewscheduler" method="post" action="/prepaid_account.php">
+    <input type="hidden" name="userid" id="userIdHidden">
+    <input type="hidden" name="schedule_json" id="scheduleJsonHidden">
+
+    <div class="popup layer pop-set-scheduler sched-popup">
+        <div class="pop-head">
+            <p class="title">Suspension Setup</p>
+            <button type="button" class="sched-close" onclick="popClose('pop-set-scheduler')">×</button>
+        </div>
+
+        <div class="pop-cont sched-modal-body">
+            <table class="sched-setup-table">
+                <thead>
+                <tr>
+                    <th style="width:40px">#</th>
+                    <th style="width:50px">ACT</th>
+                    <th style="width:180px">FROM</th>
+                    <th style="width:30px"></th>
+                    <th style="width:180px">TO</th>
+                    <th style="width:200px">DAY</th>
+                </tr>
+                </thead>
+                <tbody id="sched-body"></tbody>
+            </table>
+        </div>
+
+        <div class="pop-foot sched-modal-footer">
+            <button type="button" class="btn md fill-mint" onclick="submit_crewscheduler()">APPLY</button>
+            <button type="button" class="btn md fill-dark" onclick="popClose('pop-set-scheduler')">CANCEL</button>
+        </div>
+    </div>
+</form>
+
 </body>
 <script type="text/javascript">
     function initCrewScheduler() {
@@ -822,17 +855,14 @@ $gateways_status = return_gateways_status(true);
 
         form.submit();
     }
-    function confirm_exportCsv() {
-        window.location.href = "crew_account.php?export=csv";
-    }
     function refreshValue() {
         $.ajax({
-            url: "./crew_account.php",
+            url: "./prepaid_account.php",
             data: {data_update: "true"},
             type: 'POST',
             dataType: 'json',
             success: function (result) {
-                $("#crew_account_table").html(result.crew_wifi_table);
+                $("#prepaid_account_table").html(result.crew_wifi_table);
             },
             error: function (request, status, error) {
                 alert(error);
@@ -844,121 +874,7 @@ $gateways_status = return_gateways_status(true);
         popClose('pop-set-manage');
         $('#registerusers').submit();
     }
-    function submit_modifyusers() {
-        if (!confirm("Selected users are being set this configure, OK to continue.")) return;
 
-        // 1) modifyusers 폼 데이터 → __csrf_magic 포함됨
-        let data = $("#modifyusers").serialize();   // 여기 안에 __csrf_magic 있어야 함
-
-        // 2) PHP에서 트리거로 쓰는 플래그 이름은 modifyusers (s 붙음)
-        data += "&modifyusers=true";
-
-        // 3) 체크된 userlist 추가
-        let userlist = $('input[name="userlist[]"]:checked')
-            .map(function () { return $(this).val(); })
-            .get();
-
-        for (let i = 0; i < userlist.length; i++) {
-            data += "&userlist[]=" + encodeURIComponent(userlist[i]);
-        }
-
-        // (선택) modifydata 로 폼 내용 통째로 넘기고 싶으면:
-        data += "&modifydata=" + encodeURIComponent($("#modifyusers").serialize());
-
-        $.ajax({
-            url: "crew_account.php",   // 스킴/호스트 동일하게, ./ 도 가능
-            type: "POST",
-            data: data,                // ★ 그냥 문자열
-            // processData / contentType 기본값 유지 (건들지 말기)
-            success: function (result) {
-                location.replace("crew_account.php");
-            }
-        });
-
-        popClose('pop-modify-manage');
-    }
-
-    function confirm_resetPw(){
-        if(window.confirm('Selected user passwords will be reset to 1111, OK to continue.')){
-            $.ajax({
-                url: "./crew_account.php",
-                data: {resetpw: "true", userlist: $('input[name="userlist[]"]:checked').map(function(){return $(this).val();}).get()},
-                type: 'POST',
-                success: function (result) {
-                    location.replace("crew_account.php");
-                },
-                error: function (result) {
-                }
-            })
-        }
-        else { return false; }
-    }
-    function confirm_setRandomPw(){
-        if(window.confirm('Selected users password would be set to random 6 digits, OK to continue.')){
-            $.ajax({
-                url: "./crew_account.php",
-                data: {setrandompw: "true", userlist: $('input[name="userlist[]"]:checked').map(function(){return $(this).val();}).get()},
-                type: 'POST',
-                success: function (result) {
-                    location.replace("crew_account.php");
-                },
-                error: function (result) {
-                }
-            })
-        }
-        else { return false; }
-    }
-    function confirm_resetData(){
-        if(window.confirm(`Selected user data usage will be reset, OK to continue.`)){
-            $.ajax({
-                url: "./crew_account.php",
-                data: {resetdata: "true", userlist: $('input[name="userlist[]"]:checked').map(function(){return $(this).val();}).get()},
-                type: 'POST',
-                success: function (result) {
-                    location.replace("crew_account.php");
-                },
-                error: function (result) {
-                }
-            })
-        }
-        else { return false; }
-    }
-    function confirm_delUser(){
-        if(window.confirm(`Selected user IDs are being deleted, OK to continue.`)){
-            $.ajax({
-                url: "./crew_account.php",
-                data: {deluser: "true", userlist: $('input[name="userlist[]"]:checked').map(function () {return $(this).val();}).get()},
-                type: 'POST',
-                success: function (result) {
-                    location.replace("crew_account.php");
-                },
-                error: function (result) {}
-            })
-        }
-    }
-    function confirm_checkPw(){
-        var pwlist = "<?php echo check_wifi_account_password(); ?>".split("|||");
-        var idlist = "<?php echo check_wifi_account_id(); ?>".split("|||");
-        var result="";
-        var resultlist = document.getElementsByName('userlist[]');
-        for(let idcount=0; idcount<resultlist.length; idcount++){
-            if(resultlist[idcount].checked){
-                for(let idlistcount=0; idlistcount<idlist.length; idlistcount++){
-                    if(resultlist[idcount].value===idlist[idlistcount]){
-                        result += "\n" + resultlist[idcount].value + " : " + pwlist[idlistcount]+"<br>";
-                    }
-                }
-            }
-        }
-        if(result===''){
-            document.getElementById('message_text').innerHTML = "Please select a user";
-            return popOpenAndDim("pop-message",true);
-        }
-        else{
-            document.getElementById('message_text').innerHTML = result;
-            return popOpenAndDim("pop-message",true);
-        }
-    }
     function selectAll(selectAll)  {
         const checkboxes = document.getElementsByName('userlist[]');
         checkboxes.forEach((checkbox) => {checkbox.checked = selectAll.checked;})

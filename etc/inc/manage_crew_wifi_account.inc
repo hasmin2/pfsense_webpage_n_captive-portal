@@ -546,7 +546,12 @@ function draw_wifi_contents($isPrepaid) {
     if (!empty($queryParams)) {
         $orderQuery = http_build_query($queryParams) . '&';
     }
-
+    if($isPrepaid==='prepaid') {
+        $redirurl = 'prepaid_account.php';
+    }
+    else{
+        $redirurl = 'crew_account.php';
+    }
     foreach ($rows as $r) {
         $rawId       = $r['ID'];
         $displayname = htmlspecialchars(
@@ -561,7 +566,7 @@ function draw_wifi_contents($isPrepaid) {
         $rtnstr .= '<input type="checkbox" name="userlist[]" id="'.$name.'" value="'.$name.'">';
         $rtnstr .= '<label for="'.$name.'"></label></div></td>';
         $rtnstr .= '<td data-th="ID" data-th-width="100" data-width="100">'.$displayname.'</td>';
-        $rtnstr .= '<td><form action="crew_account.php" method="post" style="display:flex; align-items:center; gap:10px; margin:0;">
+        $rtnstr .= '<td><form action='.$redirurl.' method="post" style="display:flex; align-items:center; gap:10px; margin:0;">
           <input type="text" name="description" value="'.$descr.'" style="border:1px solid #ccc; outline:none; padding:5px;">
           <input type="hidden" name="userid" value="'.$name.'">
           <button type="submit" style="background:none; border:none; padding:0;">
@@ -1010,7 +1015,7 @@ function reset_random_wifi_user_pw($userlist){
     write_config("Reset password Wifi user");
 }
 
-function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltype, $timeperiod){
+function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltype, $timeperiod, $issimplefied){
     global $config;
 
     $created_users = array();
@@ -1018,8 +1023,18 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
     if (!isset($config['installedpackages']['freeradius']['config']) || !is_array($config['installedpackages']['freeradius']['config'])) {
         $config['installedpackages']['freeradius']['config'] = array();
     }
-
-    $userprefix = strtolower($terminaltype) . 'user';
+    echo($issimplefied);
+    if($issimplefied){
+        if ($terminaltype == "") {
+            $userprefix = 'usr';
+        }
+        else{
+            $userprefix = getSyllableAbbr(strtolower($terminaltype));
+        }
+    }
+    else{
+        $userprefix = strtolower($terminaltype) . 'user';
+    }
     $userpostfix = 0;
 
     foreach ($config['installedpackages']['freeradius']['config'] as $item) {
@@ -1046,8 +1061,12 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
     }
 
     for ($usercount = $userpostfix; $usercount < $userpostfix + $vouchernumber; $usercount++) {
-        $username = $userprefix . str_pad($usercount, 5, '0', STR_PAD_LEFT);
-
+        if($issimplefied){
+            $username = $userprefix . str_pad($usercount, 3, '0', STR_PAD_LEFT);
+        }
+        else{
+            $username = $userprefix . str_pad($usercount, 5, '0', STR_PAD_LEFT);
+        }
         $userexist = false;
         foreach ($config['installedpackages']['freeradius']['config'] as $item) {
             if (isset($item['varusersusername']) && $username === $item['varusersusername']) {
@@ -1139,4 +1158,22 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
 
     return $created_users;
 }
+
+function getSyllableAbbr(string $word, int $maxLen = 4): string {
+    // CamelCase 감지 (대문자가 2개 이상이면)
+    preg_match_all('/[A-Z]/', $word, $matches);
+    if (count($matches[0]) > 1) {
+        return implode('', $matches[0]);
+    }
+
+    // 음절 단위로 쪼개기 (자음* + 모음 패턴)
+    preg_match_all('/[^aeiou]*[aeiou]+/i', $word, $syllables);
+    if (empty($syllables[0])) {
+        return strtoupper(substr($word, 0, $maxLen));
+    }
+
+    $abbr = implode('', array_map(function($s) { return strtoupper($s[0]); }, $syllables[0]));
+    return strtolower(substr($abbr, 0, $maxLen));
+}
+
 ?>
