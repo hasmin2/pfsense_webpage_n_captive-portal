@@ -922,40 +922,18 @@ function captiveportal_prune_old() {
         } else {
             $utrafficquota = $trafficquota;
         }*/
-        $used   = (int)getcurquota_cached($cpentry[5], $cpentry[2]);
-        $max    = (int)getmaxquota_cached($cpentry[4]);
-        $remain = ($max - $used) * 1048576;
+        $used_mb   = (float)getcurquota_cached($cpentry[5], $cpentry[2]);
+        $max_mb    = (float)getmaxquota_cached($cpentry[4]);
+        $remain_mb = $max_mb - $used_mb;
 
         if (!$timedout) {
-            if ($remain <= 0) {
-                $timedout = true;
-                $term_cause = 10; // NAS-Request
-                $logout_cause = "$remain, $used, $max REMAIN is negative, exiting";
-            } else {
-                // optional: skip heavy volume check when plenty remains
-                $CHECK_THRESHOLD = 500 * 1024 * 1024; // 500MB
-                if ($remain < $CHECK_THRESHOLD) {
-                    $volume = getVolume($cpentry[2], $cpentry[3]);
-                    $in  = isset($volume['input_bytes'])  ? (int)$volume['input_bytes']  : 0;
-                    $out = isset($volume['output_bytes']) ? (int)$volume['output_bytes'] : 0;
-
-                    if (($in + $out) > $remain) {
-                        $timedout = true;
-                        $term_cause = 10; // NAS-Request
-                        $logout_cause = "$remain OVER QUOTA EXCEEDED";
-                    }
-                }
+            if ($remain_mb <= 0) {
+                $timedout     = true;
+                $term_cause   = 10;
+                $logout_cause = "QUOTA EXHAUSTED: used={$used_mb}MB max={$max_mb}MB";
             }
+            // getVolume() 비교 로직 전체 제거
         }
-        /*$utrafficquota = $maxbyte - $minbyte;
-        if (!$timedout && $utrafficquota > 0) {
-            $volume = getVolume($cpentry[2], $cpentry[3]);
-            if (($volume['input_bytes'] + $volume['output_bytes']) > $utrafficquota) {
-                $timedout = true;
-                $term_cause = 10; // NAS-Request
-                $logout_cause = 'ULTRA QUOTA EXCEEDED';
-            }
-        }*/
 
         if ($timedout) {
             captiveportal_disconnect($cpentry, $term_cause, $stop_time);
@@ -3770,17 +3748,13 @@ function getcurquota($sessionid) {
         return "0.00";
     }
 
-    // sanitize (auth 셸과 유사)
     $safeUser = preg_replace('/[^0-9a-zA-Z._:-]/', 'X', (string)$username);
 
-    // timerange 찾기
     $timerange = '';
-    if (!empty($config['installedpackages']['freeradius']['config']) && is_array($config['installedpackages']['freeradius']['config'])) {
-        foreach ($config['installedpackages']['freeradius']['config'] as $item => $value) {
-            if (($value['varusersusername'] ?? '') === $username) {
-                $timerange = (string)($value['varusersmaxtotaloctetstimerange'] ?? '');
-                break; // 첫 매칭에서 종료
-            }
+    foreach ($config['installedpackages']['freeradius']['config'] as $value) {
+        if (($value['varusersusername'] ?? '') === $username) {
+            $timerange = (string)($value['varusersmaxtotaloctetstimerange'] ?? '');
+            break;
         }
     }
 
@@ -3795,7 +3769,7 @@ function getcurquota($sessionid) {
 
     $usagenum = 0;
 
-    // 1) BASE exact file
+    // BASE 파일
     if (is_file($baseFile) && is_readable($baseFile)) {
         $line = trim((string)@file_get_contents($baseFile));
         if (preg_match('/^\d+$/', $line)) {
@@ -3803,22 +3777,17 @@ function getcurquota($sessionid) {
         }
     }
 
-    // 2) SESSION files exact-prefix only
+    // SESSION 파일
     $files = glob($sessionPattern, GLOB_NOSORT);
     if (is_array($files)) {
         foreach ($files as $filepath) {
-            if (!is_file($filepath) || !is_readable($filepath)) {
-                continue;
-            }
+            if (!is_file($filepath) || !is_readable($filepath)) continue;
             $line = trim((string)@file_get_contents($filepath));
             if (preg_match('/^(\d+)/', $line, $m)) {
                 $usagenum += (int)$m[1];
             }
         }
     }
-
-    // ⚠️ getVolume($clientip)는 여기서 더하지 않음 (중복 가능성 높음)
-    // 필요하면 UI 참고값으로 별도 함수/별도 라벨로 표시
 
     return number_format($usagenum / 1048576, 2, '.', '');
 }
@@ -4607,9 +4576,39 @@ function renderLogoutPortalHtml(array $data = []): string
                         <span class="label">Connection Info</span>
                         <span class="value"><?= h($loginUsers) ?> users currently logged in.</span>
                     </div>
+                    <!--Kbps 그래프 영역 시작 -->
+                    <div class="quota-box" style="margin:0 0 12px 0; display:block;">
 
+                        <!-- 접기/펼치기 헤더 -->
+                        <div id="kbpsToggleHeader" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none; padding:4px 0;">
+                            <span class="label" style="display:block; margin:0;">Usage history</span>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span id="kbpsToggleIcon" style="font-size:13px; color:#6b7785; transition:transform 0.2s;">▼</span>
+                            </div>
+                        </div>
+
+                        <!-- 펼쳐지는 본문 (기본 숨김) -->
+                        <div id="kbpsGraphBody" style="display:none; margin-top:8px;">
+
+                            <!-- 범위 버튼 -->
+                            <div style="display:flex; gap:6px; align-items:center; margin-bottom:10px; justify-content:flex-end;">
+                                <button type="button" id="range24h"   class="mini-btn range-btn active-range" data-hours="24">24h</button>
+                                <button type="button" id="range7d"    class="mini-btn range-btn"              data-hours="168">7d</button>
+                                <button type="button" id="rangeMonth" class="mini-btn range-btn"              data-mode="month">Month</button>
+                                <button type="button" id="refreshBtn" class="mini-btn" title="Refresh">&#x21bb;</button>
+                            </div>
+
+                            <div id="kbpsGraphError" style="margin-bottom:8px; color:#c62828; font-size:12px;"></div>
+                            <div id="kbpsLoading"   style="font-size:12px; color:#555; margin-bottom:6px; display:none;">Loading…</div>
+
+                            <div style="width:100%; background:#fff; border:1px solid #d9e1ec; border-radius:12px; padding:12px; box-sizing:border-box;">
+                                <canvas id="kbpsChart" height="260" style="width:100%; display:block;"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <!--Kbps 그래프 영역 끝-->
                     <!-- SPEED PROFILE -->
-                    <div class="quota-box" style="margin:0 0 12px 0;">
+                    <!--div class="quota-box" style="margin:0 0 12px 0;">
                         <span class="label">Speed Option</span>
 
                         <div class="speed-slider-wrap">
@@ -4631,7 +4630,7 @@ function renderLogoutPortalHtml(array $data = []): string
                                 </label>
                             <?php endforeach; ?>
                         </div>
-                    </div>
+                    </div-->
                     <input type="hidden" name="update_speed_profile" id="update_speed_profile" value="0">
                     <input type="hidden" name="login_user" value="<?= h($loginUserValue) ?>">
                 </div>
@@ -4666,255 +4665,270 @@ function renderLogoutPortalHtml(array $data = []): string
             </div>
             <input name="change_pw" type="hidden" value="<?=h($loginUserValue)?>">
 
-            <!-- Kbps 그래프 영역 시작 >
-
-            <div class="helper">
-                Login errors, session notices, and other messages are displayed in the alert area above.
-            </div>
-        </form>
-        <div class="quota-box" style="margin:0 0 12px 0; display:block;">
-            <span class="label" style="display:block; margin-bottom:8px;">Kbps Graph</span>
-
-            <textarea
-                id="kbpsJsonInput"
-                style="width:100%; min-height:120px; box-sizing:border-box; font-family:monospace; font-size:12px;"
-            >[
-{"time":"10:00","kbps":120},
-{"time":"10:05","kbps":180},
-{"time":"10:10","kbps":90},
-{"time":"10:15","kbps":240},
-{"time":"10:20","kbps":200},
-{"time":"10:25","kbps":310}
-]</textarea
-
-            <div style="margin-top:8px;">
-                <input type="button" id="drawKbpsGraphBtn" class="mini-btn" value="Draw Graph">
-            </div>
-
-            <div id="kbpsGraphError" style="margin-top:8px; color:#c62828; font-size:12px;"></div>
-            <div style="margin-top:12px; width:100%; background:#fff; border:1px solid #d9e1ec; border-radius:12px; padding:12px; box-sizing:border-box;">
-                <canvas id="kbpsChart" height="260" style="width:100%; display:block;"></canvas>
-            </div>
-        </div>
-         Kbps 그래프 영역 끝 -->
-
     </div>
     </section>
     </div>
     <script>
         (function () {
-            var textarea = document.getElementById('kbpsJsonInput');
-            var button = document.getElementById('drawKbpsGraphBtn');
-            var canvas = document.getElementById('kbpsChart');
-            var errorBox = document.getElementById('kbpsGraphError');
+            var INFLUX_URL  = 'http://192.168.209.210:8086/query';
+            var INFLUX_DB   = 'wifiusage';
+            var LOGIN_USER  = '<?= addslashes(h($loginUserValue)) ?>';
 
-            if (!textarea || !button || !canvas) {
-                return;
-            }
+            var canvas    = document.getElementById('kbpsChart');
+            var errorBox  = document.getElementById('kbpsGraphError');
+            var loadingEl = document.getElementById('kbpsLoading');
+            var header    = document.getElementById('kbpsToggleHeader');
+            var body      = document.getElementById('kbpsGraphBody');
+            var toggleIcon = document.getElementById('kbpsToggleIcon');
 
-            function parseInput(jsonText) {
-                var raw = JSON.parse(jsonText);
-
-                if (!Array.isArray(raw)) {
-                    throw new Error('JSON must be an array.');
-                }
-
-                return raw.map(function (item, index) {
-                    // 1) 숫자 배열 지원: [120, 180, 90]
-                    if (typeof item === 'number') {
-                        return {
-                            label: String(index + 1),
-                            value: item
-                        };
+            /* ── 접기/펼치기 ── */
+            var isOpen = false;
+            if (header) {
+                header.addEventListener('click', function () {
+                    isOpen = !isOpen;
+                    body.style.display = isOpen ? 'block' : 'none';
+                    toggleIcon.style.transform = isOpen ? 'rotate(180deg)' : 'rotate(0deg)';
+                    if (isOpen && !chartDrawn) {
+                        fetchAndDraw();
                     }
-
-                    // 2) 객체 배열 지원: [{"time":"10:00","kbps":120}]
-                    if (item && typeof item === 'object') {
-                        var label = '';
-                        if (typeof item.time !== 'undefined') {
-                            label = String(item.time);
-                        } else if (typeof item.label !== 'undefined') {
-                            label = String(item.label);
-                        } else {
-                            label = String(index + 1);
-                        }
-
-                        var value = null;
-                        if (typeof item.kbps !== 'undefined') {
-                            value = Number(item.kbps);
-                        } else if (typeof item.value !== 'undefined') {
-                            value = Number(item.value);
-                        }
-
-                        if (!isFinite(value)) {
-                            throw new Error('Invalid kbps/value at index ' + index);
-                        }
-
-                        return {
-                            label: label,
-                            value: value
-                        };
-                    }
-
-                    throw new Error('Invalid item at index ' + index);
                 });
             }
 
+            if (!canvas) { return; }
+
+            var rangeMode  = 'hours';  /* 'hours' | 'month' */
+            var rangeHours = 24;
+            var chartDrawn = false;
+
+            /* ── 시간 범위 버튼 ── */
+            document.querySelectorAll('.range-btn').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation(); /* 헤더 클릭 이벤트 버블링 방지 */
+                    document.querySelectorAll('.range-btn').forEach(function (b) {
+                        b.classList.remove('active-range');
+                    });
+                    this.classList.add('active-range');
+
+                    var mode = this.getAttribute('data-mode');
+                    if (mode === 'month') {
+                        rangeMode = 'month';
+                    } else {
+                        rangeMode  = 'hours';
+                        rangeHours = parseInt(this.getAttribute('data-hours'), 10);
+                    }
+                    fetchAndDraw();
+                });
+            });
+
+            var refreshBtn = document.getElementById('refreshBtn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    fetchAndDraw();
+                });
+            }
+
+            /* ── InfluxDB 쿼리 생성 ── */
+            function buildQuery() {
+                var whereUser = LOGIN_USER
+                    ? ' AND "user" = \'' + LOGIN_USER + '\''
+                    : '';
+
+                var timeFilter, interval;
+
+                if (rangeMode === 'month') {
+                    /* 이번달 1일 00:00:00 UTC 기준 */
+                    var now = new Date();
+                    var firstDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+                    var iso = firstDay.toISOString(); /* e.g. 2026-05-01T00:00:00.000Z */
+                    timeFilter = ' time >= \'' + iso + '\'';
+                    interval   = '1h';
+                } else {
+                    timeFilter = ' time >= now() - ' + rangeHours + 'h';
+                    interval   = rangeHours <= 24 ? '5m' : '1h';
+                }
+
+                return 'SELECT non_negative_derivative(mean("total_bytes"), 1s) / 125 AS "kbps"'
+                    + ' FROM "datacounter_interim_delta"'
+                    + ' WHERE' + timeFilter
+                    + whereUser
+                    + ' GROUP BY time(' + interval + ') fill(0)';
+            }
+
+            /* ── fetch & 차트 그리기 ── */
+            function fetchAndDraw() {
+                if (!errorBox || !loadingEl) { return; }
+                errorBox.textContent = '';
+                loadingEl.style.display = 'block';
+
+                var url = INFLUX_URL
+                    + '?db=' + encodeURIComponent(INFLUX_DB)
+                    + '&q='  + encodeURIComponent(buildQuery());
+
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', url, true);
+                xhr.timeout = 15000;
+
+                xhr.onload = function () {
+                    loadingEl.style.display = 'none';
+                    if (xhr.status !== 200) {
+                        errorBox.textContent = 'HTTP error: ' + xhr.status;
+                        return;
+                    }
+                    try {
+                        var json   = JSON.parse(xhr.responseText);
+                        var points = parseInfluxResult(json);
+                        drawChart(points);
+                        chartDrawn = true;
+                    } catch (e) {
+                        errorBox.textContent = 'Parse error: ' + e.message;
+                    }
+                };
+
+                xhr.onerror = xhr.ontimeout = function () {
+                    loadingEl.style.display = 'none';
+                    errorBox.textContent = 'Network error: InfluxDB에 연결할 수 없습니다.';
+                };
+
+                xhr.send();
+            }
+
+            /* ── InfluxDB 응답 파싱 ── */
+            function parseInfluxResult(json) {
+                var points = [];
+                try {
+                    var series  = json.results[0].series[0];
+                    var timeIdx = series.columns.indexOf('time');
+                    var kbpsIdx = series.columns.indexOf('kbps');
+
+                    series.values.forEach(function (row) {
+                        var ts   = new Date(row[timeIdx]);
+                        var kbps = row[kbpsIdx] === null ? 0 : +row[kbpsIdx];
+
+                        var label;
+                        if (rangeMode === 'month') {
+                            /* 월간: 날짜 + 시 */
+                            label = (ts.getMonth() + 1) + '/' + ts.getDate()
+                                + ' ' + ts.getHours().toString().padStart(2, '0') + 'h';
+                        } else if (rangeHours <= 24) {
+                            label = ts.getHours().toString().padStart(2, '0')
+                                + ':' + ts.getMinutes().toString().padStart(2, '0');
+                        } else {
+                            label = (ts.getMonth() + 1) + '/' + ts.getDate()
+                                + ' ' + ts.getHours().toString().padStart(2, '0') + 'h';
+                        }
+                        points.push({ label: label, value: kbps });
+                    });
+                } catch (e) {
+                    /* series 없음 = 데이터 없음 → 빈 배열 반환 */
+                }
+                return points;
+            }
+
+            /* ── Canvas 차트 렌더링 ── */
             function drawChart(points) {
-                var ctx = canvas.getContext('2d');
-                var ratio = window.devicePixelRatio || 1;
-                var rect = canvas.getBoundingClientRect();
+                var ctx      = canvas.getContext('2d');
+                var ratio    = window.devicePixelRatio || 1;
+                var rect     = canvas.getBoundingClientRect();
                 var cssWidth = Math.max(300, rect.width || canvas.parentNode.clientWidth || 600);
                 var cssHeight = 260;
 
-                canvas.width = cssWidth * ratio;
+                canvas.width  = cssWidth  * ratio;
                 canvas.height = cssHeight * ratio;
                 canvas.style.height = cssHeight + 'px';
 
                 ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
                 ctx.clearRect(0, 0, cssWidth, cssHeight);
 
-                var padding = { top: 20, right: 20, bottom: 40, left: 55 };
-                var chartWidth = cssWidth - padding.left - padding.right;
-                var chartHeight = cssHeight - padding.top - padding.bottom;
+                var pad = { top: 20, right: 20, bottom: 40, left: 60 };
+                var cw  = cssWidth  - pad.left - pad.right;
+                var ch  = cssHeight - pad.top  - pad.bottom;
 
-                if (chartWidth <= 0 || chartHeight <= 0) {
-                    return;
-                }
+                if (cw <= 0 || ch <= 0) { return; }
 
-                var maxValue = 0;
-                for (var i = 0; i < points.length; i++) {
-                    if (points[i].value > maxValue) {
-                        maxValue = points[i].value;
-                    }
-                }
-                if (maxValue <= 0) {
-                    maxValue = 10;
-                }
-
-                var roundedMax = Math.ceil(maxValue / 50) * 50;
+                var maxVal = 0;
+                points.forEach(function (p) { if (p.value > maxVal) maxVal = p.value; });
+                if (maxVal <= 0) maxVal = 10;
+                var roundedMax = Math.ceil(maxVal / 50) * 50;
                 if (roundedMax < 100) roundedMax = 100;
 
-                // 배경
+                /* 배경 */
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, cssWidth, cssHeight);
 
-                // 격자선
+                /* 격자 + Y 라벨 */
                 var gridCount = 5;
-                ctx.strokeStyle = '#e7edf5';
-                ctx.lineWidth = 1;
                 ctx.font = '12px Arial';
-                ctx.fillStyle = '#6b7785';
-                ctx.textAlign = 'right';
-                ctx.textBaseline = 'middle';
-
                 for (var g = 0; g <= gridCount; g++) {
-                    var y = padding.top + (chartHeight / gridCount) * g;
-                    ctx.beginPath();
-                    ctx.moveTo(padding.left, y);
-                    ctx.lineTo(padding.left + chartWidth, y);
-                    ctx.stroke();
-
-                    var valueLabel = Math.round(roundedMax - (roundedMax / gridCount) * g);
-                    ctx.fillText(valueLabel + ' Kbps', padding.left - 8, y);
+                    var gy = pad.top + (ch / gridCount) * g;
+                    ctx.strokeStyle = '#e7edf5'; ctx.lineWidth = 1;
+                    ctx.beginPath(); ctx.moveTo(pad.left, gy); ctx.lineTo(pad.left + cw, gy); ctx.stroke();
+                    ctx.fillStyle = '#6b7785'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+                    ctx.fillText(
+                        Math.round(roundedMax - (roundedMax / gridCount) * g) + ' K',
+                        pad.left - 6, gy
+                    );
                 }
 
-                // 축
-                ctx.strokeStyle = '#aebdce';
-                ctx.lineWidth = 1.2;
+                /* 축 */
+                ctx.strokeStyle = '#aebdce'; ctx.lineWidth = 1.2;
                 ctx.beginPath();
-                ctx.moveTo(padding.left, padding.top);
-                ctx.lineTo(padding.left, padding.top + chartHeight);
-                ctx.lineTo(padding.left + chartWidth, padding.top + chartHeight);
+                ctx.moveTo(pad.left, pad.top);
+                ctx.lineTo(pad.left, pad.top + ch);
+                ctx.lineTo(pad.left + cw, pad.top + ch);
                 ctx.stroke();
 
                 if (points.length === 0) {
-                    ctx.fillStyle = '#8a94a6';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('No data', padding.left + chartWidth / 2, padding.top + chartHeight / 2);
+                    ctx.fillStyle = '#8a94a6'; ctx.textAlign = 'center';
+                    ctx.fillText('No data', pad.left + cw / 2, pad.top + ch / 2);
                     return;
                 }
 
-                var stepX = (points.length === 1) ? 0 : chartWidth / (points.length - 1);
+                var stepX = (points.length === 1) ? 0 : cw / (points.length - 1);
+                function getX(i) { return pad.left + stepX * i; }
+                function getY(v) { return pad.top  + ch  - (v / roundedMax) * ch; }
 
-                function getX(i) {
-                    return padding.left + (stepX * i);
-                }
-
-                function getY(value) {
-                    return padding.top + chartHeight - (value / roundedMax) * chartHeight;
-                }
-
-                // 영역 채우기
+                /* 영역 채우기 */
                 ctx.beginPath();
-                for (var j = 0; j < points.length; j++) {
-                    var x = getX(j);
-                    var y2 = getY(points[j].value);
-                    if (j === 0) ctx.moveTo(x, y2);
-                    else ctx.lineTo(x, y2);
-                }
-                ctx.lineTo(getX(points.length - 1), padding.top + chartHeight);
-                ctx.lineTo(getX(0), padding.top + chartHeight);
+                points.forEach(function (p, i) {
+                    if (i === 0) ctx.moveTo(getX(i), getY(p.value));
+                    else         ctx.lineTo(getX(i), getY(p.value));
+                });
+                ctx.lineTo(getX(points.length - 1), pad.top + ch);
+                ctx.lineTo(getX(0), pad.top + ch);
                 ctx.closePath();
-                ctx.fillStyle = 'rgba(52, 152, 219, 0.18)';
-                ctx.fill();
+                ctx.fillStyle = 'rgba(52,152,219,0.18)'; ctx.fill();
 
-                // 라인
+                /* 라인 */
                 ctx.beginPath();
-                for (var k = 0; k < points.length; k++) {
-                    var lx = getX(k);
-                    var ly = getY(points[k].value);
-                    if (k === 0) ctx.moveTo(lx, ly);
-                    else ctx.lineTo(lx, ly);
-                }
-                ctx.strokeStyle = '#3498db';
-                ctx.lineWidth = 2;
-                ctx.stroke();
+                points.forEach(function (p, i) {
+                    if (i === 0) ctx.moveTo(getX(i), getY(p.value));
+                    else         ctx.lineTo(getX(i), getY(p.value));
+                });
+                ctx.strokeStyle = '#3498db'; ctx.lineWidth = 2; ctx.stroke();
 
-                // 포인트
-                for (var m = 0; m < points.length; m++) {
-                    var px = getX(m);
-                    var py = getY(points[m].value);
-
+                /* 포인트 */
+                points.forEach(function (p, i) {
                     ctx.beginPath();
-                    ctx.arc(px, py, 3.5, 0, Math.PI * 2);
-                    ctx.fillStyle = '#3498db';
-                    ctx.fill();
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 1.5;
-                    ctx.stroke();
-                }
+                    ctx.arc(getX(i), getY(p.value), 3.5, 0, Math.PI * 2);
+                    ctx.fillStyle   = '#3498db'; ctx.fill();
+                    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+                });
 
-                // X축 라벨
-                ctx.fillStyle = '#6b7785';
-                ctx.font = '12px Arial';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-
-                var labelSkip = 1;
-                if (points.length > 12) labelSkip = Math.ceil(points.length / 12);
-
-                for (var n = 0; n < points.length; n++) {
-                    if (n % labelSkip !== 0 && n !== points.length - 1) continue;
-                    ctx.fillText(points[n].label, getX(n), padding.top + chartHeight + 8);
-                }
+                /* X 라벨 */
+                ctx.fillStyle = '#6b7785'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+                var skip = Math.max(1, Math.ceil(points.length / 12));
+                points.forEach(function (p, i) {
+                    if (i % skip !== 0 && i !== points.length - 1) { return; }
+                    ctx.fillText(p.label, getX(i), pad.top + ch + 8);
+                });
             }
 
-            function renderFromTextarea() {
-                errorBox.textContent = '';
-                try {
-                    var points = parseInput(textarea.value);
-                    drawChart(points);
-                } catch (e) {
-                    errorBox.textContent = 'JSON parse error: ' + e.message;
-                }
-            }
+            /* 리사이즈 시 열려 있을 때만 재렌더 */
+            window.addEventListener('resize', function () {
+                if (isOpen) { fetchAndDraw(); }
+            });
 
-            button.addEventListener('click', renderFromTextarea);
-            window.addEventListener('resize', renderFromTextarea);
-
-            // 최초 1회 렌더링
-            renderFromTextarea();
         })();
 
         (function () {

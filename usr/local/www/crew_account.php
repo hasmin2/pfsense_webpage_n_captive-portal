@@ -1011,7 +1011,7 @@ if ($_POST['dataamount']){
 
         // (선택) modifydata 로 폼 내용 통째로 넘기고 싶으면:
         data += "&modifydata=" + encodeURIComponent($("#modifyusers").serialize());
-
+        location.replace("processing.php?to=crew_account.php");
         $.ajax({
             url: "crew_account.php",   // 스킴/호스트 동일하게, ./ 도 가능
             type: "POST",
@@ -1027,6 +1027,7 @@ if ($_POST['dataamount']){
 
     function confirm_resetPw(){
         if(window.confirm('Selected user passwords will be reset to 1111, OK to continue.')){
+            location.replace("processing.php?to=crew_account.php");
             $.ajax({
                 url: "./crew_account.php",
                 data: {resetpw: "true", userlist: $('input[name="userlist[]"]:checked').map(function(){return $(this).val();}).get()},
@@ -1042,16 +1043,19 @@ if ($_POST['dataamount']){
     }
     function confirm_setRandomPw(){
         if(window.confirm('Selected users password would be set to random 6 digits, OK to continue.')){
+
+            location.replace("processing.php?to=crew_account.php");
+            // 2. 동시에 AJAX 실행 (백그라운드)
             $.ajax({
                 url: "./crew_account.php",
-                data: {setrandompw: "true", userlist: $('input[name="userlist[]"]:checked').map(function(){return $(this).val();}).get()},
-                type: 'POST',
-                success: function (result) {
-                    location.replace("crew_account.php");
+                data: {
+                    setrandompw: "true",
+                    userlist: $('input[name="userlist[]"]:checked')
+                        .map(function(){ return $(this).val(); }).get()
                 },
-                error: function (result) {
-                }
-            })
+                type: 'POST'
+                // success 콜백 불필요 — processing.php가 알아서 리디렉션
+            });
         }
         else { return false; }
     }
