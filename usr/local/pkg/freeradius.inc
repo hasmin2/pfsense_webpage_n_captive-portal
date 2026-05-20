@@ -4676,8 +4676,7 @@ function freeradius_datacounter_auth_resync() {
 LOGFILE="/var/log/wireless.log"
 
 log() {
-	printf '%s datacounter_auth: %s
-' "$(date '+%b %e %H:%M:%S')" "$*" >> "$LOGFILE" 2>/dev/null
+	printf '%s datacounter_auth: %s\n' "$(date '+%b %e %H:%M:%S')" "$*" >> "$LOGFILE" 2>/dev/null
 }
 
 # 로그 파일 없으면 생성 시도
@@ -4724,8 +4723,7 @@ USEDOCTETSUSERNAME=`/usr/bin/awk '
 		SUM += $1
 	}
 	END {
-		printf "%.0f
-", SUM
+		printf "%.0f\n", SUM
 	}
 ' "$USED_FILE"* 2>/dev/null`
 
@@ -4734,10 +4732,8 @@ if [ -z "$USEDOCTETSUSERNAME" ]; then
 fi
 
 ### Convert bytes to MB only for log output
-MAXOCTETSUSERNAMEMB=`/usr/bin/awk -v v="$MAXOCTETSUSERNAME" 'BEGIN { printf "%.2f
-", v / 1048576 }'`
-USEDOCTETSUSERNAMEMB=`/usr/bin/awk -v v="$USEDOCTETSUSERNAME" 'BEGIN { printf "%.2f
-", v / 1048576 }'`
+MAXOCTETSUSERNAMEMB=`/usr/bin/awk -v v="$MAXOCTETSUSERNAME" 'BEGIN { printf "%.2f\n", v / 1048576 }'`
+USEDOCTETSUSERNAMEMB=`/usr/bin/awk -v v="$USEDOCTETSUSERNAME" 'BEGIN { printf "%.2f\n", v / 1048576 }'`
 
 ### Compare bytes, not MB
 if [ "$MAXOCTETSUSERNAME" -gt "$USEDOCTETSUSERNAME" ]; then
@@ -4770,8 +4766,10 @@ function freeradius_datacounter_acct_resync() {
 # - Adds per-interim session file (SESSFILE) and accumulates on Stop.
 # - Includes strong sanity guards to prevent overflow/garbage attributes from corrupting totals.
 # - Logs are written to /var/log/wireless.log (and include range/status/sid).
-# - ✅ state 파일은 /var/run 아래로 이동: 리부트 시 자동 청소됨.
-# - ✅ Stop이 안 오는 세션 대비로 /var/run state TTL 청소(가볍게, 1시간에 1번) 포함.
+# - state 파일은 /var/run 아래로 이동: 리부트 시 자동 청소됨.
+# - Stop이 안 오는 세션 대비로 /var/run state TTL 청소(가볍게, 1시간에 1번) 포함.
+# - InfluxDB에는 현재 세션 누적값이 아니라 직전 Interim 대비 delta 값을 저장.
+# - 세션 변경/카운터 감소 시 reset으로 판단하고 현재값을 delta로 저장.
 #
 
 # ---------- helpers ----------
@@ -4783,18 +4781,17 @@ LOGFILE="/var/log/wireless.log"
 
 log() {
   # Usage: log "message..."
-  printf '%s datacounter: %s
-' "$(date '+%b %e %H:%M:%S')" "$*" >> "$LOGFILE" 2>/dev/null
+  printf '%s datacounter: %s\n' "$(date '+%b %e %H:%M:%S')" "$*" >> "$LOGFILE" 2>/dev/null
 }
 
 # Influx line protocol tag escape (space, comma, equal, backslash)
 esc_tag() {
   # tag escape: \ , space =
   printf '%s' "$1" | sed \
-    -e 's/\/\\/g' \
-    -e 's/,/\,/g' \
-    -e 's/ /\ /g' \
-    -e 's/=/\=/g'
+    -e 's/\\/\\\\/g' \
+    -e 's/,/\\,/g' \
+    -e 's/ /\\ /g' \
+    -e 's/=/\\=/g'
 }
 
 # ---------- InfluxDB helpers (1.8.x) ----------
@@ -4867,18 +4864,173 @@ influx_write_line() {
   rc=$?
 
   if [ $rc -ne 0 ]; then
-    log "INFLUX WRITE FAIL rc=$rc url=${INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '
-' ' ' | cut -c1-300)"
+    log "INFLUX WRITE FAIL rc=$rc url=${INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '\n' ' ' | cut -c1-300)"
     return 1
   fi
 
   echo "$resp" | grep -q " 204 " || {
-    log "INFLUX WRITE NON-204 url=${INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '
-' ' ' | cut -c1-300)"
+    log "INFLUX WRITE NON-204 url=${INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '\n' ' ' | cut -c1-300)"
     return 1
   }
 
   return 0
+}
+
+# ---------- Central InfluxDB export helpers (1.8.x) ----------
+# 중앙/가상 서버용. 여러 선박의 동일 USER ID가 중복될 수 있으므로
+# measurement를 선박별로 나누지 않고 vessel_imo/user tag로 구분한다.
+# DB는 이미 생성되어 있다고 가정하므로 CREATE DATABASE 방어 코드는 넣지 않는다.
+CENTRAL_INFLUX_HOST="10.8.128.1"
+CENTRAL_INFLUX_PORT="8086"
+CENTRAL_INFLUX_DB="wifiusage"
+CENTRAL_INFLUX_PRECISION="m"
+CENTRAL_INFLUX_TIMEOUT="1"
+CENTRAL_INFLUX_CACHE_SEC="600"
+CENTRAL_MEASUREMENT="wifi_usage"
+
+# 인증이 켜져 있으면 채우세요 (비우면 인증 없이 동작)
+CENTRAL_INFLUX_USER=""
+CENTRAL_INFLUX_PASS=""
+
+CENTRAL_INFLUX_BASE="http://${CENTRAL_INFLUX_HOST}:${CENTRAL_INFLUX_PORT}"
+CENTRAL_INFLUX_WRITE_URL="${CENTRAL_INFLUX_BASE}/write?db=${CENTRAL_INFLUX_DB}&precision=${CENTRAL_INFLUX_PRECISION}"
+CENTRAL_INFLUX_READY_MARK="/tmp/influx_ready_central_${CENTRAL_INFLUX_DB}.stamp"
+
+# vessel_imo 조회용 DB 정보
+VESSEL_DB_HOST="192.168.209.210"
+VESSEL_DB_PORT="3306"
+VESSEL_DB_NAME="radius"
+VESSEL_DB_USER="radius"
+VESSEL_DB_PASS="radius"
+VESSEL_TABLE="vesselinfo"
+VESSEL_COLUMN="vessel_imo"
+VESSEL_CACHE="/tmp/datacounter_vessel_imo.cache"
+VESSEL_FAIL_MARK="/tmp/datacounter_vessel_imo.fail"
+VESSEL_CACHE_SEC="3600"
+VESSEL_FAIL_CACHE_SEC="300"
+
+mysql_client_bin() {
+  command -v mysql 2>/dev/null && return 0
+  command -v mariadb 2>/dev/null && return 0
+  return 1
+}
+
+get_vessel_imo() {
+  now="$(date +%s)"
+
+  # 성공 캐시 사용
+  if [ -f "$VESSEL_CACHE" ]; then
+    cache_ts="$(sed -n '1p' "$VESSEL_CACHE" 2>/dev/null | tr -cd '0-9')"
+    cache_val="$(sed -n '2p' "$VESSEL_CACHE" 2>/dev/null | sed 's/[^0-9a-zA-Z.:_-]/X/g')"
+    [ -z "$cache_ts" ] && cache_ts=0
+    age=$(( now - cache_ts ))
+    if [ -n "$cache_val" ] && [ "$age" -ge 0 ] && [ "$age" -lt "$VESSEL_CACHE_SEC" ]; then
+      printf '%s' "$cache_val"
+      return 0
+    fi
+  fi
+
+  # 실패 캐시 사용: DB 장애 시 Interim마다 DB 접속 시도하지 않도록 함
+  if [ -f "$VESSEL_FAIL_MARK" ]; then
+    fail_ts="$(cat "$VESSEL_FAIL_MARK" 2>/dev/null | tr -cd '0-9')"
+    [ -z "$fail_ts" ] && fail_ts=0
+    age=$(( now - fail_ts ))
+    if [ "$age" -ge 0 ] && [ "$age" -lt "$VESSEL_FAIL_CACHE_SEC" ]; then
+      return 1
+    fi
+  fi
+
+  MYSQL_BIN="$(mysql_client_bin)" || {
+    echo "$now" > "$VESSEL_FAIL_MARK" 2>/dev/null || true
+    log "CENTRAL INFLUX SKIP reason=mysql_client_not_found"
+    return 1
+  }
+
+  # vesselinfo에는 이 클라이언트 선박의 고유 vessel_imo가 들어 있다고 가정한다.
+  vessel_raw="$($MYSQL_BIN \
+    -N -B \
+    -h "$VESSEL_DB_HOST" \
+    -P "$VESSEL_DB_PORT" \
+    -u "$VESSEL_DB_USER" \
+    --password="$VESSEL_DB_PASS" \
+    "$VESSEL_DB_NAME" \
+    -e "SELECT ${VESSEL_COLUMN} FROM ${VESSEL_TABLE} WHERE ${VESSEL_COLUMN} IS NOT NULL AND ${VESSEL_COLUMN} <> '' LIMIT 1;" \
+    2>/dev/null | head -n 1)"
+
+  vessel_imo="$(printf '%s' "$vessel_raw" | sed 's/[^0-9a-zA-Z.:_-]/X/g')"
+
+  if [ -z "$vessel_imo" ]; then
+    echo "$now" > "$VESSEL_FAIL_MARK" 2>/dev/null || true
+    log "CENTRAL INFLUX SKIP reason=vessel_imo_not_found db=${VESSEL_DB_HOST}:${VESSEL_DB_PORT}/${VESSEL_DB_NAME}/${VESSEL_TABLE}"
+    return 1
+  fi
+
+  {
+    echo "$now"
+    echo "$vessel_imo"
+  } > "${VESSEL_CACHE}.$$" 2>/dev/null && mv -f "${VESSEL_CACHE}.$$" "$VESSEL_CACHE" 2>/dev/null || true
+
+  rm -f "$VESSEL_FAIL_MARK" 2>/dev/null || true
+  printf '%s' "$vessel_imo"
+  return 0
+}
+
+curl_central_influx() {
+  if [ -n "$CENTRAL_INFLUX_USER" ] && [ -n "$CENTRAL_INFLUX_PASS" ]; then
+    curl -sS -m "$CENTRAL_INFLUX_TIMEOUT" --connect-timeout "$CENTRAL_INFLUX_TIMEOUT" -u "${CENTRAL_INFLUX_USER}:${CENTRAL_INFLUX_PASS}" "$@"
+  else
+    curl -sS -m "$CENTRAL_INFLUX_TIMEOUT" --connect-timeout "$CENTRAL_INFLUX_TIMEOUT" "$@"
+  fi
+}
+
+central_influx_prepare() {
+  now="$(date +%s)"
+  if [ -f "$CENTRAL_INFLUX_READY_MARK" ]; then
+    last="$(cat "$CENTRAL_INFLUX_READY_MARK" 2>/dev/null)"
+    [ -z "$last" ] && last=0
+    age=$(( now - last ))
+    if [ "$age" -ge 0 ] && [ "$age" -lt "$CENTRAL_INFLUX_CACHE_SEC" ]; then
+      return 0
+    fi
+  fi
+
+  # 중앙 DB는 이미 생성되어 있다고 가정. health/ping만 확인한다.
+  curl_central_influx -I "${CENTRAL_INFLUX_BASE}/ping" >/dev/null 2>&1 || return 1
+
+  echo "$now" > "$CENTRAL_INFLUX_READY_MARK" 2>/dev/null || true
+  return 0
+}
+
+central_influx_write_line() {
+  line="$1"
+  resp="$(curl_central_influx -i -H 'Content-Type: text/plain' --data-binary "$line" "${CENTRAL_INFLUX_WRITE_URL}" 2>&1)"
+  rc=$?
+
+  if [ $rc -ne 0 ]; then
+    log "CENTRAL INFLUX WRITE FAIL rc=$rc url=${CENTRAL_INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '\n' ' ' | cut -c1-300)"
+    return 1
+  fi
+
+  echo "$resp" | grep -q " 204 " || {
+    log "CENTRAL INFLUX WRITE NON-204 url=${CENTRAL_INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '\n' ' ' | cut -c1-300)"
+    return 1
+  }
+
+  return 0
+}
+
+central_influx_export_usage() {
+  vessel_imo="$(get_vessel_imo)" || return 1
+
+  # 필수 구분자 외 sid/debug 문자열은 넣지 않는다.
+  # 중앙 저장 구조:
+  #   measurement: wifi_usage
+  #   tags: vessel_imo, user
+  #   fields: in_bytes, out_bytes, total_bytes (숫자 only)
+  line="${CENTRAL_MEASUREMENT},vessel_imo=$(esc_tag "$vessel_imo"),user=$(esc_tag "$USERNAME") in_bytes=${in_bytes}i,out_bytes=${out_bytes}i,total_bytes=${total_bytes}i ${ts_m}"
+
+  central_influx_prepare >/dev/null 2>&1 || return 1
+  central_influx_write_line "$line"
 }
 
 # ---------- args (raw) ----------
@@ -4915,13 +5067,17 @@ SESSFILE="$BASE/used-octets-$USERNAME-$SESSIONID"
 KICKDIR="/var/run/datacounter-kick"
 mkdir -p "$KICKDIR" 2>/dev/null || true
 
-# ---------- state (✅ move to /var/run => reboot clears) ----------
+# ---------- state (in /var/run => reboot clears) ----------
 STATE_ROOT="/var/run/datacounter-state"
 STATE_DIR="${STATE_ROOT}/${TIMERANGE}"
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 STATEFILE="${STATE_DIR}/state-${USERNAME}-${SESSIONID}"
 
-# ✅ 핵심: kick 파일이 소비/삭제돼도 재생성하지 않도록 마커 유지 (also in /var/run)
+# 사용자/range 기준 직전 Interim 값 저장 파일.
+# SESSIONID를 일부러 빼서 세션 재시작 후 카운터가 작아지는 상황도 감지한다.
+PREVFILE="${STATE_DIR}/prev-${USERNAME}"
+
+# kick 파일이 소비/삭제돼도 재생성하지 않도록 마커 유지
 KICKMARK="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.sent"
 KICKDONE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.done"
 
@@ -4937,8 +5093,6 @@ if [ ! -f "$USEDFILE" ]; then
 fi
 
 # ---------- state TTL cleanup (lightweight) ----------
-# Stop이 안 오는 세션이 계속 state를 남길 수 있으니,
-# 1시간에 1번만, 12시간 이상 된 state를 /var/run에서 청소.
 CLEAN_STAMP="${STATE_ROOT}/.cleanup_stamp"
 NOW_TS="$(date +%s)"
 last_clean=0
@@ -4946,9 +5100,13 @@ if [ -f "$CLEAN_STAMP" ]; then
   last_clean="$(cat "$CLEAN_STAMP" 2>/dev/null)"
   [ -z "$last_clean" ] && last_clean=0
 fi
+
 if [ $((NOW_TS - last_clean)) -ge 3600 ] 2>/dev/null; then
   echo "$NOW_TS" > "$CLEAN_STAMP" 2>/dev/null || true
   find "$STATE_ROOT" -type f -name "state-*" -mmin +720 -delete >/dev/null 2>&1 || true
+  find "$STATE_ROOT" -type f -name "prev-*" -mmin +720 -delete >/dev/null 2>&1 || true
+  # kick 파일 TTL 정리 (24시간 이상 된 파일 삭제)
+  find "$KICKDIR" -type f -mmin +1440 -delete >/dev/null 2>&1 || true
 fi
 
 # ---------- sanity guards ----------
@@ -4983,13 +5141,14 @@ if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
     echo "sessionid=$SESSIONID"
   } > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATEFILE" 2>/dev/null || true
 
-  # ✅ 이미 kick 요청 만든 적 있으면 재생성 금지
+  # PREVFILE 정리: zero Stop이라도 세션 종료이므로 다음 세션의 delta 오염 방지
+  rm -f "$PREVFILE" 2>/dev/null || true
+
   if [ -f "$KICKMARK" ] || [ -f "$KICKDONE" ]; then
     log "DATACOUNTER IGNORE STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets; kick already marked)"
     exit 0
   fi
 
-  # (선택) stop_zero도 kick 요청 남기기
   KICKFILE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick"
   if [ ! -f "$KICKFILE" ]; then
     {
@@ -5000,7 +5159,6 @@ if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
       echo "acctsessionid=$SESSIONID"
     } > "${KICKFILE}.$$" 2>/dev/null && mv -f "${KICKFILE}.$$" "$KICKFILE" 2>/dev/null || true
 
-    # ✅ 마커 생성(핵심)
     : > "$KICKMARK" 2>/dev/null || true
   fi
 
@@ -5027,7 +5185,6 @@ if [ "$STATUS" = "Interim-Update" ]; then
     zero_streak=0
     last_nonzero_ts="$NOW_TS"
 
-    # ✅ traffic이 다시 나오면 과거 kick 마커는 해제(일시적 오류 복구)
     [ -f "$KICKMARK" ] && rm -f "$KICKMARK" 2>/dev/null || true
     [ -f "$KICKDONE" ] && rm -f "$KICKDONE" 2>/dev/null || true
   fi
@@ -5045,15 +5202,38 @@ if [ "$STATUS" = "Interim-Update" ]; then
 
   # ---- if zero, do NOT overwrite SESSFILE, do NOT export influx ----
   ZERO_STREAK_KICK=2
-  ZERO_MIN_AGE_KICK=1200  # 20min
+  ZERO_MIN_AGE_KICK=1200
 
   if [ "$CUR_TOTAL" -eq 0 ]; then
-    # ✅ 이미 kick 요청 만든 적 있으면 로그/재요청 자체를 멈춤(로그 폭주 방지)
     if [ -f "$KICKMARK" ] || [ -f "$KICKDONE" ]; then
       exit 0
     fi
 
     log "DATACOUNTER INTERIM ZERO user=$USERNAME range=$TIMERANGE sid=$SESSIONID streak=$zero_streak"
+
+    # PREVFILE의 ts/sid를 현재 시각으로 갱신한다.
+    # in/out/total은 직전 정상값을 그대로 유지해야 다음 정상 Interim에서
+    # delta = CUR - PREV_정상값 으로 올바르게 계산된다.
+    # (ts만 밀어주지 않으면 zero 구간이 끝난 뒤 delta가 과소 집계됨)
+    if [ -f "$PREVFILE" ]; then
+      # 기존 in/out/total을 읽어서 ts/sid만 교체한다.
+      _p_in="$(grep -E '^in=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      _p_out="$(grep -E '^out=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      _p_total="$(grep -E '^total=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      [ -z "$_p_in" ]    && _p_in=0
+      [ -z "$_p_out" ]   && _p_out=0
+      [ -z "$_p_total" ] && _p_total=0
+      tmp="${PREVFILE}.$$"
+      {
+        echo "ts=$NOW_TS"
+        echo "sid=$SESSIONID"
+        echo "in=$_p_in"
+        echo "out=$_p_out"
+        echo "total=$_p_total"
+      } > "$tmp" 2>/dev/null && mv -f "$tmp" "$PREVFILE" 2>/dev/null || true
+    fi
+    # PREVFILE이 없는 경우(세션 첫 Interim이 zero): 갱신할 기준값이 없으므로 그냥 둔다.
+    # 다음 정상 Interim에서 HAS_PREV=0 → FIRST_POINT=1 로 현재값 전체를 delta로 사용한다.
 
     age=$(( NOW_TS - last_nonzero_ts ))
     if [ "$zero_streak" -ge "$ZERO_STREAK_KICK" ] || { [ "$last_nonzero_ts" -gt 0 ] && [ "$age" -ge "$ZERO_MIN_AGE_KICK" ]; }; then
@@ -5069,7 +5249,6 @@ if [ "$STATUS" = "Interim-Update" ]; then
           echo "acctsessionid=$SESSIONID"
         } > "${KICKFILE}.$$" 2>/dev/null && mv -f "${KICKFILE}.$$" "$KICKFILE" 2>/dev/null || true
 
-        # ✅ 마커 생성(핵심)
         : > "$KICKMARK" 2>/dev/null || true
 
         log "DATACOUNTER KICK-REQUEST user=$USERNAME range=$TIMERANGE sid=$SESSIONID reason=interim_zero streak=$zero_streak age=${age}s"
@@ -5083,21 +5262,117 @@ if [ "$STATUS" = "Interim-Update" ]; then
 
   log "DATACOUNTER INTERIM user=$USERNAME range=$TIMERANGE sid=$SESSIONID in=$((CUR_IN/1048576))MB out=$((CUR_OUT/1048576))MB total=$((CUR_TOTAL/1048576))MB"
 
-  # ===== InfluxDB 1.8 export =====
-  MEASUREMENT="datacounter_interim"
+  # ===== InfluxDB 1.8 export - previous Interim delta =====
+  # 기존 CUR_IN / CUR_OUT / CUR_TOTAL 값은 변경하지 않고,
+  # Influx 전송용 DELTA_IN / DELTA_OUT / DELTA_TOTAL만 계산한다.
+  MEASUREMENT="datacounter_interim_delta"
 
-  now_s="$NOW_TS"
-  bucket_s=$(( (now_s / 600) * 600 ))
-  ts_m=$(( bucket_s / 60 ))
+  # precision=m 이므로 timestamp는 epoch minute.
+  # 기존 10분 bucket은 같은 tag/timestamp 포인트를 overwrite할 수 있어 현재 minute로 저장한다.
+  ts_m=$(( NOW_TS / 60 ))
 
-  in_bytes=$(( CUR_IN ))
-  out_bytes=$(( CUR_OUT ))
-  total_bytes=$(( CUR_TOTAL ))
+  PREV_TS=0
+  PREV_IN=0
+  PREV_OUT=0
+  PREV_TOTAL=0
+  PREV_SID=""
+  HAS_PREV=0
 
-  line="${MEASUREMENT},user=$(esc_tag "$USERNAME"),range=$(esc_tag "$TIMERANGE") in_bytes=${in_bytes}i,out_bytes=${out_bytes}i,total_bytes=${total_bytes}i ${ts_m}"
+  if [ -f "$PREVFILE" ]; then
+    PREV_TS="$(grep -E '^ts=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+    PREV_IN="$(grep -E '^in=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+    PREV_OUT="$(grep -E '^out=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+    PREV_TOTAL="$(grep -E '^total=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+    PREV_SID="$(grep -E '^sid=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2)"
+
+    [ -z "$PREV_TS" ] && PREV_TS=0
+    [ -z "$PREV_IN" ] && PREV_IN=0
+    [ -z "$PREV_OUT" ] && PREV_OUT=0
+    [ -z "$PREV_TOTAL" ] && PREV_TOTAL=0
+
+    HAS_PREV=1
+  fi
+
+  FIRST_POINT=0
+  SESSION_CHANGED=0
+  RESET_IN=0
+  RESET_OUT=0
+  RESET_TOTAL=0
+  RESET_DETECTED=0
+
+  if [ "$HAS_PREV" -eq 0 ]; then
+    # 처음 보는 Interim이면 현재값을 첫 구간 사용량으로 저장한다.
+    DELTA_IN=$(( CUR_IN ))
+    DELTA_OUT=$(( CUR_OUT ))
+    DELTA_TOTAL=$(( CUR_TOTAL ))
+    FIRST_POINT=1
+  else
+    if [ -n "$PREV_SID" ] && [ "$PREV_SID" != "$SESSIONID" ]; then
+      SESSION_CHANGED=1
+      RESET_DETECTED=1
+
+      # 세션이 바뀌면 RADIUS 카운터도 새로 시작한 것으로 보고 현재값을 이번 구간 사용량으로 저장.
+      DELTA_IN=$(( CUR_IN ))
+      DELTA_OUT=$(( CUR_OUT ))
+      DELTA_TOTAL=$(( CUR_TOTAL ))
+    else
+      # 같은 세션이면 직전 Interim과 차이 계산.
+      # 값이 줄어들면 카운터 리셋으로 보고 현재값을 delta로 사용.
+      if [ "$CUR_IN" -ge "$PREV_IN" ]; then
+        DELTA_IN=$(( CUR_IN - PREV_IN ))
+      else
+        DELTA_IN=$(( CUR_IN ))
+        RESET_IN=1
+        RESET_DETECTED=1
+      fi
+
+      if [ "$CUR_OUT" -ge "$PREV_OUT" ]; then
+        DELTA_OUT=$(( CUR_OUT - PREV_OUT ))
+      else
+        DELTA_OUT=$(( CUR_OUT ))
+        RESET_OUT=1
+        RESET_DETECTED=1
+      fi
+
+      if [ "$CUR_TOTAL" -ge "$PREV_TOTAL" ]; then
+        DELTA_TOTAL=$(( CUR_TOTAL - PREV_TOTAL ))
+      else
+        DELTA_TOTAL=$(( CUR_TOTAL ))
+        RESET_TOTAL=1
+        RESET_DETECTED=1
+      fi
+    fi
+  fi
+
+  # 안전장치: delta 음수 방지
+  [ "$DELTA_IN" -lt 0 ] 2>/dev/null && DELTA_IN=0
+  [ "$DELTA_OUT" -lt 0 ] 2>/dev/null && DELTA_OUT=0
+  [ "$DELTA_TOTAL" -lt 0 ] 2>/dev/null && DELTA_TOTAL=0
+
+  # 다음 Interim 비교를 위해 현재값 저장
+  tmp="${PREVFILE}.$$"
+  {
+    echo "ts=$NOW_TS"
+    echo "sid=$SESSIONID"
+    echo "in=$CUR_IN"
+    echo "out=$CUR_OUT"
+    echo "total=$CUR_TOTAL"
+  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$PREVFILE" 2>/dev/null || true
+
+  # Influx에는 delta만 기본 필드로 저장하고,
+  # 검증/디버깅용으로 current/prev/reset 정보도 함께 저장한다.
+  in_bytes=$(( DELTA_IN ))
+  out_bytes=$(( DELTA_OUT ))
+  total_bytes=$(( DELTA_TOTAL ))
+
+  line="${MEASUREMENT},user=$(esc_tag "$USERNAME"),sid=$(esc_tag "$SESSIONID") in_bytes=${in_bytes}i,out_bytes=${out_bytes}i,total_bytes=${total_bytes}i,current_in_bytes=${CUR_IN}i,current_out_bytes=${CUR_OUT}i,current_total_bytes=${CUR_TOTAL}i,prev_in_bytes=${PREV_IN}i,prev_out_bytes=${PREV_OUT}i,prev_total_bytes=${PREV_TOTAL}i,first_point=${FIRST_POINT}i,session_changed=${SESSION_CHANGED}i,reset=${RESET_DETECTED}i,reset_in=${RESET_IN}i,reset_out=${RESET_OUT}i,reset_total=${RESET_TOTAL}i ${ts_m}"
 
   influx_prepare >/dev/null 2>&1 || true
   influx_write_line "$line" || true
+
+  # 중앙/가상 InfluxDB export.
+  # sid/range는 저장하지 않고 vessel_imo/user + 숫자 사용량만 저장한다.
+  central_influx_export_usage || true
   # ===== /Influx export =====
 
   exit 0
@@ -5106,7 +5381,7 @@ fi
 # ---------- STOP / others ----------
 LOCK="/tmp/datacounter_${TIMERANGE}_${USERNAME}.lock"
 
-lockf -t 10 "$LOCK" /bin/sh -c '
+lockf -t 10 "$LOCK" sh -c '
   USERNAME="$1"
   TIMERANGE="$2"
   SESSIONID="$3"
@@ -5116,21 +5391,26 @@ lockf -t 10 "$LOCK" /bin/sh -c '
   IN_GW="$7"
   OUT_GW="$8"
   LOGFILE="$9"
+  STATE_DIR="${10}"
 
   BASE="/var/log/radacct/datacounter/$TIMERANGE"
   USEDFILE="$BASE/used-octets-$USERNAME"
   SESSFILE="$BASE/used-octets-$USERNAME-$SESSIONID"
 
-  # ✅ state/kick 마커 정리 (Stop 들어오면 세션 종료로 보고 청소)
+  # state/kick 마커 정리 (Stop 들어오면 세션 종료로 보고 청소)
   STATEFILE="/var/run/datacounter-state/$TIMERANGE/state-${USERNAME}-${SESSIONID}"
   rm -f "$STATEFILE" 2>/dev/null || true
+
+  # PREVFILE 정리: Stop 수신 시 다음 세션의 첫 Interim이 잘못된 prev 값을
+  # 참조하지 않도록 반드시 삭제한다.
+  PREVFILE="${STATE_DIR}/prev-${USERNAME}"
+  rm -f "$PREVFILE" 2>/dev/null || true
 
   KICKDIR="/var/run/datacounter-kick"
   rm -f "$KICKDIR/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.sent" 2>/dev/null || true
   rm -f "$KICKDIR/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.done" 2>/dev/null || true
 
-  OLD_TOTAL=$(head -n 1 "$USEDFILE" 2>/dev/null | tr -d "
-" | tr -cd "0-9")
+  OLD_TOTAL=$(head -n 1 "$USEDFILE" 2>/dev/null | tr -d "\r" | tr -cd "0-9")
   CUR_TOTAL=$(printf "%s" "$CUR_TOTAL" | tr -cd "0-9")
   CUR_IN=$(printf "%s" "$CUR_IN" | tr -cd "0-9")
   CUR_OUT=$(printf "%s" "$CUR_OUT" | tr -cd "0-9")
@@ -5143,26 +5423,26 @@ lockf -t 10 "$LOCK" /bin/sh -c '
   NEW_TOTAL=$(( ${OLD_TOTAL:-0} + ${CUR_TOTAL:-0} ))
 
   [ -f "$SESSFILE" ] && rm -f "$SESSFILE"
-  printf "%s
-" "$NEW_TOTAL" > "$USEDFILE"
+  printf "%s\n" "$NEW_TOTAL" > "$USEDFILE"
 
-  printf "%s datacounter: %s
-" "$(date "+%b %e %H:%M:%S")" \
+  printf "%s datacounter: %s\n" "$(date "+%b %e %H:%M:%S")" \
 "DATACOUNTER STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID \
 in=$((CUR_IN/1048576))MB out=$((CUR_OUT/1048576))MB \
 total=$((CUR_TOTAL/1048576))MB accum=$((NEW_TOTAL/1048576))MB" >> "$LOGFILE" 2>/dev/null
+
+  exit 0
 ' sh \
 "$USERNAME" "$TIMERANGE" "$SESSIONID" \
 "$CUR_IN" "$CUR_OUT" "$CUR_TOTAL" \
-"$IN_GW" "$OUT_GW" "$LOGFILE"
+"$IN_GW" "$OUT_GW" "$LOGFILE" "$STATE_DIR"
+
 RC=$?
 
 if [ "$RC" -ne 0 ]; then
-  log "DATACOUNTER SCRIPT FAIL user=$USERNAME range=$TIMERANGE sid=$SESSIONID status=$STATUS rc=$RC"
+  log "DATACOUNTER SCRIPT FAIL user=$USERNAME range=$TIMERANGE sid=$SESSIONID rc=$RC"
 fi
 
-# Accounting script must not make FreeRADIUS withhold Accounting-Response.
-# Quota enforcement belongs to datacounter_auth.sh.
+# FreeRADIUS Accounting-Response 지연/미응답 방지를 위해 항상 0 종료.
 exit 0
 DATACOUNTER_ACCT_SH;
 
