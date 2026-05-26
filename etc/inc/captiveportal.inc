@@ -3914,32 +3914,132 @@ function cp_get_terminaltype_for_user($userid) {
 
 /**
  * gateway name → pfctl table name 매핑.
- * gateway_item 의 terminal_type 필드 기준:
- *   starlink 계열 → 'starlink_users'
- *   vsat/nexuswave 계열 → 'vsat_users'
- *   매핑 불가(Auto 등) → null
+ *
+ * 탐색 순서:
+ *   1) gateway_item 에서 name 정확히 일치 → terminal_type 으로 판별
+ *   2) 이름 변경 등으로 못 찾을 경우 → gwname 자체에 키워드 포함 여부로 추론
+ *
+ * 반환값:
+ *   'starlink_users' | 'vsat_users' | null(Auto 또는 판별 불가)
  */
 function cp_get_pf_table_for_gateway($gwname) {
     global $config;
 
-    if ($gwname === '' || !is_array($config['gateways']['gateway_item'] ?? null)) {
+    if ($gwname === '') {
         return null;
     }
 
-    foreach ($config['gateways']['gateway_item'] as $gw) {
-        if (($gw['name'] ?? '') !== $gwname) {
-            continue;
-        }
-        $ttype = strtolower($gw['terminal_type'] ?? '');
-        if (strpos($ttype, 'starlink') !== false) {
-            return 'starlink_users';
-        }
-        if (strpos($ttype, 'vsat') !== false || strpos($ttype, 'nexuswave') !== false) {
-            return 'vsat_users';
+    // 1차: gateway_item 에서 name 정확히 일치 → terminal_type 판별
+    if (is_array($config['gateways']['gateway_item'] ?? null)) {
+        foreach ($config['gateways']['gateway_item'] as $gw) {
+            if (($gw['name'] ?? '') !== $gwname) {
+                continue;
+            }
+            $ttype = strtolower($gw['terminal_type'] ?? '');
+            if (strpos($ttype, 'starlink') !== false) {
+                return 'starlink_users';
+            }
+            if (strpos($ttype, 'vsat') !== false || strpos($ttype, 'nexuswave') !== false) {
+                return 'vsat_users';
+            }
+            // gateway 는 찾았지만 terminal_type 이 매핑 안 됨
+            return null;
         }
     }
 
+    // 2차: gateway name 자체에 키워드가 포함된 경우 (이름 변경 후 fallback)
+    $lower = strtolower($gwname);
+    if (strpos($lower, 'starlink') !== false) {
+        return 'starlink_users';
+    }
+    if (strpos($lower, 'vsat') !== false || strpos($lower, 'nexuswave') !== false) {
+        return 'vsat_users';
+    }
+
     return null;
+}
+
+/**
+ * terminal_type 키워드 배열로 gateway 목록 조회.
+ * VPN 게이트웨이 제외.
+ */
+function cp_find_gateways_by_type(array $type_keywords) {
+    global $config;
+    $result = [];
+
+    foreach ($config['gateways']['gateway_item'] ?? [] as $gw) {
+        $ttype = strtolower($gw['terminal_type'] ?? '');
+        $name  = $gw['name'] ?? '';
+        if ($name === '' || $ttype === '') continue;
+        if (strpos($ttype, 'vpn') !== false) continue;
+
+        foreach ($type_keywords as $kw) {
+            if (strpos($ttype, $kw) !== false) {
+                $result[] = $gw;
+                break;
+            }
+        }
+    }
+
+    return $result;
+}
+
+/**
+ * gateway 목록에서 terminal_type 이 '_pri' 로 끝나는 것 우선, 없으면 첫 번째 반환.
+ */
+function cp_pick_primary_gateway(array $gateways) {
+    foreach ($gateways as $gw) {
+        if (strpos(strtolower($gw['terminal_type'] ?? ''), '_pri') !== false) {
+            return $gw;
+        }
+    }
+    return $gateways[0] ?? null;
+}
+
+/**
+ * config.xml 의 [CP Routing] Pass Rule 의 gateway 참조를
+ * 현재 gateway_item 기준으로 동적 갱신.
+ *
+ * gateway 이름이 바뀐 경우 write_config() 후 다음 filter_configure() 에서 자동 반영.
+ * (현재 filter_configure() 사이클에는 이미 늦으므로 다음 사이클에 적용됨)
+ */
+function cp_refresh_pass_rules() {
+    global $config;
+
+    $vsat_gws     = cp_find_gateways_by_type(['vsat', 'nexuswave']);
+    $starlink_gws = cp_find_gateways_by_type(['starlink']);
+
+    $vsat_primary     = cp_pick_primary_gateway($vsat_gws);
+    $starlink_primary = cp_pick_primary_gateway($starlink_gws);
+
+    if (!$vsat_primary || !$starlink_primary) {
+        return;
+    }
+
+    $changed = false;
+
+    foreach ($config['filter']['rule'] as &$rule) {
+        // [CP Routing] Floating Pass Rule 만 대상
+        if (!isset($rule['floating'])) continue;
+        if (($rule['type'] ?? '') !== 'pass') continue;
+        if (strpos($rule['descr'] ?? '', '[CP Routing]') === false) continue;
+
+        $src        = $rule['source']['address'] ?? '';
+        $current_gw = $rule['gateway'] ?? '';
+
+        if ($src === 'vsat_users' && $current_gw !== $vsat_primary['name']) {
+            $rule['gateway'] = $vsat_primary['name'];
+            $changed = true;
+        } elseif ($src === 'starlink_users' && $current_gw !== $starlink_primary['name']) {
+            $rule['gateway'] = $starlink_primary['name'];
+            $changed = true;
+        }
+    }
+    unset($rule);
+
+    if ($changed) {
+        write_config("cp_routing: gateway name changed, updated Pass Rule references");
+    }
 }
 
 /**
@@ -3960,11 +4060,19 @@ function cp_sync_pf_table($table, array $ips) {
 /**
  * CP 세션 DB 기준으로 pfctl 라우팅 테이블 전체 재동기화.
  * captiveportal_configure() 훅 및 크론에서 호출.
+ *
+ * 수행 순서:
+ *   1) config.xml Pass Rule 의 gateway 참조가 현재 gateway 목록과 다르면 갱신
+ *      (gateway 이름 변경 대응 — 다음 filter_configure() 사이클에 반영)
+ *   2) CP 세션 DB → pfctl 테이블 원자적 교체
  */
 function cp_sync_routing_tables() {
+    // 1) gateway 이름 변경 감지 및 Pass Rule 동적 갱신
+    cp_refresh_pass_rules();
+
+    // 2) pfctl 테이블 재동기화
     $sessions = captiveportal_read_db('', 'crew');
     if (!is_array($sessions)) {
-        // 세션 없음 → 테이블 flush
         cp_sync_pf_table('vsat_users',     []);
         cp_sync_pf_table('starlink_users', []);
         return;

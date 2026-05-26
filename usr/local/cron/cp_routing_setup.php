@@ -38,44 +38,8 @@ function setup_log($msg) {
 }
 
 /**
- * terminal_type 으로 gateway 목록 조회.
- * VPN 게이트웨이는 제외.
- */
-function find_gateways_by_type($type_keywords) {
-    global $config;
-    $result = [];
-
-    foreach ($config['gateways']['gateway_item'] ?? [] as $gw) {
-        $ttype = strtolower($gw['terminal_type'] ?? '');
-        $name  = $gw['name'] ?? '';
-        if ($name === '' || $ttype === '') continue;
-        if (strpos($ttype, 'vpn') !== false) continue;
-
-        foreach ((array)$type_keywords as $kw) {
-            if (strpos($ttype, $kw) !== false) {
-                $result[] = $gw;
-                break;
-            }
-        }
-    }
-
-    return $result;
-}
-
-/**
- * gateway 목록에서 primary 우선, 없으면 첫 번째 반환.
- */
-function pick_primary_gateway(array $gateways) {
-    foreach ($gateways as $gw) {
-        $ttype = strtolower($gw['terminal_type'] ?? '');
-        if (strpos($ttype, '_pri') !== false) return $gw;
-    }
-    return $gateways[0] ?? null;
-}
-
-/**
  * gateway 목록에서 중복 없이 interface key 목록 반환.
- * (config interface key: 'wan', 'opt1', ... pfSense 기준)
+ * captiveportal.inc 의 cp_find_gateways_by_type / cp_pick_primary_gateway 사용.
  */
 function get_iface_keys(array $gateways) {
     $ifaces = [];
@@ -226,8 +190,9 @@ setup_log("=== cp_routing_setup 시작 ===");
 
 // ---- 1. Gateway 탐색 ----
 
-$vsat_gws     = find_gateways_by_type(['vsat', 'nexuswave']);
-$starlink_gws = find_gateways_by_type(['starlink']);
+// captiveportal.inc 의 공용 헬퍼 사용
+$vsat_gws     = cp_find_gateways_by_type(['vsat', 'nexuswave']);
+$starlink_gws = cp_find_gateways_by_type(['starlink']);
 
 if (empty($vsat_gws)) {
     setup_log("ERROR: VSAT gateway 를 찾을 수 없음 (terminal_type 확인 필요)");
@@ -238,8 +203,8 @@ if (empty($starlink_gws)) {
     exit(1);
 }
 
-$vsat_primary     = pick_primary_gateway($vsat_gws);
-$starlink_primary = pick_primary_gateway($starlink_gws);
+$vsat_primary     = cp_pick_primary_gateway($vsat_gws);
+$starlink_primary = cp_pick_primary_gateway($starlink_gws);
 
 // route-to 차단 대상 인터페이스 목록
 $vsat_ifaces     = get_iface_keys($vsat_gws);
