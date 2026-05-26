@@ -58,7 +58,15 @@
       "Bash(\"/c/Program Files/PuTTY/plink\" -ssh -pw \"P@ssw0rd\" -batch synersatroot@10.8.0.230 \"cd /home/synersatroot && python3 collect_usage.py 2>&1 | tail -3\")",
       "Bash(awk -F, 'NR==1 { next } *)",
       "Bash(git checkout *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git credential *)",
+      "Bash(cp /tmp/pr_body.md /d/tmp_pr_body.md)",
+      "Bash(cp /tmp/pr_body.md ./pr_body.md)",
+      "Bash(gh pr *)",
+      "Bash(gh auth *)",
+      "Bash(git config *)",
+      "Bash(cmd /c \"echo protocol=https&echo host=github.com\")",
+      "Bash(git log *)"
     ]
   }
 }
