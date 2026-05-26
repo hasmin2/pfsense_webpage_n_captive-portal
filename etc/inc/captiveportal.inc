@@ -4011,6 +4011,16 @@ function cp_refresh_pass_rules() {
     // ── 기대하는 룰 세트를 구성 ──────────────────────────────────────────────
     $expected = [];
 
+    // Default pass 룰: terminaltype 미설정 사용자 → 기본 게이트웨이로 통과 (route-to 없음)
+    $expected[] = [
+        'type'      => 'pass',
+        'direction' => 'in',
+        'interface' => $lan_iface,
+        'src_alias' => 'cp_gw_default',
+        'gateway'   => '',
+        'descr'     => '[CP Routing] cp_gw_default pass (default gateway)',
+    ];
+
     foreach ($all_gws as $gw) {
         $gwname   = $gw['name'];
         $table    = cp_gw_table_name($gwname);
@@ -4090,7 +4100,10 @@ function cp_refresh_pass_rules() {
         ];
         if ($e['type'] === 'pass') {
             $rule['statetype'] = 'keep state';
-            $rule['gateway']   = $e['gateway'];
+            // gateway 비어있으면 route-to 없이 기본 라우팅 사용
+            if ($e['gateway'] !== '') {
+                $rule['gateway'] = $e['gateway'];
+            }
         }
 
         // Floating 룰은 앞에 삽입 (우선순위 확보)
@@ -4161,9 +4174,9 @@ function cp_sync_routing_tables() {
     // 1) gateway 변동 감지 및 Pass/Block Rule 동적 갱신
     cp_refresh_pass_rules();
 
-    // 2) 모든 WAN 게이트웨이 테이블을 빈 배열로 초기화
+    // 2) 모든 WAN 게이트웨이 테이블 + default 테이블을 빈 배열로 초기화
     $all_gws   = cp_find_all_wan_gateways();
-    $table_ips = [];
+    $table_ips = ['cp_gw_default' => []];
     foreach ($all_gws as $gw) {
         $table_ips[cp_gw_table_name($gw['name'])] = [];
     }
@@ -4180,10 +4193,14 @@ function cp_sync_routing_tables() {
             $gwname = cp_get_terminaltype_for_user($user);
             $table  = cp_get_pf_table_for_gateway($gwname);
 
-            if ($table !== null && array_key_exists($table, $table_ips)) {
+            if ($table === null) {
+                // terminaltype 미설정 → 기본 게이트웨이 테이블
+                $table = 'cp_gw_default';
+            }
+
+            if (array_key_exists($table, $table_ips)) {
                 $table_ips[$table][] = $ip;
             }
-            // null(Auto) 또는 관리 대상 외 게이트웨이 → 기본 라우팅 사용
         }
     }
 
@@ -4211,6 +4228,9 @@ function del_crew_linked_rule($sourceip, $userid) {
         $safeTable = escapeshellarg(cp_gw_table_name($gw['name']));
         mwexec("/sbin/pfctl -t {$safeTable} -T delete {$safeIp} 2>/dev/null");
     }
+
+    // 기본 게이트웨이 테이블에서도 제거
+    mwexec("/sbin/pfctl -t cp_gw_default -T delete {$safeIp} 2>/dev/null");
 
     // pf state 정리 → 기존 라우팅 세션 즉시 종료
     cp_kill_states_for_ip($sourceip);
@@ -4252,8 +4272,8 @@ function add_crew_linked_rule($sourceip, $userid) {
     $table  = cp_get_pf_table_for_gateway($gwname);
 
     if ($table === null) {
-        // Auto 사용자 또는 매핑 불가 → 기본 라우팅 사용, 테이블 미등록
-        return true;
+        // terminaltype 미설정 → 기본 게이트웨이 테이블에 등록 (route-to 없이 pass)
+        $table = 'cp_gw_default';
     }
 
     $safeIp    = escapeshellarg($sourceip);

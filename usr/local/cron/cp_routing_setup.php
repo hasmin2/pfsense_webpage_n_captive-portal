@@ -115,11 +115,14 @@ function create_pass_rule_local($iface, $src_alias, $gateway, $descr) {
         'statetype'   => 'keep state',
         'source'      => ['address' => $src_alias],
         'destination' => ['any' => true],
-        'gateway'     => $gateway,
         'descr'       => $descr,
         'updated'     => ['time' => (string)time(), 'username' => 'cp_routing_setup'],
         'created'     => ['time' => (string)time(), 'username' => 'cp_routing_setup'],
     ];
+    // gateway 지정 시에만 route-to 추가 (비어있으면 기본 라우팅)
+    if ($gateway !== '') {
+        $rule['gateway'] = $gateway;
+    }
 
     array_unshift($config['filter']['rule'], $rule);
 
@@ -194,9 +197,16 @@ $all_ifaces = array_unique(array_column($all_gws, 'interface'));
 
 $changed = false;
 
-// ---- 2. 게이트웨이별 Alias 생성 ----
+// ---- 2. Alias 생성 ----
 
 setup_log("--- Alias 생성 ---");
+
+// 기본 게이트웨이용 alias (terminaltype 미설정 사용자)
+$changed |= create_alias_local(
+    'cp_gw_default',
+    'CP default gateway users (no terminaltype assigned)'
+);
+
 foreach ($all_gws as $gw) {
     $table = cp_gw_table_name($gw['name']);
     $changed |= create_alias_local(
@@ -206,9 +216,18 @@ foreach ($all_gws as $gw) {
 }
 echo "\n";
 
-// ---- 3. 게이트웨이별 Floating Pass Rule 생성 ----
+// ---- 3. Floating Pass Rule 생성 ----
 
-setup_log("--- Pass Rule 생성 (route-to) ---");
+setup_log("--- Pass Rule 생성 ---");
+
+// 기본 게이트웨이 pass 룰 (route-to 없음 → 시스템 기본 게이트웨이 사용)
+$changed |= create_pass_rule_local(
+    $lan_iface,
+    'cp_gw_default',
+    '',   // gateway 없음 = 기본 라우팅
+    '[CP Routing] cp_gw_default pass (default gateway)'
+);
+
 foreach ($all_gws as $gw) {
     $table = cp_gw_table_name($gw['name']);
     $changed |= create_pass_rule_local(
