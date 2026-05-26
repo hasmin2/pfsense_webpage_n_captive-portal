@@ -3997,6 +3997,32 @@ function cp_get_pf_table_for_gateway($gwname) {
  *   Block : N*(N의 서로 다른 인터페이스 수 - 1) 개
  *           (자신의 WAN 이 아닌 모든 WAN 인터페이스에 block out)
  */
+/**
+ * 게이트웨이 테이블 이름에 해당하는 alias 가 없으면 자동 생성.
+ * Host 타입, 빈 address (pfctl 이 직접 관리).
+ * 반환: 생성됐으면 true, 이미 존재하면 false
+ */
+function cp_ensure_alias($name, $descr) {
+    global $config;
+
+    if (!is_array($config['aliases']['alias'])) {
+        $config['aliases']['alias'] = [];
+    }
+    foreach ($config['aliases']['alias'] as $alias) {
+        if (($alias['name'] ?? '') === $name) {
+            return false; // 이미 존재
+        }
+    }
+    $config['aliases']['alias'][] = [
+        'name'    => $name,
+        'type'    => 'host',
+        'address' => '',
+        'descr'   => $descr,
+        'detail'  => '',
+    ];
+    return true;
+}
+
 function cp_refresh_pass_rules() {
     global $config;
 
@@ -4007,6 +4033,17 @@ function cp_refresh_pass_rules() {
 
     $lan_iface  = $config['captiveportal']['crew']['interface'] ?? 'lan';
     $all_ifaces = array_unique(array_column($all_gws, 'interface'));
+
+    // ── Alias 자동 생성 (없는 것만) ──────────────────────────────────────────
+    $alias_changed = false;
+    $alias_changed |= cp_ensure_alias('cp_gw_default', 'CP default gateway users (no terminaltype assigned)');
+    foreach ($all_gws as $gw) {
+        $table = cp_gw_table_name($gw['name']);
+        $alias_changed |= cp_ensure_alias(
+            $table,
+            "CP routing table for gateway {$gw['name']} (terminal_type={$gw['terminal_type']})"
+        );
+    }
 
     // ── 기대하는 룰 세트를 구성 ──────────────────────────────────────────────
     $expected = [];
@@ -4112,7 +4149,10 @@ function cp_refresh_pass_rules() {
 
     $added   = count($need_add);
     $removed = count($need_remove);
-    write_config("cp_routing: rules resynced (added={$added}, removed={$removed})");
+
+    if ($alias_changed || $added > 0 || $removed > 0) {
+        write_config("cp_routing: aliases/rules resynced (aliases=+{$alias_changed}, rules added={$added}, removed={$removed})");
+    }
 }
 
 /**
