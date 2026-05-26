@@ -4126,6 +4126,37 @@ function cp_sync_pf_table($table, array $ips) {
  *      (gateway 추가/삭제/이름변경 대응 — 다음 filter_configure() 사이클에 반영)
  *   2) CP 세션 DB → 각 게이트웨이별 pfctl 테이블 원자적 교체
  */
+/**
+ * crew zone CP 세션 DB 를 직접 읽어 세션 배열 반환.
+ * captiveportal_read_db() 는 전역 $cpzone 에 의존하므로
+ * cron/hook 에서 안전하게 호출하려면 직접 SQLite 파일을 열어야 함.
+ * 반환: [[allow_time, pipeno, ip, mac, username, sessionid, ...], ...]
+ */
+function cp_read_crew_sessions() {
+    global $g;
+
+    $db_path = ($g['vardb_path'] ?? '/var/db') . '/captiveportalcrew.db';
+    if (!file_exists($db_path)) {
+        return [];
+    }
+
+    $db = new SQLite3($db_path, SQLITE3_OPEN_READONLY);
+    if (!$db) {
+        return [];
+    }
+
+    $result   = [];
+    $response = $db->query("SELECT allow_time, pipeno, ip, mac, username, sessionid FROM captiveportal");
+    if ($response) {
+        while ($row = $response->fetchArray(SQLITE3_NUM)) {
+            $result[] = $row;
+        }
+    }
+    $db->close();
+
+    return $result;
+}
+
 function cp_sync_routing_tables() {
     // 1) gateway 변동 감지 및 Pass/Block Rule 동적 갱신
     cp_refresh_pass_rules();
@@ -4138,7 +4169,8 @@ function cp_sync_routing_tables() {
     }
 
     // 3) 세션 DB 에서 IP → 게이트웨이 → 테이블 매핑
-    $sessions = captiveportal_read_db('', 'crew');
+    // captiveportal_read_db() 는 전역 $cpzone 을 사용하므로 직접 DB 파일을 열어 읽음
+    $sessions = cp_read_crew_sessions();
     if (is_array($sessions)) {
         foreach ($sessions as $s) {
             $ip   = $s[2] ?? '';
