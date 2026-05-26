@@ -3997,11 +3997,23 @@ function cp_pick_primary_gateway(array $gateways) {
 }
 
 /**
- * config.xml 의 [CP Routing] Pass Rule 의 gateway 참조를
- * 현재 gateway_item 기준으로 동적 갱신.
+ * config.xml 의 [CP Routing] 룰 전체를 현재 gateway 구성 기준으로 완전 재생성.
  *
- * gateway 이름이 바뀐 경우 write_config() 후 다음 filter_configure() 에서 자동 반영.
- * (현재 filter_configure() 사이클에는 이미 늦으므로 다음 사이클에 적용됨)
+ * 처리 범위:
+ *   - gateway 이름 변경
+ *   - gateway 추가 (새 Pass Rule / 새 Block Rule 자동 생성)
+ *   - gateway 삭제 (불필요한 Rule 자동 제거)
+ *
+ * 동작 방식:
+ *   1) 기존 [CP Routing] 룰 전부 제거
+ *   2) 현재 gateway_item 기준으로 Pass Rule + Block Rule 재생성
+ *   3) write_config() → 다음 filter_configure() 사이클에 자동 반영
+ *      (현재 사이클은 이미 진행 중이므로 1 사이클 lag — 정상)
+ *
+ * 생성 규칙:
+ *   Pass  : 타입당 1개 (vsat_users→primary VSAT GW, starlink_users→primary Starlink GW)
+ *   Block : 타입별 "상대방 WAN 인터페이스" 마다 1개
+ *           (인터페이스 수만큼 자동 확장/축소)
  */
 function cp_refresh_pass_rules() {
     global $config;
@@ -4009,37 +4021,125 @@ function cp_refresh_pass_rules() {
     $vsat_gws     = cp_find_gateways_by_type(['vsat', 'nexuswave']);
     $starlink_gws = cp_find_gateways_by_type(['starlink']);
 
-    $vsat_primary     = cp_pick_primary_gateway($vsat_gws);
-    $starlink_primary = cp_pick_primary_gateway($starlink_gws);
-
-    if (!$vsat_primary || !$starlink_primary) {
+    // 양쪽 다 없으면 아무것도 안 함
+    if (empty($vsat_gws) && empty($starlink_gws)) {
         return;
     }
 
-    $changed = false;
+    $vsat_primary     = cp_pick_primary_gateway($vsat_gws);
+    $starlink_primary = cp_pick_primary_gateway($starlink_gws);
+    $lan_iface        = $config['captiveportal']['crew']['interface'] ?? 'lan';
 
-    foreach ($config['filter']['rule'] as &$rule) {
-        // [CP Routing] Floating Pass Rule 만 대상
-        if (!isset($rule['floating'])) continue;
-        if (($rule['type'] ?? '') !== 'pass') continue;
-        if (strpos($rule['descr'] ?? '', '[CP Routing]') === false) continue;
+    // ── 기대하는 룰 세트를 구성 ──────────────────────────────────────────────
+    $expected = [];
 
-        $src        = $rule['source']['address'] ?? '';
-        $current_gw = $rule['gateway'] ?? '';
+    // Pass Rules (타입당 1개)
+    if ($vsat_primary) {
+        $expected[] = [
+            'type'      => 'pass',
+            'direction' => 'in',
+            'interface' => $lan_iface,
+            'src_alias' => 'vsat_users',
+            'gateway'   => $vsat_primary['name'],
+            'descr'     => '[CP Routing] vsat_users route-to ' . $vsat_primary['name'],
+        ];
+    }
+    if ($starlink_primary) {
+        $expected[] = [
+            'type'      => 'pass',
+            'direction' => 'in',
+            'interface' => $lan_iface,
+            'src_alias' => 'starlink_users',
+            'gateway'   => $starlink_primary['name'],
+            'descr'     => '[CP Routing] starlink_users route-to ' . $starlink_primary['name'],
+        ];
+    }
 
-        if ($src === 'vsat_users' && $current_gw !== $vsat_primary['name']) {
-            $rule['gateway'] = $vsat_primary['name'];
-            $changed = true;
-        } elseif ($src === 'starlink_users' && $current_gw !== $starlink_primary['name']) {
-            $rule['gateway'] = $starlink_primary['name'];
-            $changed = true;
+    // Block Rules (vsat_users는 Starlink WAN 인터페이스마다, 반대도 동일)
+    $vsat_ifaces     = array_unique(array_column($vsat_gws,     'interface'));
+    $starlink_ifaces = array_unique(array_column($starlink_gws, 'interface'));
+
+    foreach ($starlink_ifaces as $iface) {
+        $expected[] = [
+            'type'      => 'block',
+            'direction' => 'out',
+            'interface' => $iface,
+            'src_alias' => 'vsat_users',
+            'gateway'   => '',
+            'descr'     => "[CP Routing] block vsat_users on {$iface} (Starlink)",
+        ];
+    }
+    foreach ($vsat_ifaces as $iface) {
+        $expected[] = [
+            'type'      => 'block',
+            'direction' => 'out',
+            'interface' => $iface,
+            'src_alias' => 'starlink_users',
+            'gateway'   => '',
+            'descr'     => "[CP Routing] block starlink_users on {$iface} (VSAT)",
+        ];
+    }
+
+    // ── 현재 config.xml 의 [CP Routing] 룰과 비교 ──────────────────────────
+    $existing_descrs = [];
+    foreach ($config['filter']['rule'] as $rule) {
+        if (isset($rule['floating']) && strpos($rule['descr'] ?? '', '[CP Routing]') !== false) {
+            $existing_descrs[] = $rule['descr'];
         }
     }
-    unset($rule);
 
-    if ($changed) {
-        write_config("cp_routing: gateway name changed, updated Pass Rule references");
+    $expected_descrs = array_column($expected, 'descr');
+    $need_add        = array_diff($expected_descrs, $existing_descrs);
+    $need_remove     = array_diff($existing_descrs, $expected_descrs);
+
+    // 변경 없으면 종료
+    if (empty($need_add) && empty($need_remove)) {
+        return;
     }
+
+    // ── 삭제: 불필요해진 룰 제거 ─────────────────────────────────────────────
+    foreach ($config['filter']['rule'] as $key => $rule) {
+        if (!isset($rule['floating'])) continue;
+        if (strpos($rule['descr'] ?? '', '[CP Routing]') === false) continue;
+        if (in_array($rule['descr'], $need_remove, true)) {
+            unset($config['filter']['rule'][$key]);
+        }
+    }
+    $config['filter']['rule'] = array_values($config['filter']['rule']);
+
+    // ── 추가: 누락된 룰 생성 ─────────────────────────────────────────────────
+    foreach ($expected as $e) {
+        if (!in_array($e['descr'], $need_add, true)) continue;
+
+        $rule = [
+            'id'         => '',
+            'tracker'    => (string)(time() + rand(1, 9999)),
+            'type'       => $e['type'],
+            'floating'   => 'yes',
+            'direction'  => $e['direction'],
+            'quick'      => 'yes',
+            'interface'  => $e['interface'],
+            'ipprotocol' => 'inet',
+            'tag'        => '',
+            'tagged'     => '',
+            'source'     => ['address' => $e['src_alias']],
+            'destination'=> ['any' => true],
+            'descr'      => $e['descr'],
+            'updated'    => ['time' => (string)time(), 'username' => 'cp_routing_auto'],
+            'created'    => ['time' => (string)time(), 'username' => 'cp_routing_auto'],
+        ];
+        if ($e['type'] === 'pass') {
+            $rule['statetype'] = 'keep state';
+            $rule['gateway']   = $e['gateway'];
+        }
+
+        // Floating 룰은 앞에 삽입 (우선순위 확보)
+        array_unshift($config['filter']['rule'], $rule);
+    }
+
+    $added   = count($need_add);
+    $removed = count($need_remove);
+    write_config("cp_routing: rules resynced (added={$added}, removed={$removed})");
 }
 
 /**
