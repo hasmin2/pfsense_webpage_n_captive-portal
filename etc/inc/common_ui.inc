@@ -146,7 +146,9 @@ function print_sidebar($inputlink)
     $rtnstr .= $mk("terminal.php", "Antenna", "ic-lnb03");
     $rtnstr .= $mk("lan_svrstatus.php", "LAN", "ic-lnb04");
     $rtnstr .= $mk("crew_account.php", "Crew Account", "ic-lnb05");
-    $rtnstr .= $mk("prepaid_account.php", "Prepaid Account", "ic-lnb05");
+    if (isset($config['captiveportal']['prepaid_enabled'])) {
+        $rtnstr .= $mk("prepaid_account.php", "Prepaid Account", "ic-lnb05");
+    }
     $rtnstr .= $mk("download_center.php", "Download Center", "ic-lnb06");
 
 

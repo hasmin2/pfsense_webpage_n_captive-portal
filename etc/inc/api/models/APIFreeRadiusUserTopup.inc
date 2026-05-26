@@ -77,7 +77,7 @@ class TopUp extends APIModel {
                         $this->config["installedpackages"]["freeradius"]["config"][$item]["varusersmodified"] = "update";
 
                         cp_wireless_log(
-                            "Topup successful: current " .
+                            "Topup successful:".$userentry['varusersusername']." current " .
                             $userentry['varusersmaxtotaloctets'] .
                             "MBytes, added " .
                             $this->initial_data['freeradius_maxtotaloctets'] .

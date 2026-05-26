@@ -16,6 +16,9 @@ $uiConfig = [
 'termsRequired' => true
 ];
 
+global $config;
+$prepaidEnabled = isset($config['captiveportal']['prepaid_enabled']);
+
 /* ---------------------------
 * Common helpers
 * --------------------------- */
@@ -282,7 +285,11 @@ $quotaRemain !== ''
 		.card-tools{
 			flex:0 0 auto;
 		}
-
+		.active-range {
+			background-color: #3498db !important;
+			color: #fff !important;
+			border-color: #3498db !important;
+		}
 		.mini-btn{
 			min-height:38px;
 			padding:0 14px;
@@ -812,6 +819,7 @@ $quotaRemain !== ''
 
 		var loginAccountTypeDefault = <?= json_encode($loginAccountTypeValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
 		var quotaAccountTypeDefault = <?= json_encode($quotaAccountTypeValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+		var prepaidEnabled = <?= $prepaidEnabled ? 'true' : 'false' ?>;
 
 		function $(id) {
 			return document.getElementById(id);
@@ -1091,17 +1099,9 @@ $quotaRemain !== ''
 			bindPasswordToggle();
 			bindQuotaButton();
 			bindUsernameSync();
-			moveAccountTypesNextToInputs();
-			bindSubmitLoading();
-			hideEmptyStateButton();
-		});
-		document.addEventListener('DOMContentLoaded', function () {
-			setBackground();
-			normalizeLogo();
-			bindPasswordToggle();
-			bindQuotaButton();
-			bindUsernameSync();
-			moveAccountTypesNextToInputs();
+			if (prepaidEnabled) {
+				moveAccountTypesNextToInputs();
+			}
 			bindAuthIdBlock();
 			bindSubmitLoading();
 			hideEmptyStateButton();
