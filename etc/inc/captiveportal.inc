@@ -4152,6 +4152,13 @@ function cp_refresh_pass_rules() {
 
     if ($alias_changed || $added > 0 || $removed > 0) {
         write_config("cp_routing: aliases/rules resynced (aliases=+{$alias_changed}, rules added={$added}, removed={$removed})");
+
+        // 변경사항을 pf 에 즉시 반영.
+        // filter_configure() 내부에서 호출된 경우 재귀 방지를 위해
+        // send_event 로 비동기 재로드 요청 (check_reload_status 가 처리)
+        if (function_exists('send_event')) {
+            send_event("filter reload");
+        }
     }
 }
 
