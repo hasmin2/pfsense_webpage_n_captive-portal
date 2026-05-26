@@ -222,6 +222,9 @@ function captiveportal_configure() {
             captiveportal_configure_zone($cp);
         }
     }
+
+    // filter 재로드 후 pfctl 라우팅 테이블 즉시 복원
+    cp_sync_routing_tables();
 }
 
 function captiveportal_configure_zone($cpcfg) {
@@ -3522,14 +3525,14 @@ function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $use
             $start_time = time();
         }
         add_crew_linked_rule($clientip, $username);
-        write_config("{$username} crew wifi login");
+        // write_config 제거: pfctl table 방식으로 전환, config.xml 수정 불필요
     } elseif ($type === 'stop') {
         $racct = new Auth_RADIUS_Acct_Stop;
         if (!is_int($stop_time)) {
             $stop_time = time();
         }
         del_crew_linked_rule($clientip, $username);
-        write_config("{$username} crew wifi log out");
+        // write_config 제거: pfctl table 방식으로 전환, config.xml 수정 불필요
     } elseif ($type === 'update') {
         $racct = new Auth_RADIUS_Acct_Update;
         if (!is_int($stop_time)) {
@@ -3869,48 +3872,150 @@ function is_using_fx(){
     return $result;
 }
 
-function del_crew_linked_rule($sourceip, $userid){
+/**
+ * ============================================================
+ *  pfctl Table 기반 라우팅 관리 함수군
+ *  - config.xml / filter_configure() 호출 없음
+ *  - 로그인/로그아웃 시 pfctl 메모리 조작만 수행
+ *  - filter 재로드 후 복원은 captiveportal_configure() 훅이 담당
+ *  - 1분 크론이 비정상 상황 자가복구 담당
+ * ============================================================
+ */
+
+/**
+ * 사용자명으로 varusersterminaltype(gateway name) 조회.
+ * 빈 문자열이면 is_using_fx() 로 Auto 처리.
+ */
+function cp_get_terminaltype_for_user($userid) {
     global $config;
-    $result = false;
 
-    if ($sourceip != "") {
-        /*foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
-            if($value['varusersusername']==$userid){
-                if($value['varusersterminaltype']=="" && is_using_fx()!=''){ //Auto and FX system (or dual VSAT)
-                    $terminaltype = is_using_fx();
-                }
-                else {
-                    $terminaltype = $value['varusersterminaltype'];
-                }
-            }
-        }*/
+    $terminaltype = '';
+    if (!is_array($config['installedpackages']['freeradius']['config'] ?? null)) {
+        return '';
+    }
 
-        foreach ($config['filter']['rule'] as $key => $value) {
-            if (
-                isset($value['interface'], $value['descr']) &&
-                $value['interface'] === $config['captiveportal']['crew']['interface'] &&
-                $value['descr'] === "[User Rule] {$userid} auto generated rule"
-            ) {
-                if (!filter_var($sourceip, FILTER_VALIDATE_IP)) {
-                    break;
-                }
-
-                cp_kill_states_for_ip($sourceip);
-                //cp_remove_source_tracking_for_ip($sourceip); // 로컬 트리 함수 연결 필요
-
-                unset($config['filter']['rule'][$key]);
-                $config['filter']['rule'] = array_values($config['filter']['rule']);
-
-                write_config("Deleted auto generated rule for {$userid}, cleaned states/tracking for {$sourceip}");
-                filter_configure();
-
-                $result = true;
-                break;
-            }
+    foreach ($config['installedpackages']['freeradius']['config'] as $value) {
+        if (($value['varusersusername'] ?? '') === $userid) {
+            $terminaltype = $value['varusersterminaltype'] ?? '';
+            break;
         }
     }
 
-    return $result;
+    // Auto 사용자이고 FX(이중 VSAT) 환경이면 보조 gateway 사용
+    if ($terminaltype === '') {
+        $fx = is_using_fx();
+        if ($fx !== '') {
+            $terminaltype = $fx;
+        }
+    }
+
+    return $terminaltype;
+}
+
+/**
+ * gateway name → pfctl table name 매핑.
+ * gateway_item 의 terminal_type 필드 기준:
+ *   starlink 계열 → 'starlink_users'
+ *   vsat/nexuswave 계열 → 'vsat_users'
+ *   매핑 불가(Auto 등) → null
+ */
+function cp_get_pf_table_for_gateway($gwname) {
+    global $config;
+
+    if ($gwname === '' || !is_array($config['gateways']['gateway_item'] ?? null)) {
+        return null;
+    }
+
+    foreach ($config['gateways']['gateway_item'] as $gw) {
+        if (($gw['name'] ?? '') !== $gwname) {
+            continue;
+        }
+        $ttype = strtolower($gw['terminal_type'] ?? '');
+        if (strpos($ttype, 'starlink') !== false) {
+            return 'starlink_users';
+        }
+        if (strpos($ttype, 'vsat') !== false || strpos($ttype, 'nexuswave') !== false) {
+            return 'vsat_users';
+        }
+    }
+
+    return null;
+}
+
+/**
+ * pfctl table 에 IP 원자적 교체.
+ * $ips 가 비어있으면 테이블을 flush.
+ */
+function cp_sync_pf_table($table, array $ips) {
+    $safeTable = escapeshellarg($table);
+    if (empty($ips)) {
+        mwexec("/sbin/pfctl -t {$safeTable} -T flush 2>/dev/null");
+        return;
+    }
+    $tmp = "/tmp/cp_table_{$table}.txt";
+    file_put_contents($tmp, implode("\n", array_unique($ips)) . "\n");
+    mwexec("/sbin/pfctl -t {$safeTable} -T replace -f " . escapeshellarg($tmp));
+}
+
+/**
+ * CP 세션 DB 기준으로 pfctl 라우팅 테이블 전체 재동기화.
+ * captiveportal_configure() 훅 및 크론에서 호출.
+ */
+function cp_sync_routing_tables() {
+    $sessions = captiveportal_read_db('', 'crew');
+    if (!is_array($sessions)) {
+        // 세션 없음 → 테이블 flush
+        cp_sync_pf_table('vsat_users',     []);
+        cp_sync_pf_table('starlink_users', []);
+        return;
+    }
+
+    $vsat_ips     = [];
+    $starlink_ips = [];
+
+    foreach ($sessions as $s) {
+        $ip   = $s[2] ?? '';
+        $user = $s[4] ?? '';
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+            continue;
+        }
+
+        $gwname = cp_get_terminaltype_for_user($user);
+        $table  = cp_get_pf_table_for_gateway($gwname);
+
+        if ($table === 'vsat_users') {
+            $vsat_ips[] = $ip;
+        } elseif ($table === 'starlink_users') {
+            $starlink_ips[] = $ip;
+        }
+        // null(Auto) 은 테이블 미등록 → 기본 라우팅 사용
+    }
+
+    cp_sync_pf_table('vsat_users',     $vsat_ips);
+    cp_sync_pf_table('starlink_users', $starlink_ips);
+}
+
+/**
+ * 로그아웃 처리.
+ * - pfctl table 에서 IP 제거
+ * - pf state 테이블 정리 (기존 세션 즉시 종료)
+ * - config.xml 수정 없음, filter_configure() 없음
+ */
+function del_crew_linked_rule($sourceip, $userid) {
+    if (!filter_var($sourceip, FILTER_VALIDATE_IP)) {
+        return false;
+    }
+
+    $safeIp = escapeshellarg($sourceip);
+
+    // 어느 테이블에 있든 제거 (에러 무시)
+    mwexec("/sbin/pfctl -t vsat_users     -T delete {$safeIp} 2>/dev/null");
+    mwexec("/sbin/pfctl -t starlink_users -T delete {$safeIp} 2>/dev/null");
+
+    // pf state 정리 → 기존 라우팅 세션 즉시 종료
+    cp_kill_states_for_ip($sourceip);
+
+    return true;
 }
 function cp_is_valid_ip($ip) {
     return (bool)filter_var($ip, FILTER_VALIDATE_IP);
@@ -3930,54 +4035,32 @@ function cp_kill_states_for_ip($ip) {
 }
 
 
-function add_crew_linked_rule($sourceip, $userid){
-    global $config;
-    del_crew_linked_rule($sourceip, $userid);
-    $gwset = false;
-    $userindex = 0;
-    foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
-        if($value['varusersusername']==$userid){
-            if(isset($value['varusersterminaltype'])){
-                $terminaltype=$value['varusersterminaltype'];
-                $userindex = $item;
-            }
-            else{
-                $value['varusersterminaltype']="";
-                $terminaltype="";
-            }
-            break;
-        }
-    }
-    if($terminaltype=="" && is_using_fx()!=''){ //Auto and FX system (or dual VSAT)
-        $terminaltype = is_using_fx();
+/**
+ * 로그인 처리.
+ * - pfctl table 에 IP 추가
+ * - config.xml 수정 없음, filter_configure() 없음
+ */
+function add_crew_linked_rule($sourceip, $userid) {
+    if (!filter_var($sourceip, FILTER_VALIDATE_IP)) {
+        return false;
     }
 
-    $newrule = array();
-    $newrule['id'] = '';
-    $newrule['tracker']=time();
-    $newrule['type']='pass';
-    $newrule['interface']=$config['captiveportal']['crew']['interface'];
-    $newrule['ipprotocol']='inet';
-    $newrule['tag'] = '';
-    $newrule['tagged'] = '';
-    $newrule['max'] = '200';
-    $newrule['max-src-nodes'] = '';
-    $newrule['max-src-conn'] = '';
-    $newrule['max-src-states'] = '';
-    $newrule['statetimeout'] = '';
-    $newrule['statetype'] = 'keep state';
-    $newrule['os'] = '';
-    $newrule['source']['address']=$sourceip;
-    $newrule['destination']['network']='(self)';
-    $newrule['destination']['not']='';
-    $newrule['descr']="[User Rule] ${userid} auto generated rule";
-    $newrule['gateway']=$terminaltype;
-    $newrule['updated']['time']=time();
-    $newrule['updated']['username']='${userid}@${sourceip}';
-    $newrule['created']['time']=time();
-    $newrule['created']['username']='${userid}@${sourceip}';
-    array_push($config['filter']['rule'], $newrule);
-    filter_configure();
+    // 혹시 이전 세션 잔재가 있으면 먼저 제거
+    del_crew_linked_rule($sourceip, $userid);
+
+    $gwname = cp_get_terminaltype_for_user($userid);
+    $table  = cp_get_pf_table_for_gateway($gwname);
+
+    if ($table === null) {
+        // Auto 사용자 또는 매핑 불가 → 기본 라우팅 사용, 테이블 미등록
+        return true;
+    }
+
+    $safeIp    = escapeshellarg($sourceip);
+    $safeTable = escapeshellarg($table);
+    mwexec("/sbin/pfctl -t {$safeTable} -T add {$safeIp}");
+
+    return true;
 }
 
 /* ---------- datacounter kick spool processor ---------- */
