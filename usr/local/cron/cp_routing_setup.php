@@ -5,18 +5,22 @@
  * pfctl 테이블 기반 라우팅 초기 설정 스크립트 (1회 실행).
  *
  * 수행 내용:
- *   1. pfSense Alias 생성: vsat_users, starlink_users (Host 타입)
+ *   1. pfSense Alias 생성: 게이트웨이당 1개 (cp_gw_{name}, Host 타입)
  *   2. Floating Rule 생성:
- *      - pass in  LAN  route-to VSAT_GW      src: vsat_users
- *      - pass in  LAN  route-to STARLINK_GW  src: starlink_users
- *      - block out STARLINK_WAN              src: vsat_users
- *      - block out VSAT_WAN                  src: starlink_users
+ *      - pass in  LAN   route-to {GW}        src: cp_gw_{name}
+ *      - block out {타 WAN 인터페이스}        src: cp_gw_{name}
  *   3. config.xml 저장 및 filter 재로드
  *
  * 실행:
  *   /usr/local/bin/php /usr/local/cron/cp_routing_setup.php
  *
- * 중복 실행 안전: descr 기준으로 이미 존재하는 항목은 건너뜀.
+ * 중복 실행 안전: descr/name 기준으로 이미 존재하는 항목은 건너뜀.
+ * 게이트웨이 추가/삭제 시 재실행하면 자동으로 alias/rule 이 갱신됨.
+ *
+ * 대상 게이트웨이 조건 (cp_find_all_wan_gateways 와 동일):
+ *   - terminal_type 이 설정된 게이트웨이
+ *   - disabled 가 아닌 것
+ *   - terminal_type 에 'vpn' 이 없는 것
  */
 
 require_once("captiveportal.inc");
@@ -38,24 +42,9 @@ function setup_log($msg) {
 }
 
 /**
- * gateway 목록에서 중복 없이 interface key 목록 반환.
- * captiveportal.inc 의 cp_find_gateways_by_type / cp_pick_primary_gateway 사용.
- */
-function get_iface_keys(array $gateways) {
-    $ifaces = [];
-    foreach ($gateways as $gw) {
-        $iface = $gw['interface'] ?? '';
-        if ($iface !== '' && !in_array($iface, $ifaces, true)) {
-            $ifaces[] = $iface;
-        }
-    }
-    return $ifaces;
-}
-
-/**
  * Alias가 이미 존재하는지 이름으로 확인.
  */
-function alias_exists($name) {
+function alias_exists_local($name) {
     global $config;
     foreach ($config['aliases']['alias'] ?? [] as $alias) {
         if (($alias['name'] ?? '') === $name) return true;
@@ -66,7 +55,7 @@ function alias_exists($name) {
 /**
  * Floating Rule이 이미 존재하는지 descr 로 확인.
  */
-function floating_rule_exists($descr) {
+function floating_rule_exists_local($descr) {
     global $config;
     foreach ($config['filter']['rule'] ?? [] as $rule) {
         if (isset($rule['floating']) && ($rule['descr'] ?? '') === $descr) return true;
@@ -77,10 +66,10 @@ function floating_rule_exists($descr) {
 /**
  * Alias 생성 후 config 배열에 추가.
  */
-function create_alias($name, $descr) {
+function create_alias_local($name, $descr) {
     global $config;
 
-    if (alias_exists($name)) {
+    if (alias_exists_local($name)) {
         setup_log("SKIP alias '{$name}' (already exists)");
         return false;
     }
@@ -90,11 +79,11 @@ function create_alias($name, $descr) {
     }
 
     $config['aliases']['alias'][] = [
-        'name'   => $name,
-        'type'   => 'host',
-        'address'=> '',
-        'descr'  => $descr,
-        'detail' => '',
+        'name'    => $name,
+        'type'    => 'host',
+        'address' => '',
+        'descr'   => $descr,
+        'detail'  => '',
     ];
 
     setup_log("CREATE alias '{$name}'");
@@ -103,40 +92,35 @@ function create_alias($name, $descr) {
 
 /**
  * Floating Pass Rule (route-to) 생성.
- * $iface   : LAN interface key (captiveportal crew interface)
- * $src_alias: alias 이름 (source)
- * $gateway : gateway name
- * $descr   : 룰 설명
  */
-function create_pass_rule($iface, $src_alias, $gateway, $descr) {
+function create_pass_rule_local($iface, $src_alias, $gateway, $descr) {
     global $config;
 
-    if (floating_rule_exists($descr)) {
+    if (floating_rule_exists_local($descr)) {
         setup_log("SKIP pass rule '{$descr}' (already exists)");
         return false;
     }
 
     $rule = [
-        'id'             => '',
-        'tracker'        => (string)(time() + rand(1, 9999)),
-        'type'           => 'pass',
-        'floating'       => 'yes',
-        'direction'      => 'in',
-        'quick'          => 'yes',
-        'interface'      => $iface,
-        'ipprotocol'     => 'inet',
-        'tag'            => '',
-        'tagged'         => '',
-        'statetype'      => 'keep state',
-        'source'         => ['address' => $src_alias],
-        'destination'    => ['any' => true],
-        'gateway'        => $gateway,
-        'descr'          => $descr,
-        'updated'        => ['time' => (string)time(), 'username' => 'cp_routing_setup'],
-        'created'        => ['time' => (string)time(), 'username' => 'cp_routing_setup'],
+        'id'          => '',
+        'tracker'     => (string)(time() + rand(1, 9999)),
+        'type'        => 'pass',
+        'floating'    => 'yes',
+        'direction'   => 'in',
+        'quick'       => 'yes',
+        'interface'   => $iface,
+        'ipprotocol'  => 'inet',
+        'tag'         => '',
+        'tagged'      => '',
+        'statetype'   => 'keep state',
+        'source'      => ['address' => $src_alias],
+        'destination' => ['any' => true],
+        'gateway'     => $gateway,
+        'descr'       => $descr,
+        'updated'     => ['time' => (string)time(), 'username' => 'cp_routing_setup'],
+        'created'     => ['time' => (string)time(), 'username' => 'cp_routing_setup'],
     ];
 
-    // Floating pass rule 은 앞에 삽입 (우선순위)
     array_unshift($config['filter']['rule'], $rule);
 
     setup_log("CREATE pass rule: [{$iface}] in / src={$src_alias} / gw={$gateway}");
@@ -145,37 +129,33 @@ function create_pass_rule($iface, $src_alias, $gateway, $descr) {
 
 /**
  * Floating Block Rule 생성.
- * $iface    : WAN interface key (차단할 출구)
- * $src_alias: alias 이름 (source)
- * $descr    : 룰 설명
  */
-function create_block_rule($iface, $src_alias, $descr) {
+function create_block_rule_local($iface, $src_alias, $descr) {
     global $config;
 
-    if (floating_rule_exists($descr)) {
+    if (floating_rule_exists_local($descr)) {
         setup_log("SKIP block rule '{$descr}' (already exists)");
         return false;
     }
 
     $rule = [
-        'id'             => '',
-        'tracker'        => (string)(time() + rand(1, 9999)),
-        'type'           => 'block',
-        'floating'       => 'yes',
-        'direction'      => 'out',
-        'quick'          => 'yes',
-        'interface'      => $iface,
-        'ipprotocol'     => 'inet',
-        'tag'            => '',
-        'tagged'         => '',
-        'source'         => ['address' => $src_alias],
-        'destination'    => ['any' => true],
-        'descr'          => $descr,
-        'updated'        => ['time' => (string)time(), 'username' => 'cp_routing_setup'],
-        'created'        => ['time' => (string)time(), 'username' => 'cp_routing_setup'],
+        'id'          => '',
+        'tracker'     => (string)(time() + rand(1, 9999)),
+        'type'        => 'block',
+        'floating'    => 'yes',
+        'direction'   => 'out',
+        'quick'       => 'yes',
+        'interface'   => $iface,
+        'ipprotocol'  => 'inet',
+        'tag'         => '',
+        'tagged'      => '',
+        'source'      => ['address' => $src_alias],
+        'destination' => ['any' => true],
+        'descr'       => $descr,
+        'updated'     => ['time' => (string)time(), 'username' => 'cp_routing_setup'],
+        'created'     => ['time' => (string)time(), 'username' => 'cp_routing_setup'],
     ];
 
-    // Block rule 도 앞에 삽입
     array_unshift($config['filter']['rule'], $rule);
 
     setup_log("CREATE block rule: [{$iface}] out / src={$src_alias} BLOCKED");
@@ -188,94 +168,82 @@ function create_block_rule($iface, $src_alias, $descr) {
 
 setup_log("=== cp_routing_setup 시작 ===");
 
-// ---- 1. Gateway 탐색 ----
+// ---- 1. WAN 게이트웨이 목록 조회 ----
 
-// captiveportal.inc 의 공용 헬퍼 사용
-$vsat_gws     = cp_find_gateways_by_type(['vsat', 'nexuswave']);
-$starlink_gws = cp_find_gateways_by_type(['starlink']);
+$all_gws = cp_find_all_wan_gateways();
 
-if (empty($vsat_gws)) {
-    setup_log("ERROR: VSAT gateway 를 찾을 수 없음 (terminal_type 확인 필요)");
-    exit(1);
-}
-if (empty($starlink_gws)) {
-    setup_log("ERROR: Starlink gateway 를 찾을 수 없음 (terminal_type 확인 필요)");
+if (empty($all_gws)) {
+    setup_log("ERROR: WAN 게이트웨이를 찾을 수 없음");
+    setup_log("       조건: terminal_type 설정됨 + disabled 아님 + terminal_type 에 'vpn' 없음");
     exit(1);
 }
 
-$vsat_primary     = cp_pick_primary_gateway($vsat_gws);
-$starlink_primary = cp_pick_primary_gateway($starlink_gws);
+setup_log("발견된 WAN 게이트웨이 목록:");
+foreach ($all_gws as $gw) {
+    $table = cp_gw_table_name($gw['name']);
+    setup_log("  - {$gw['name']} | interface={$gw['interface']} | terminal_type={$gw['terminal_type']} | table={$table}");
+}
 
-// route-to 차단 대상 인터페이스 목록
-$vsat_ifaces     = get_iface_keys($vsat_gws);
-$starlink_ifaces = get_iface_keys($starlink_gws);
-
-// CP LAN interface (captiveportal crew 존재하면 사용, 없으면 'lan')
+// CP LAN interface
 $lan_iface = $config['captiveportal']['crew']['interface'] ?? 'lan';
-
-setup_log("VSAT primary gateway  : {$vsat_primary['name']} (ifaces: " . implode(',', $vsat_ifaces) . ")");
-setup_log("Starlink primary gw   : {$starlink_primary['name']} (ifaces: " . implode(',', $starlink_ifaces) . ")");
-setup_log("CP LAN interface      : {$lan_iface}");
+setup_log("CP LAN interface: {$lan_iface}");
 echo "\n";
 
-// ---- 2. Alias 생성 ----
+// 모든 WAN 인터페이스 목록 (블록룰 생성용)
+$all_ifaces = array_unique(array_column($all_gws, 'interface'));
 
 $changed = false;
 
-$changed |= create_alias(
-    'vsat_users',
-    'VSAT active users - managed by pfctl (cp_routing_table_sync)'
-);
-$changed |= create_alias(
-    'starlink_users',
-    'Starlink active users - managed by pfctl (cp_routing_table_sync)'
-);
+// ---- 2. 게이트웨이별 Alias 생성 ----
 
-echo "\n";
-
-// ---- 3. Floating Pass Rule (route-to) 생성 ----
-
-$changed |= create_pass_rule(
-    $lan_iface,
-    'vsat_users',
-    $vsat_primary['name'],
-    '[CP Routing] vsat_users route-to ' . $vsat_primary['name']
-);
-
-$changed |= create_pass_rule(
-    $lan_iface,
-    'starlink_users',
-    $starlink_primary['name'],
-    '[CP Routing] starlink_users route-to ' . $starlink_primary['name']
-);
-
-echo "\n";
-
-// ---- 4. Floating Block Rule 생성 ----
-// vsat_users 가 Starlink WAN 으로 나가는 것 차단
-foreach ($starlink_ifaces as $iface) {
-    $changed |= create_block_rule(
-        $iface,
-        'vsat_users',
-        "[CP Routing] block vsat_users on {$iface} (Starlink)"
+setup_log("--- Alias 생성 ---");
+foreach ($all_gws as $gw) {
+    $table = cp_gw_table_name($gw['name']);
+    $changed |= create_alias_local(
+        $table,
+        "CP routing table for gateway {$gw['name']} (terminal_type={$gw['terminal_type']})"
     );
 }
+echo "\n";
 
-// starlink_users 가 VSAT WAN 으로 나가는 것 차단
-foreach ($vsat_ifaces as $iface) {
-    $changed |= create_block_rule(
-        $iface,
-        'starlink_users',
-        "[CP Routing] block starlink_users on {$iface} (VSAT)"
+// ---- 3. 게이트웨이별 Floating Pass Rule 생성 ----
+
+setup_log("--- Pass Rule 생성 (route-to) ---");
+foreach ($all_gws as $gw) {
+    $table = cp_gw_table_name($gw['name']);
+    $changed |= create_pass_rule_local(
+        $lan_iface,
+        $table,
+        $gw['name'],
+        "[CP Routing] {$table} route-to {$gw['name']}"
     );
 }
+echo "\n";
 
+// ---- 4. 게이트웨이별 Floating Block Rule 생성 ----
+// 각 게이트웨이 사용자가 자신의 WAN이 아닌 다른 WAN으로 나가는 것을 차단
+
+setup_log("--- Block Rule 생성 (타 WAN 차단) ---");
+foreach ($all_gws as $gw) {
+    $table    = cp_gw_table_name($gw['name']);
+    $gw_iface = $gw['interface'];
+
+    foreach ($all_ifaces as $iface) {
+        if ($iface === $gw_iface) continue; // 자신의 WAN 은 차단 안 함
+
+        $changed |= create_block_rule_local(
+            $iface,
+            $table,
+            "[CP Routing] block {$table} on {$iface}"
+        );
+    }
+}
 echo "\n";
 
 // ---- 5. 저장 및 적용 ----
 
 if ($changed) {
-    write_config("cp_routing_setup: created pfctl routing aliases and floating rules");
+    write_config("cp_routing_setup: created aliases and floating rules for " . count($all_gws) . " gateways");
     setup_log("config.xml 저장 완료");
 
     filter_configure();
@@ -286,6 +254,23 @@ if ($changed) {
     setup_log("pfctl 테이블 초기 동기화 완료");
 } else {
     setup_log("변경 사항 없음 (모두 이미 존재)");
+    // 테이블만 동기화
+    cp_sync_routing_tables();
+    setup_log("pfctl 테이블 동기화 완료");
 }
 
+echo "\n";
+setup_log("=== 생성된 룰 요약 ===");
+$pass_count  = 0;
+$block_count = 0;
+foreach ($config['filter']['rule'] ?? [] as $rule) {
+    if (!isset($rule['floating'])) continue;
+    if (strpos($rule['descr'] ?? '', '[CP Routing]') === false) continue;
+    if ($rule['type'] === 'pass')  $pass_count++;
+    if ($rule['type'] === 'block') $block_count++;
+}
+setup_log("  Pass  Rules: {$pass_count} 개");
+setup_log("  Block Rules: {$block_count} 개");
+setup_log("  합계        : " . ($pass_count + $block_count) . " 개");
+echo "\n";
 setup_log("=== cp_routing_setup 완료 ===");

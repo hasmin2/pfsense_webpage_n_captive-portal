@@ -3874,13 +3874,48 @@ function is_using_fx(){
 
 /**
  * ============================================================
- *  pfctl Table 기반 라우팅 관리 함수군
- *  - config.xml / filter_configure() 호출 없음
- *  - 로그인/로그아웃 시 pfctl 메모리 조작만 수행
- *  - filter 재로드 후 복원은 captiveportal_configure() 훅이 담당
- *  - 1분 크론이 비정상 상황 자가복구 담당
+ *  pfctl Table 기반 라우팅 관리 함수군  (per-gateway 동적 구조)
+ *
+ *  설계 원칙:
+ *   - 게이트웨이 1개당 pfctl 테이블 1개 (cp_gw_{name})
+ *   - 게이트웨이 추가/삭제/이름변경 → 코드 변경 없이 자동 대응
+ *   - config.xml / filter_configure() 호출 없음 (로그인/로그아웃 시)
+ *   - filter 재로드 후 복원은 captiveportal_configure() 훅이 담당
+ *   - 1분 크론이 비정상 상황 자가복구 담당
  * ============================================================
  */
+
+/**
+ * gateway 이름을 pfctl/alias 에서 사용 가능한 안전한 문자열로 변환.
+ * 반환: 'cp_gw_' + 소문자 영숫자+언더스코어, 최대 31자
+ */
+function cp_gw_table_name($gwname) {
+    $safe = preg_replace('/[^a-z0-9]/', '_', strtolower($gwname));
+    $safe = preg_replace('/_+/', '_', $safe);
+    $safe = trim($safe, '_');
+    return 'cp_gw_' . substr($safe, 0, 25);
+}
+
+/**
+ * VPN 을 제외한 전체 WAN 게이트웨이 목록 반환.
+ * terminal_type 이 설정된 게이트웨이만 포함 (미설정이면 관리 대상 외로 간주).
+ * disabled 게이트웨이 제외.
+ */
+function cp_find_all_wan_gateways() {
+    global $config;
+    $result = [];
+
+    foreach ($config['gateways']['gateway_item'] ?? [] as $gw) {
+        $name  = trim($gw['name']  ?? '');
+        $ttype = strtolower(trim($gw['terminal_type'] ?? ''));
+        if ($name === '' || $ttype === '') continue;
+        if (!empty($gw['disabled']))         continue;
+        if (strpos($ttype, 'vpn') !== false) continue;
+        $result[] = $gw;
+    }
+
+    return $result;
+}
 
 /**
  * 사용자명으로 varusersterminaltype(gateway name) 조회.
@@ -3901,7 +3936,7 @@ function cp_get_terminaltype_for_user($userid) {
         }
     }
 
-    // Auto 사용자이고 FX(이중 VSAT) 환경이면 보조 gateway 사용
+    // Auto 사용자이고 FX(이중 WAN) 환경이면 보조 gateway 사용
     if ($terminaltype === '') {
         $fx = is_using_fx();
         if ($fx !== '') {
@@ -3916,11 +3951,11 @@ function cp_get_terminaltype_for_user($userid) {
  * gateway name → pfctl table name 매핑.
  *
  * 탐색 순서:
- *   1) gateway_item 에서 name 정확히 일치 → terminal_type 으로 판별
- *   2) 이름 변경 등으로 못 찾을 경우 → gwname 자체에 키워드 포함 여부로 추론
+ *   1) gateway_item 에서 name 정확히 일치하는 WAN 게이트웨이 → cp_gw_table_name() 반환
+ *   2) 대소문자 무시 일치 (이름이 대소문자만 바뀐 경우)
+ *   3) 찾지 못하면 null (Auto 또는 관리 대상 외)
  *
- * 반환값:
- *   'starlink_users' | 'vsat_users' | null(Auto 또는 판별 불가)
+ * 반환값: 'cp_gw_{name}' 형태 문자열 | null
  */
 function cp_get_pf_table_for_gateway($gwname) {
     global $config;
@@ -3929,160 +3964,85 @@ function cp_get_pf_table_for_gateway($gwname) {
         return null;
     }
 
-    // 1차: gateway_item 에서 name 정확히 일치 → terminal_type 판별
-    if (is_array($config['gateways']['gateway_item'] ?? null)) {
-        foreach ($config['gateways']['gateway_item'] as $gw) {
-            if (($gw['name'] ?? '') !== $gwname) {
-                continue;
-            }
-            $ttype = strtolower($gw['terminal_type'] ?? '');
-            if (strpos($ttype, 'starlink') !== false) {
-                return 'starlink_users';
-            }
-            if (strpos($ttype, 'vsat') !== false || strpos($ttype, 'nexuswave') !== false) {
-                return 'vsat_users';
-            }
-            // gateway 는 찾았지만 terminal_type 이 매핑 안 됨
-            return null;
+    $all_gws = cp_find_all_wan_gateways();
+
+    // 1차: 정확히 일치
+    foreach ($all_gws as $gw) {
+        if ($gw['name'] === $gwname) {
+            return cp_gw_table_name($gwname);
         }
     }
 
-    // 2차: gateway name 자체에 키워드가 포함된 경우 (이름 변경 후 fallback)
+    // 2차: 대소문자 무시
     $lower = strtolower($gwname);
-    if (strpos($lower, 'starlink') !== false) {
-        return 'starlink_users';
-    }
-    if (strpos($lower, 'vsat') !== false || strpos($lower, 'nexuswave') !== false) {
-        return 'vsat_users';
+    foreach ($all_gws as $gw) {
+        if (strtolower($gw['name']) === $lower) {
+            return cp_gw_table_name($gw['name']);
+        }
     }
 
     return null;
 }
 
 /**
- * terminal_type 키워드 배열로 gateway 목록 조회.
- * VPN 게이트웨이 제외.
- */
-function cp_find_gateways_by_type(array $type_keywords) {
-    global $config;
-    $result = [];
-
-    foreach ($config['gateways']['gateway_item'] ?? [] as $gw) {
-        $ttype = strtolower($gw['terminal_type'] ?? '');
-        $name  = $gw['name'] ?? '';
-        if ($name === '' || $ttype === '') continue;
-        if (strpos($ttype, 'vpn') !== false) continue;
-
-        foreach ($type_keywords as $kw) {
-            if (strpos($ttype, $kw) !== false) {
-                $result[] = $gw;
-                break;
-            }
-        }
-    }
-
-    return $result;
-}
-
-/**
- * gateway 목록에서 terminal_type 이 '_pri' 로 끝나는 것 우선, 없으면 첫 번째 반환.
- */
-function cp_pick_primary_gateway(array $gateways) {
-    foreach ($gateways as $gw) {
-        if (strpos(strtolower($gw['terminal_type'] ?? ''), '_pri') !== false) {
-            return $gw;
-        }
-    }
-    return $gateways[0] ?? null;
-}
-
-/**
- * config.xml 의 [CP Routing] 룰 전체를 현재 gateway 구성 기준으로 완전 재생성.
+ * config.xml 의 [CP Routing] 룰 전체를 현재 gateway 구성 기준으로 완전 재동기화.
  *
  * 처리 범위:
- *   - gateway 이름 변경
- *   - gateway 추가 (새 Pass Rule / 새 Block Rule 자동 생성)
- *   - gateway 삭제 (불필요한 Rule 자동 제거)
+ *   - gateway 이름 변경 → 구 Rule 삭제 + 신 Rule 생성
+ *   - gateway 추가    → 새 Pass Rule + Block Rule 자동 생성
+ *   - gateway 삭제    → 불필요한 Rule 자동 제거
  *
- * 동작 방식:
- *   1) 기존 [CP Routing] 룰 전부 제거
- *   2) 현재 gateway_item 기준으로 Pass Rule + Block Rule 재생성
- *   3) write_config() → 다음 filter_configure() 사이클에 자동 반영
- *      (현재 사이클은 이미 진행 중이므로 1 사이클 lag — 정상)
- *
- * 생성 규칙:
- *   Pass  : 타입당 1개 (vsat_users→primary VSAT GW, starlink_users→primary Starlink GW)
- *   Block : 타입별 "상대방 WAN 인터페이스" 마다 1개
- *           (인터페이스 수만큼 자동 확장/축소)
+ * 생성 규칙 (게이트웨이 N개 기준):
+ *   Pass  : N개  (게이트웨이당 1개, route-to 해당 GW)
+ *   Block : N*(N의 서로 다른 인터페이스 수 - 1) 개
+ *           (자신의 WAN 이 아닌 모든 WAN 인터페이스에 block out)
  */
 function cp_refresh_pass_rules() {
     global $config;
 
-    $vsat_gws     = cp_find_gateways_by_type(['vsat', 'nexuswave']);
-    $starlink_gws = cp_find_gateways_by_type(['starlink']);
-
-    // 양쪽 다 없으면 아무것도 안 함
-    if (empty($vsat_gws) && empty($starlink_gws)) {
+    $all_gws = cp_find_all_wan_gateways();
+    if (empty($all_gws)) {
         return;
     }
 
-    $vsat_primary     = cp_pick_primary_gateway($vsat_gws);
-    $starlink_primary = cp_pick_primary_gateway($starlink_gws);
-    $lan_iface        = $config['captiveportal']['crew']['interface'] ?? 'lan';
+    $lan_iface  = $config['captiveportal']['crew']['interface'] ?? 'lan';
+    $all_ifaces = array_unique(array_column($all_gws, 'interface'));
 
     // ── 기대하는 룰 세트를 구성 ──────────────────────────────────────────────
     $expected = [];
 
-    // Pass Rules (타입당 1개)
-    if ($vsat_primary) {
+    foreach ($all_gws as $gw) {
+        $gwname   = $gw['name'];
+        $table    = cp_gw_table_name($gwname);
+        $gw_iface = $gw['interface'];
+
+        // Pass Rule: 이 게이트웨이로 route-to (게이트웨이당 1개)
         $expected[] = [
             'type'      => 'pass',
             'direction' => 'in',
             'interface' => $lan_iface,
-            'src_alias' => 'vsat_users',
-            'gateway'   => $vsat_primary['name'],
-            'descr'     => '[CP Routing] vsat_users route-to ' . $vsat_primary['name'],
+            'src_alias' => $table,
+            'gateway'   => $gwname,
+            'descr'     => "[CP Routing] {$table} route-to {$gwname}",
         ];
-    }
-    if ($starlink_primary) {
-        $expected[] = [
-            'type'      => 'pass',
-            'direction' => 'in',
-            'interface' => $lan_iface,
-            'src_alias' => 'starlink_users',
-            'gateway'   => $starlink_primary['name'],
-            'descr'     => '[CP Routing] starlink_users route-to ' . $starlink_primary['name'],
-        ];
-    }
 
-    // Block Rules (vsat_users는 Starlink WAN 인터페이스마다, 반대도 동일)
-    $vsat_ifaces     = array_unique(array_column($vsat_gws,     'interface'));
-    $starlink_ifaces = array_unique(array_column($starlink_gws, 'interface'));
-
-    foreach ($starlink_ifaces as $iface) {
-        $expected[] = [
-            'type'      => 'block',
-            'direction' => 'out',
-            'interface' => $iface,
-            'src_alias' => 'vsat_users',
-            'gateway'   => '',
-            'descr'     => "[CP Routing] block vsat_users on {$iface} (Starlink)",
-        ];
-    }
-    foreach ($vsat_ifaces as $iface) {
-        $expected[] = [
-            'type'      => 'block',
-            'direction' => 'out',
-            'interface' => $iface,
-            'src_alias' => 'starlink_users',
-            'gateway'   => '',
-            'descr'     => "[CP Routing] block starlink_users on {$iface} (VSAT)",
-        ];
+        // Block Rule: 자신의 WAN 이 아닌 다른 WAN 인터페이스마다 1개
+        foreach ($all_ifaces as $iface) {
+            if ($iface === $gw_iface) continue;
+            $expected[] = [
+                'type'      => 'block',
+                'direction' => 'out',
+                'interface' => $iface,
+                'src_alias' => $table,
+                'gateway'   => '',
+                'descr'     => "[CP Routing] block {$table} on {$iface}",
+            ];
+        }
     }
 
     // ── 현재 config.xml 의 [CP Routing] 룰과 비교 ──────────────────────────
     $existing_descrs = [];
-    foreach ($config['filter']['rule'] as $rule) {
+    foreach ($config['filter']['rule'] ?? [] as $rule) {
         if (isset($rule['floating']) && strpos($rule['descr'] ?? '', '[CP Routing]') !== false) {
             $existing_descrs[] = $rule['descr'];
         }
@@ -4162,51 +4122,49 @@ function cp_sync_pf_table($table, array $ips) {
  * captiveportal_configure() 훅 및 크론에서 호출.
  *
  * 수행 순서:
- *   1) config.xml Pass Rule 의 gateway 참조가 현재 gateway 목록과 다르면 갱신
- *      (gateway 이름 변경 대응 — 다음 filter_configure() 사이클에 반영)
- *   2) CP 세션 DB → pfctl 테이블 원자적 교체
+ *   1) config.xml Pass/Block Rule 이 현재 gateway 목록과 다르면 갱신
+ *      (gateway 추가/삭제/이름변경 대응 — 다음 filter_configure() 사이클에 반영)
+ *   2) CP 세션 DB → 각 게이트웨이별 pfctl 테이블 원자적 교체
  */
 function cp_sync_routing_tables() {
-    // 1) gateway 이름 변경 감지 및 Pass Rule 동적 갱신
+    // 1) gateway 변동 감지 및 Pass/Block Rule 동적 갱신
     cp_refresh_pass_rules();
 
-    // 2) pfctl 테이블 재동기화
+    // 2) 모든 WAN 게이트웨이 테이블을 빈 배열로 초기화
+    $all_gws   = cp_find_all_wan_gateways();
+    $table_ips = [];
+    foreach ($all_gws as $gw) {
+        $table_ips[cp_gw_table_name($gw['name'])] = [];
+    }
+
+    // 3) 세션 DB 에서 IP → 게이트웨이 → 테이블 매핑
     $sessions = captiveportal_read_db('', 'crew');
-    if (!is_array($sessions)) {
-        cp_sync_pf_table('vsat_users',     []);
-        cp_sync_pf_table('starlink_users', []);
-        return;
+    if (is_array($sessions)) {
+        foreach ($sessions as $s) {
+            $ip   = $s[2] ?? '';
+            $user = $s[4] ?? '';
+            if (!filter_var($ip, FILTER_VALIDATE_IP)) continue;
+
+            $gwname = cp_get_terminaltype_for_user($user);
+            $table  = cp_get_pf_table_for_gateway($gwname);
+
+            if ($table !== null && array_key_exists($table, $table_ips)) {
+                $table_ips[$table][] = $ip;
+            }
+            // null(Auto) 또는 관리 대상 외 게이트웨이 → 기본 라우팅 사용
+        }
     }
 
-    $vsat_ips     = [];
-    $starlink_ips = [];
-
-    foreach ($sessions as $s) {
-        $ip   = $s[2] ?? '';
-        $user = $s[4] ?? '';
-        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
-            continue;
-        }
-
-        $gwname = cp_get_terminaltype_for_user($user);
-        $table  = cp_get_pf_table_for_gateway($gwname);
-
-        if ($table === 'vsat_users') {
-            $vsat_ips[] = $ip;
-        } elseif ($table === 'starlink_users') {
-            $starlink_ips[] = $ip;
-        }
-        // null(Auto) 은 테이블 미등록 → 기본 라우팅 사용
+    // 4) 각 테이블 원자적 교체 (빈 배열이면 flush)
+    foreach ($table_ips as $table => $ips) {
+        cp_sync_pf_table($table, $ips);
     }
-
-    cp_sync_pf_table('vsat_users',     $vsat_ips);
-    cp_sync_pf_table('starlink_users', $starlink_ips);
 }
 
 /**
  * 로그아웃 처리.
- * - pfctl table 에서 IP 제거
- * - pf state 테이블 정리 (기존 세션 즉시 종료)
+ * - 모든 게이트웨이 pfctl table 에서 IP 제거 (어느 테이블에 있든 무조건 정리)
+ * - pf state 테이블 정리 (기존 라우팅 세션 즉시 종료)
  * - config.xml 수정 없음, filter_configure() 없음
  */
 function del_crew_linked_rule($sourceip, $userid) {
@@ -4214,11 +4172,13 @@ function del_crew_linked_rule($sourceip, $userid) {
         return false;
     }
 
-    $safeIp = escapeshellarg($sourceip);
+    $safeIp  = escapeshellarg($sourceip);
+    $all_gws = cp_find_all_wan_gateways();
 
-    // 어느 테이블에 있든 제거 (에러 무시)
-    mwexec("/sbin/pfctl -t vsat_users     -T delete {$safeIp} 2>/dev/null");
-    mwexec("/sbin/pfctl -t starlink_users -T delete {$safeIp} 2>/dev/null");
+    foreach ($all_gws as $gw) {
+        $safeTable = escapeshellarg(cp_gw_table_name($gw['name']));
+        mwexec("/sbin/pfctl -t {$safeTable} -T delete {$safeIp} 2>/dev/null");
+    }
 
     // pf state 정리 → 기존 라우팅 세션 즉시 종료
     cp_kill_states_for_ip($sourceip);
