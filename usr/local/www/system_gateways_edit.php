@@ -72,6 +72,7 @@ if (isset($id) && $a_gateways[$id]) {
     $pconfig['protos'] = $a_gateways[$id]['protos'];
     $pconfig['currentusage'] = $a_gateways[$id]['currentusage'];
 	$pconfig['allowance'] = $a_gateways[$id]['allowance'];
+	$pconfig['cutoff_enable'] = $a_gateways[$id]['cutoff_enable'];
 	$pconfig['destinationip'] = $a_gateways[$id]['destinationip'];
 	$pconfig['check_timeout'] = $a_gateways[$id]['check_timeout'];
 	$pconfig['ipprotocol'] = $a_gateways[$id]['ipprotocol'];
@@ -279,6 +280,13 @@ $section->addInput(new Form_Input(
 	'text',
 	$pconfig['allowance']
 ))->setHelp('Enter an monthly data usage limit here in GB, -1 or blank for unlimited');
+
+$section->addInput(new Form_Checkbox(
+	'cutoff_enable',
+	'Cutoff enable when allowance exceeded',
+	'Enable cutoff when monthly allowance is exceeded',
+	$pconfig['cutoff_enable']
+))->setHelp('When checked, all users on this gateway will be disconnected and blocked from logging in once the monthly data allowance is exceeded. Requires "Monthly Data Allowance" to be set.');
 
 $section->addInput(new Form_Input(
 	'rootinterface',

@@ -153,16 +153,29 @@ foreach ($gateways as &$gateway) {
 
     $needShutdown = ((float)$usage >= $allowance);
 
+    $cutoff_enabled = !empty($gateway['cutoff_enable']);
+
     if ($needShutdown) {
-        echo "gateway shutdown start: " . $gatewayName . "\n";
+        if ($cutoff_enabled) {
+            echo "gateway shutdown start: " . $gatewayName . "\n";
 
-        if (captiveportal_add_shutdown_gateway($gatewayName)) {
-            echo "shutdown gateway added: " . $gatewayName . "\n";
-            $isModified = true;
+            if (captiveportal_add_shutdown_gateway($gatewayName)) {
+                echo "shutdown gateway added: " . $gatewayName . "\n";
+                $isModified = true;
+            } else {
+                echo "shutdown gateway already exists: " . $gatewayName . "\n";
+            }
         } else {
-            echo "shutdown gateway already exists: " . $gatewayName . "\n";
-        }
+            // cutoff_enable 이 꺼져 있으면 차단하지 않음.
+            // 혹시 이전에 shutdown_gateways 에 등재되어 있다면 제거해서 정리.
+            echo "allowance exceeded but cutoff disabled: " . $gatewayName
+                . " (usage=" . $usage . "/" . $allowance . "GB)\n";
 
+            if (captiveportal_remove_shutdown_gateway($gatewayName)) {
+                echo "shutdown gateway removed (cutoff disabled): " . $gatewayName . "\n";
+                $isModified = true;
+            }
+        }
     } else {
         echo "gateway turnon start: " . $gatewayName . "\n";
 

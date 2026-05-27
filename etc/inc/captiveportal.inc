@@ -1778,9 +1778,17 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
             unset($uconf['varusersmodified']);
             write_config("freeradius user update");
 
-            // 수정사항 적용
-            //freeradius_users_resync(false, "user change applied");
-            freeradius_update_user($login);
+            // NOTE: freeradius_update_user() 는 여기서 호출하지 않음.
+            // 이유:
+            //   1) 쿼터 초과 여부는 datacounter_auth.sh 가 used-octets 파일을 읽어
+            //      결정하며, 위 단계에서 해당 파일을 이미 삭제했으므로 radiusd 재로드
+            //      없이도 RADIUS 인증이 즉시 통과된다.
+            //   2) freeradius_update_user() 는 내부에서 kill -HUP radiusd 를 실행해
+            //      radiusd 가 설정을 다시 읽는 동안 RADIUS 인증 요청이 5초 타임아웃으로
+            //      실패하여 로그인에 10초 이상 지연이 발생한다.
+            //   3) write_config() 가 이미 위에서 호출됐으므로 중복 호출도 없어진다.
+            // 사용자 속성(비밀번호 등)이 변경된 경우에는 crew_account.php 저장 시점에
+            // freeradius_update_user() 가 이미 호출되므로 여기서 다시 호출할 필요가 없다.
         }
     }
     //////////////////////////////////////////////////////////////////////////////////////////////////    //////////////////////////////////////////////////////////////////////////////////////////////////    //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1978,16 +1986,27 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
 function antenna_allowed($username)
 {
     global $config;
+
+    // BUG FIX: 기존 코드는 첫 번째 반복에서 무조건 return 해버려 username 일치와
+    // 무관하게 항상 첫 번째 사용자 기준으로 판단하는 버그가 있었음.
+    $terminaltype = null;
     foreach ($config['installedpackages']['freeradius']['config'] as $item => $value) {
         if ($username === $value['varusersusername']) {
-            $terminaltype = $value['varusersterminaltype'];
-        }
-        if (strpos($config['captiveportal']['shutdown_gateways'], $terminaltype . '||') !== false) {
-            return false;
-        } else {
-            return true;
+            $terminaltype = $value['varusersterminaltype'] ?? '';
+            break;
         }
     }
+
+    if ($terminaltype === null) {
+        // 사용자를 찾지 못한 경우: 허용 (인증 자체에서 거절될 것임)
+        return true;
+    }
+
+    $shutdown_gateways = $config['captiveportal']['shutdown_gateways'] ?? '';
+    if ($terminaltype !== '' && strpos($shutdown_gateways, $terminaltype . '||') !== false) {
+        return false;
+    }
+    return true;
 }
 function get_suspend_timeschedule($loginId) {
     global $config;
@@ -4152,6 +4171,13 @@ function cp_refresh_pass_rules() {
 
     if ($alias_changed || $added > 0 || $removed > 0) {
         write_config("cp_routing: aliases/rules resynced (aliases=+{$alias_changed}, rules added={$added}, removed={$removed})");
+
+        // 변경사항을 pf 에 즉시 반영.
+        // filter_configure() 내부에서 호출된 경우 재귀 방지를 위해
+        // send_event 로 비동기 재로드 요청 (check_reload_status 가 처리)
+        if (function_exists('send_event')) {
+            send_event("filter reload");
+        }
     }
 }
 
