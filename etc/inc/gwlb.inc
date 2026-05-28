@@ -2182,6 +2182,7 @@ function save_gateway($gateway_settings, $realid = "") {
     $gateway['disablecrewinternet'] = $gateway_settings['disablecrewinternet'];
     $gateway['blockall_bydefault'] = $gateway_settings['blockall_bydefault'];
     $gateway['currentusage'] = $gateway_settings['currentusage'];
+    $gateway['cutoff_enable'] = $gateway_settings['cutoff_enable'];
     $filepath="/etc/inc/";
     $cumulative_file = fopen($filepath.$gateway_settings['rootinterface']."_cumulative", "w");
     fwrite($cumulative_file, $gateway_settings['currentusage']);
