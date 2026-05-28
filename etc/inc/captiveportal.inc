@@ -1170,8 +1170,25 @@ function captiveportal_disconnect($dbent, $term_cause = 1, $stop_time = null, $c
                 IP_FW_TABLE_XDEL, "{$dbent[2]}/{$clientsn}");
         }
         /* XXX: Redundant?! Ensure all pf(4) states are killed. */
-        $_gb = @pfSense_kill_states(utf8_encode($dbent[2]));
-        $_gb = @pfSense_kill_srcstates(utf8_encode($dbent[2]));
+        /* Deferred: 즉시 kill 하면 HTTP 응답 전에 포털 TCP 연결이 RST → ~19초 지연.
+         * 웹 context (index.php): fastcgi_finish_request() 이후 shutdown 함수가 처리.
+         * CLI context (cron/RC): 아래 static 등록 shutdown 함수가 스크립트 종료 시 처리. */
+        $GLOBALS['_cp_deferred_state_kills'][] = $dbent[2];
+        static $_cp_kill_shutdown_registered = false;
+        if (!$_cp_kill_shutdown_registered) {
+            $_cp_kill_shutdown_registered = true;
+            register_shutdown_function(static function() {
+                foreach (($GLOBALS['_cp_deferred_state_kills'] ?? []) as $ip) {
+                    if (is_ipaddr($ip)) {
+                        @pfSense_kill_states(utf8_encode($ip));
+                        @pfSense_kill_srcstates(utf8_encode($ip));
+                        if (function_exists('cp_kill_states_for_ip')) {
+                            cp_kill_states_for_ip($ip);
+                        }
+                    }
+                }
+            });
+        }
     }
 
     /*
@@ -2622,11 +2639,16 @@ function portal_hostname_from_client_ip($cliip) {
 
 function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = null, $clientip = null, $username = null, $password = null, $voucher = null) {
     global $g, $config, $cpzone;
+    error_log("[CP_TIMING] P0 portal_reply_page start type=$type t=" . sprintf('%.3f', microtime(true)));
     $cpcfg = $config['captiveportal'][$cpzone];
+    error_log("[CP_TIMING] P1 portal_hostname start t=" . sprintf('%.3f', microtime(true)));
     $ourhostname = portal_hostname_from_client_ip($clientip);
+    error_log("[CP_TIMING] P2 portal_hostname end   t=" . sprintf('%.3f', microtime(true)));
     $protocol = (isset($cpcfg['httpslogin'])) ? 'https://' : 'http://';
     $portal_url=$redirurl;
+    error_log("[CP_TIMING] P3 already_connected start t=" . sprintf('%.3f', microtime(true)));
     $connectinfo = already_connected($clientip, $clientmac);
+    error_log("[CP_TIMING] P4 already_connected end   t=" . sprintf('%.3f', microtime(true)));
     $sessionid = $connectinfo[5];
 
     if($username==''){
@@ -2642,8 +2664,11 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         $logo = "captiveportal-logo.svg";
     }
     $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}.html");
+    error_log("[CP_TIMING] G1 getcurquota start t=" . sprintf('%.3f', microtime(true)));
     $currentquota = getcurquota($sessionid);
+    error_log("[CP_TIMING] G2 getcurquota end   t=" . sprintf('%.3f', microtime(true)));
     $maxquota = getmaxquota($username);
+    error_log("[CP_TIMING] G3 getmaxquota end   t=" . sprintf('%.3f', microtime(true)));
 
     if ($type == "redir") {
         $redirurl = is_URL($redirurl) ? $redirurl : $portal_url;
@@ -2701,9 +2726,11 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         //freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
     }
     else if ($type === "connected"){
+        error_log("[CP_TIMING] G4 connected-block start t=" . sprintf('%.3f', microtime(true)));
         $userindex= -1;
         $usernickname = "";
         $usercount=count(captiveportal_read_db());
+        error_log("[CP_TIMING] G5 captiveportal_read_db end t=" . sprintf('%.3f', microtime(true)));
         foreach (($config['installedpackages']['freeradius']['config'] ?? []) as $item => $value) {
             if (($value['varusersusername'] ?? '') === $username) {
                 $userindex = $item;
@@ -2712,15 +2739,32 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             }
         }
         //captiveportal_logportalauth($clientip, $clientmac, $username, $sessionid, "User is showed".$userindex);
+        error_log("[CP_TIMING] G6 user-lookup end userindex=$userindex t=" . sprintf('%.3f', microtime(true)));
         if ($userindex> -1){//사용자가 있을 때
             $terminalType = $config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype'] ?? '';
             if ($terminalType === '') {
                 $isexist = true;
             }
             else {
-                $gatewayNames = array_column(return_gateways_status(true), 'name');
-                $isexist = in_array($terminalType, $gatewayNames, true);
+                // NOTE: return_gateways_status(true) 는 사용하지 않음.
+                // 이유:
+                //   return_gateways_status() → get_dpinger_status() → dpinger 소켓 폴링.
+                //   latency_stddev='0' && loss='0' 인 게이트웨이(VPN, 안정적 WAN 등)마다
+                //   최대 300회 × 10 ms = 3 초씩 블로킹이 발생한다.
+                //   게이트웨이가 6-7 개인 환경에서는 6×3 = 18초 이상 지연이 누적된다.
+                // 이 지점에서 필요한 것은 "terminalType 이름의 게이트웨이가 config 에 존재하는가"
+                // 뿐이므로, config 메모리 탐색으로 대체한다. (즉시 반환)
+                $isexist = false;
+                if (!empty($config['gateways']['gateway_item']) && is_array($config['gateways']['gateway_item'])) {
+                    foreach ($config['gateways']['gateway_item'] as $gw) {
+                        if (($gw['name'] ?? '') === $terminalType) {
+                            $isexist = true;
+                            break;
+                        }
+                    }
+                }
             }
+            error_log("[CP_TIMING] G7 gateway-check end isexist=" . var_export($isexist, true) . " t=" . sprintf('%.3f', microtime(true)));
             if($isexist) {
                 if ($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified'] == "update") {
                     if ($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified'] == "update") {
@@ -3506,8 +3550,13 @@ function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $use
         return null;
     }
 
-    // ---- retry 정책 (너 환경에 맞춘 보수적 값) ----
-    $max_retry = 3;          // 2~3 추천 (너무 크면 포털 응답이 느려짐)
+    // ---- retry 정책 ----
+    // $max_retry: PHP 레벨 재시도 횟수.
+    // addServer() 5번째 인자(maxtries)=1 로 PEAR 내부 재시도를 비활성화했으므로
+    // PHP 레벨에서만 재시도가 일어난다.
+    // 최대 대기 = max_retry × radius_timeout 초.
+    // radius_timeout=3 기준: 1×3=3초 (start), 2×3=6초 (stop/update).
+    $max_retry = ($type === 'start' || $type === 'on' || $type === 'off') ? 1 : 2;
     $retry_delay_us = 300000; // 0.3초
     $first_try_ts = time();
 
@@ -3531,7 +3580,8 @@ function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $use
         if (!is_int($stop_time)) {
             $stop_time = time();
         }
-        del_crew_linked_rule($clientip, $username);
+        del_crew_linked_rule($clientip, $username, false);
+        // kill_states=false: 실제 state 제거는 captiveportal_disconnect() 가 deferred 큐에 적재한다.
         // write_config 제거: pfctl table 방식으로 전환, config.xml 수정 불필요
     } elseif ($type === 'update') {
         $racct = new Auth_RADIUS_Acct_Update;
@@ -3542,8 +3592,12 @@ function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $use
         return null;
     }
 
+    // maxtries=1: PEAR 내부 재시도 비활성화.
+    // 기본값(3)이면 타임아웃 1회당 최대 radius_timeout×3 초를 소비해
+    // 로그인 응답이 18-27 초 지연될 수 있다.
+    // PHP 레벨 retry 는 위 $max_retry 로 제어한다.
     $racct->addServer($acctcfg['host'], $acctcfg['radius_acct_port'],
-        $acctcfg['radius_secret'], $acctcfg['radius_timeout']);
+        $acctcfg['radius_secret'], $acctcfg['radius_timeout'], 1);
 
     $racct->authentic = RADIUS_AUTH_RADIUS;
     if ($cpcfg['auth_method'] === 'radmac' && $username === "unauthenticated" && !empty($clientmac)) {
@@ -4204,12 +4258,18 @@ function cp_sync_routing_tables() {
 }
 
 /**
- * 로그아웃 처리.
+ * 로그아웃/테이블 정리 처리.
  * - pfctl table 에서 IP 제거
- * - pf state 테이블 정리 (기존 세션 즉시 종료)
- * - config.xml 수정 없음, filter_configure() 없음
+ * - $kill_states=true(기본) 이면 pf state 도 함께 삭제 (로그아웃 시 즉시 차단)
+ * - $kill_states=false 이면 테이블 제거만 수행 (로그인 시 포털 TCP 연결 보존)
+ *
+ * ⚠️ 로그인 경로(add_crew_linked_rule)에서 kill_states=true 로 호출하면
+ *    pfctl -k 가 클라이언트→포털 TCP 연결을 RST 시킨다.
+ *    이 RST 는 PHP 가 302 응답을 보내기 전에 도달하므로 클라이언트가
+ *    응답을 수신하지 못하고 iOS CNA 등이 ~19초 retry interval 후 재시도한다.
+ *    로그인 경로에서는 반드시 kill_states=false 로 호출할 것.
  */
-function del_crew_linked_rule($sourceip, $userid) {
+function del_crew_linked_rule($sourceip, $userid, bool $kill_states = true) {
     if (!filter_var($sourceip, FILTER_VALIDATE_IP)) {
         return false;
     }
@@ -4220,8 +4280,10 @@ function del_crew_linked_rule($sourceip, $userid) {
     mwexec("/sbin/pfctl -t vsat_users     -T delete {$safeIp} 2>/dev/null");
     mwexec("/sbin/pfctl -t starlink_users -T delete {$safeIp} 2>/dev/null");
 
-    // pf state 정리 → 기존 라우팅 세션 즉시 종료
-    cp_kill_states_for_ip($sourceip);
+    // 로그아웃 시에만 pf state 정리 → 기존 라우팅 세션 즉시 종료
+    if ($kill_states) {
+        cp_kill_states_for_ip($sourceip);
+    }
 
     return true;
 }
@@ -4253,8 +4315,9 @@ function add_crew_linked_rule($sourceip, $userid) {
         return false;
     }
 
-    // 혹시 이전 세션 잔재가 있으면 먼저 제거
-    del_crew_linked_rule($sourceip, $userid);
+    // 이전 세션 잔재 제거 — kill_states=false: 포털 TCP 연결은 유지
+    // (kill_states=true 이면 pfctl -k 가 현재 포털 연결을 RST → HTTP 응답 전달 불가 → ~19초 지연)
+    del_crew_linked_rule($sourceip, $userid, false);
 
     $gwname = cp_get_terminaltype_for_user($userid);
     $table  = cp_get_pf_table_for_gateway($gwname);
@@ -4903,7 +4966,7 @@ function renderLogoutPortalHtml(array $data = []): string
                         <span class="label">Speed Option</span>
 
                         <div class="speed-slider-wrap">
-                            <?php foreach ($speedOptions as $key => $opt): ?>
+                            <?php foreach (($speedOptions ?? []) as $key => $opt): ?>
                                 <label class="speed-option">
                                     <input
                                             type="radio"
