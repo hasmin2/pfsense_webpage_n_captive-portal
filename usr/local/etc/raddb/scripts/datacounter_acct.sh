@@ -388,6 +388,26 @@ if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
   # PREVFILE 정리: zero Stop이라도 세션 종료이므로 다음 세션의 delta 오염 방지
   rm -f "$PREVFILE" 2>/dev/null || true
 
+  # SESSFILE 정리: 마지막 Interim 이 non-zero 였다면 SESSFILE 이 남아있다.
+  # 이 파일을 삭제하지 않으면 다음 인증 시 datacounter_auth.sh 의 glob 이
+  # 구 세션 bytes 를 합산해 quota 합계가 부풀려지는 버그가 발생한다.
+  # 단, USEDFILE 에 반영되지 않은 bytes 이므로 먼저 USEDFILE 에 누적한 후 삭제한다.
+  if [ -f "$SESSFILE" ]; then
+    LAST_SESS=$(head -n1 "$SESSFILE" 2>/dev/null | tr -cd '0-9')
+    [ -z "$LAST_SESS" ] && LAST_SESS=0
+    if [ "$LAST_SESS" -gt 0 ]; then
+      # USEDFILE 에 마지막 세션 bytes 반영 (atomic)
+      lockf -t 10 "/tmp/datacounter_${TIMERANGE}_${USERNAME}.lock" sh -c '
+        USEDFILE="$1"; LAST_SESS="$2"; LOGFILE="$3"
+        OLD=$(head -n1 "$USEDFILE" 2>/dev/null | tr -cd "0-9")
+        [ -z "$OLD" ] && OLD=0
+        NEW=$(( OLD + LAST_SESS ))
+        printf "%s\n" "$NEW" > "$USEDFILE"
+      ' sh "$USEDFILE" "$LAST_SESS" "$LOGFILE" 2>/dev/null || true
+    fi
+    rm -f "$SESSFILE" 2>/dev/null || true
+  fi
+
   if [ -f "$KICKMARK" ] || [ -f "$KICKDONE" ]; then
     log "DATACOUNTER IGNORE STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets; kick already marked)"
     exit 0

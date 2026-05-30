@@ -1926,11 +1926,6 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                 if ($result === true) {
                     $val = 3;
                 }
-                else if ($result===true && $antenna_allowed){
-                    $val = 2;
-                    $msg = "The Antenna has been shutdown due to the policy";
-                }
-
                 elseif ($result === false && !empty($attributes['reply_message'])) {
                     $val = 2;
                     $msg = $attributes['reply_message'];
@@ -1962,8 +1957,27 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                         $msg = "Your ID has been suspended by admin schedule policy.";
                         cp_wireless_log("$login has been suspended due to schedule");
                     }
-                    else  {
-                        $msg.="Unknown error, contact administrator : ".$result. $status;
+                    else {
+                        // RADIUS 가 속성 없는 plain Access-Reject 반환.
+                        // 가장 흔한 원인: datacounter_auth.sh 가 quota 초과로 exit 1.
+                        // PHP 쪽에서 직접 quota 파일을 확인해 정확한 메시지를 출력한다.
+                        $quota_exceeded = captiveportal_check_quota_exceeded(
+                            $login,
+                            $uconf['varuserspointoftime'] ?? ''
+                        );
+                        if ($quota_exceeded) {
+                            $msg = "You have reached your data quota for this period.";
+                            cp_wireless_log("[AUTH-QUOTA] user={$login} quota exceeded (fallback check)");
+                        } else {
+                            $msg = "Authentication failed. Contact administrator.";
+                            cp_wireless_log(sprintf(
+                                "[AUTH-UNKNOWN] user=%s result=%s status=%s attrs=%s",
+                                $login,
+                                var_export($result, true),
+                                (string)$status,
+                                implode(',', array_keys($attributes))
+                            ));
+                        }
                     }
                 } elseif ($result === null) {
                     $val = 0;
@@ -1983,6 +1997,64 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
 
     return array('result'=>$auth_result, 'attributes'=>$reply_attributes, 'auth_method' =>$auth_method, 'login_status'=> $login_status, 'login_message' => $login_msg);
 }
+
+/**
+ * RADIUS 가 plain Access-Reject(속성 없음)를 반환했을 때 PHP 쪽에서
+ * quota 파일을 직접 읽어 초과 여부를 확인하는 fallback.
+ *
+ * datacounter_auth.sh 가 exit 1 만 하고 Reply-Message 를 출력하지 않기 때문에
+ * PHP 는 result=false + 빈 attributes 만 받아 원인을 알 수 없다.
+ * 이 함수로 "quota 초과" vs "기타 인증 오류"를 구분한다.
+ *
+ * @param string $username   로그인 사용자명
+ * @param string $timerange  varuserspointoftime (daily/weekly/monthly/forever)
+ * @return bool  true = quota 초과, false = quota 미초과 또는 quota 미설정
+ */
+function captiveportal_check_quota_exceeded(string $username, string $timerange): bool
+{
+    $timerange = strtolower(trim($timerange));
+    $allowed   = ['daily', 'weekly', 'monthly', 'forever'];
+
+    if (!in_array($timerange, $allowed, true)) {
+        return false;
+    }
+
+    // 사용자명 sanitize (datacounter_auth.sh 와 동일 규칙)
+    $safe = preg_replace('/[^0-9a-zA-Z.:_-]/', 'X', $username);
+    if ($safe === '') {
+        return false;
+    }
+
+    $base_dir = "/var/log/radacct/datacounter/{$timerange}";
+    $max_file = "{$base_dir}/max-octets-{$safe}";
+
+    if (!file_exists($max_file)) {
+        return false;  // quota 미설정 → block 없음
+    }
+
+    $max_octets = (int)trim((string)file_get_contents($max_file));
+    if ($max_octets <= 0) {
+        return false;
+    }
+
+    // used-octets-USER 와 used-octets-USER-* 파일을 모두 합산
+    $used_base  = "{$base_dir}/used-octets-{$safe}";
+    $used_files = glob("{$used_base}*") ?: [];
+    $total_used = 0;
+
+    foreach ($used_files as $f) {
+        if (!is_file($f)) {
+            continue;
+        }
+        $v = (int)trim((string)file_get_contents($f));
+        if ($v > 0) {
+            $total_used += $v;
+        }
+    }
+
+    return ($total_used >= $max_octets);
+}
+
 function antenna_allowed($username)
 {
     global $config;
@@ -2011,11 +2083,28 @@ function antenna_allowed($username)
 function get_suspend_timeschedule($loginId) {
     global $config;
 
+    // 빈 loginId 는 어떤 스케줄도 매칭하지 않는다
+    if ($loginId === null || $loginId === '') {
+        return false;
+    }
+
     if (empty($config["schedules"]["schedule"]) || !is_array($config["schedules"]["schedule"])) {
         return false;
     }
 
-    foreach ($config["schedules"]["schedule"] as $scheduleItem) {
+    // pfSense config parser가 단일 schedule을 associative array로 반환하는 경우 보정
+    // (set_scheduler()와 동일 처리)
+    if (isset($config['schedules']['schedule']['name'])) {
+        $scheduleList = [$config['schedules']['schedule']];
+    } else {
+        $scheduleList = $config['schedules']['schedule'];
+    }
+
+    foreach ($scheduleList as $scheduleItem) {
+
+        if (!is_array($scheduleItem)) {
+            continue;
+        }
 
         if (($scheduleItem['name'] ?? '') !== $loginId) {
             continue;
@@ -2025,7 +2114,18 @@ function get_suspend_timeschedule($loginId) {
             continue;
         }
 
-        foreach ($scheduleItem['timerange'] as $idx => $eachScheduleItem) {
+        // timerange가 단일 항목인 경우 보정
+        if (isset($scheduleItem['timerange']['rangedescr'])) {
+            $timeranges = [$scheduleItem['timerange']];
+        } else {
+            $timeranges = $scheduleItem['timerange'];
+        }
+
+        foreach ($timeranges as $idx => $eachScheduleItem) {
+
+            if (!is_array($eachScheduleItem)) {
+                continue;
+            }
 
             $allowedWeekdays = [];
             $effectiveWeekday = null;
@@ -2071,6 +2171,12 @@ function get_suspend_timeschedule($loginId) {
             $allowedWeekdays = array_map('intval', (array)extract_schedule_weekdays_v2($eachScheduleItem));
             $weekdayRestricted = !empty($allowedWeekdays);
 
+            // 요일이 지정되지 않은 활성 스케줄은 의도치 않은 설정일 가능성이 높다.
+            // 요일 없음(=모든 요일 적용)은 허용하되 로그를 남긴다.
+            if (!$weekdayRestricted) {
+                cp_wireless_log("[SUSPEND-WARN] user={$loginId} has active schedule with no weekday restriction. hour={$eachScheduleItem['hour']}");
+            }
+
             $inRange = false;
 
             if ($startMinutes <= $endMinutes) {
@@ -2093,6 +2199,7 @@ function get_suspend_timeschedule($loginId) {
             }
 
             if ($inRange && $weekdayOk) {
+                cp_wireless_log("[SUSPEND-MATCH] user={$loginId} suspended by schedule: hour={$eachScheduleItem['hour']} position='" . ($eachScheduleItem['position'] ?? '') . "' localtime={$currentLocalTime} weekday={$currentWeekday}");
                 return true;
             }
         }
