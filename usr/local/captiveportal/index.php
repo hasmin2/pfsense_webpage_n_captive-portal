@@ -130,14 +130,12 @@ function cp_splash_redirect(string $url, string $title = 'Connecting…', string
 		@ob_end_clean();
 	}
 
-	header('Content-Type: text/html; charset=utf-8');
-	header('Cache-Control: no-cache, no-store, must-revalidate');
-	header('Pragma: no-cache');
-
 	$u = htmlspecialchars($url, ENT_QUOTES);
 	$t = htmlspecialchars($title, ENT_QUOTES);
 	$d = htmlspecialchars($desc, ENT_QUOTES);
-	echo <<<HTML
+
+	// HTML을 문자열로 먼저 완성 → Content-Length 계산에 사용
+	$body = <<<HTML
 <!doctype html>
 <html lang="en">
 <head>
@@ -168,26 +166,9 @@ function cp_splash_redirect(string $url, string $title = 'Connecting…', string
 <script>
 (function(){
   var url = "{$u}";
-
-  // 즉시 1회 시도 (짧게 보여주고 이동)
+  // 단일 리다이렉트 — setInterval 중복 GET 제거
+  // (중복 GET이 있으면 두 번째 GET이 세션 락을 기다리다 flash를 못 읽어 ~9초 hang)
   setTimeout(function(){ window.location.replace(url); }, 150);
-
-  
-  var tries = 0;
-  var maxTries = 1; // 20회 * 5초 = 100초 (원하면 조정)
-  var timer = setInterval(function(){
-    tries++;
-    var st = document.getElementById('status');
-    if (st) st.textContent = "Trying to redirect...(" + tries + "/" + maxTries + ")";
-
-    // 캐시/네비게이션 묶임 회피용: 동일 URL 재시도
-    window.location.replace(url);
-
-    if (tries >= maxTries) {
-      clearInterval(timer);
-      if (st) st.textContent = "Continue to redirect... please wait...";
-    }
-  }, 100);
 })();
 </script>
 
@@ -195,11 +176,24 @@ function cp_splash_redirect(string $url, string $title = 'Connecting…', string
 </body>
 </html>
 HTML;
+
+	// Content-Length 를 명시해야 브라우저가 TCP 연결 종료를 기다리지 않고
+	// 바이트 수신 완료 즉시 JS 를 실행한다.
+	// (pfSense spawn-fcgi 환경에서는 fastcgi_finish_request() 가 없어서
+	//  PHP shutdown 함수들이 끝날 때까지 연결이 안 닫히면 ~19초 지연 발생)
+	header('Content-Type: text/html; charset=utf-8');
+	header('Cache-Control: no-cache, no-store, must-revalidate');
+	header('Pragma: no-cache');
+	header('Content-Length: ' . strlen($body));
+	echo $body;
 	@ob_flush();
 	@flush();
+	error_log("[CP_SPLASH] t=" . sprintf('%.6f', microtime(true)) . " before-fastcgi_finish  available=" . (function_exists('fastcgi_finish_request') ? 'YES' : 'NO'));
 	if (function_exists('fastcgi_finish_request')) {
 		fastcgi_finish_request();
+		error_log("[CP_SPLASH] t=" . sprintf('%.6f', microtime(true)) . " after-fastcgi_finish");
 	}
+	error_log("[CP_SPLASH] t=" . sprintf('%.6f', microtime(true)) . " before-exit");
 	exit;
 }
 
@@ -210,9 +204,49 @@ function cp_log(string $msg): void {
 	error_log("[CP] t={$t} sid={$sid} {$msg}");
 }
 
+// ── Deferred pf state kill list ───────────────────────────────────────────────
+// captiveportal_disconnect() 및 cp_kill_states_for_ip() 가 즉시 pfctl 을 호출하면
+// 클라이언트 → 포털 TCP 연결이 RST 되어 HTTP 응답이 전달되기 전에 연결이 끊긴다.
+// 대신 IP 를 이 배열에 적재하고, fastcgi_finish_request() + exit 이후 실행되는
+// shutdown 함수에서 처리하면 응답 전달 후 안전하게 state 를 정리할 수 있다.
+$GLOBALS['_cp_deferred_state_kills'] = [];
+// ─────────────────────────────────────────────────────────────────────────────
+// ── 진단: shutdown 함수가 얼마나 걸리는지 / PHP ini 설정 확인 ──────────────
+$_cp_proc_start = microtime(true);
+register_shutdown_function(function() use (&$_cp_proc_start) {
+	$now = microtime(true);
+	error_log(sprintf(
+		"[CP_SHUTDOWN] t=%.6f  elapsed_since_proc_start=%.3fs"
+		. "  max_exec=%s  socket_timeout=%s  fastcgi_finish=%s",
+		$now,
+		$now - $_cp_proc_start,
+		ini_get('max_execution_time'),
+		ini_get('default_socket_timeout'),
+		function_exists('fastcgi_finish_request') ? 'YES' : 'NO'
+	));
+	// HTTP 응답 전송(fastcgi_finish_request) 이후 pf state 정리
+	// → 로그아웃 시 포털 TCP 연결이 응답 도달 전에 RST 되는 것 방지
+	foreach (($GLOBALS['_cp_deferred_state_kills'] ?? []) as $ip) {
+		if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+			continue;
+		}
+		if (function_exists('pfSense_kill_states')) {
+			@pfSense_kill_states(utf8_encode($ip));
+			@pfSense_kill_srcstates(utf8_encode($ip));
+		}
+		if (function_exists('cp_kill_states_for_ip')) {
+			cp_kill_states_for_ip($ip);
+		}
+		error_log("[CP_SHUTDOWN] deferred kill_states ip={$ip} done t=" . sprintf('%.6f', microtime(true)));
+	}
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
+error_log("[CP] t=" . sprintf('%.6f', microtime(true)) . " sid=(none) R0a pre-session_start method=" . ($_SERVER['REQUEST_METHOD'] ?? '?'));
 if (session_status() !== PHP_SESSION_ACTIVE) {
 	session_start();
 }
+error_log("[CP] t=" . sprintf('%.6f', microtime(true)) . " sid=" . session_id() . " R0b post-session_start");
 require_once("auth.inc");
 require_once("util.inc");
 require_once("functions.inc");
@@ -265,7 +299,9 @@ if (empty($clientip)) {
 	return;
 }
 
+cp_log("R1 portal_hostname_from_client_ip start");
 $ourhostname = portal_hostname_from_client_ip($clientip);
+cp_log("R2 portal_hostname_from_client_ip end hostname=$ourhostname");
 $redirurl = "{$protocol}{$ourhostname}";
 $loginurl = "{$protocol}{$ourhostname}/index.php?zone=" . urlencode($cpzone);
 
@@ -273,8 +309,14 @@ $macfilter = !isset($cpcfg['nomacfilter']);
 $clientmac = null;
 
 // ---- If we have a flash message (from previous POST), render it now (GET step) ----
+cp_log("R3 flash check start method=" . ($_SERVER['REQUEST_METHOD'] ?? ''));
 $flash = cp_flash_get();
 if ($flash) {
+	// Flash 를 읽은 즉시 세션 락 해제 → 동시 GET 요청이 블록되지 않게 함
+	if (session_status() === PHP_SESSION_ACTIVE) {
+		session_write_close();
+	}
+	cp_log("R4 flash found type=" . ($flash['type'] ?? 'none') . " → entering cp_render_from_flash");
 	cp_render_from_flash($flash);
 }
 
@@ -282,7 +324,9 @@ if ($flash) {
  * ---- Determine client MAC if needed ----
  */
 if ($macfilter || isset($cpcfg['passthrumacadd'])) {
+	cp_log("R5 pfSense_ip_to_mac start clientip=$clientip");
 	$tmpres = pfSense_ip_to_mac($clientip);
+	cp_log("R6 pfSense_ip_to_mac end result=" . (is_array($tmpres) ? json_encode($tmpres) : 'false'));
 	if (!is_array($tmpres) || empty($tmpres['macaddr'])) {
 		cp_wireless_auth("unauthenticated", "noclientmac", $clientip, "ERROR");
 		echo "An error occurred.  Please check the system logs for more information.";
@@ -496,7 +540,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || (($cpcfg['auth_method'] ?? '') === 
 		$context = 'first';
 	}
 
+	cp_log("T1 get_next_dn_ruleno start");
 	$pipeno = captiveportal_get_next_dn_ruleno('auth');
+	cp_log("T1 get_next_dn_ruleno end pipeno=" . var_export($pipeno, true));
 	if (is_null($pipeno)) {
 		$replymsg = gettext("System reached maximum login capacity");
 		if (($cpcfg['auth_method'] ?? '') === 'radmac') {
@@ -514,8 +560,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || (($cpcfg['auth_method'] ?? '') === 
 			cp_redirect_self(['zone' => $cpzone]);
 		}
 	}
+	cp_log("T2 authenticate_user start user=$user");
 	$auth_result = captiveportal_authenticate_user($user, $passwd, $clientmac, $clientip, $pipeno, $context);
+	cp_log("T3 authenticate_user end result=" . var_export($auth_result['result'] ?? null, true));
 	if (!empty($auth_result['result'])) {
+		cp_log("T4 portal_allow start");
 		portal_allow(
 			$clientip,
 			$clientmac,
@@ -527,6 +576,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || (($cpcfg['auth_method'] ?? '') === 
 			($auth_result['auth_method'] ?? null),
 			$context
 		);
+		cp_log("T5 portal_allow end");
 		cp_flash_set([
 			'redirurl' => $loginurl,
 			'type' => 'connected',
@@ -536,6 +586,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || (($cpcfg['auth_method'] ?? '') === 
 
 		]);
 		cp_wireless_auth($user, $clientmac, $clientip, $auth_result['login_status'] ?? 'ACCEPT-LOGIN');
+		cp_log("T6 cp_redirect_self (POST done)");
 		cp_redirect_self(['zone' => $cpzone]);
 		ob_flush();
 		exit;
