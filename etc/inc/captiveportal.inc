@@ -854,7 +854,6 @@ function captiveportal_prune_old() {
     /* Read database */
     /* NOTE: while this can be simplified in non radius case keep as is for now */
     $cpdb = captiveportal_read_db();
-    datacounter_process_kick_spool("/var/run/datacounter-kick", 20);
     $unsetindexes = array();
     $voucher_needs_sync = false;
     /*
@@ -3844,6 +3843,136 @@ function cpdb_lookup_best($clientip, $clientmac) {
     return ['match' => 'none', 'entry' => null];
 }
 
+/**
+ * 기존 세션을 새 IP 로 마이그레이션한다. (같은 기기가 DHCP 등으로 IP 만 바뀐 경우)
+ *
+ * sessionid 는 그대로 유지하므로 RADIUS/datacounter 회계 연속성이 보장된다.
+ * (datacounter 는 username+sessionid 기준이라 IP 변경과 무관)
+ *
+ *  - auth_up/auth_down ipfw 테이블: 구IP 제거 → 신IP 추가 (동일 pipeno 재사용)
+ *  - 라우팅 pfctl 테이블(cp_gw_*): 구IP 제거 + state 정리 → 신IP 추가
+ *  - captiveportal DB: ip/mac 갱신
+ *
+ * @param array  $cpentry  기존 세션 DB row (숫자 인덱스 배열)
+ * @param string $newip    새 클라이언트 IP
+ * @param string $newmac   새 클라이언트 MAC (보통 기존과 동일)
+ * @return array|false     갱신된 cpentry (ip/mac 반영), 실패 시 false
+ */
+function captiveportal_migrate_session_ip($cpentry, $newip, $newmac) {
+    global $config, $cpzone;
+
+    if (!is_array($cpentry) || !is_ipaddr($newip)) {
+        return false;
+    }
+
+    $oldip     = $cpentry[2] ?? '';
+    $pipeno    = $cpentry[1] ?? null;
+    $username  = $cpentry[4] ?? '';
+    $sessionid = $cpentry[5] ?? '';
+
+    if ($sessionid === '' || !is_ipaddr($oldip)) {
+        return false;
+    }
+
+    // pipeno 가 유효하지 않으면 신IP 를 auth 테이블에 넣을 수 없어
+    // "connected 인데 통신 불가" 상태가 된다. 이 경우 마이그레이션을 포기하고
+    // false 를 반환해 호출측이 정상 로그인(파이프 재할당)을 받게 한다.
+    if ($pipeno === null || $pipeno === '' || !is_numeric($pipeno)) {
+        return false;
+    }
+
+    $cpdblck = lock("captiveportaldb{$cpzone}", LOCK_EX);
+
+    $newsn = (is_ipaddrv6($newip)) ? 128 : 32;
+    $oldsn = (is_ipaddrv6($oldip)) ? 128 : 32;
+
+    // 1) auth_up/auth_down: 구IP 제거
+    @pfSense_ipfw_table("{$cpzone}_auth_up",   IP_FW_TABLE_XDEL, "{$oldip}/{$oldsn}");
+    @pfSense_ipfw_table("{$cpzone}_auth_down", IP_FW_TABLE_XDEL, "{$oldip}/{$oldsn}");
+
+    // 2) auth_up/auth_down: 신IP 추가 (기존 pipeno 그대로 재사용 → 대역폭 파이프 유지)
+    $rule_entry = "{$newip}/{$newsn}";
+    if (!isset($config['captiveportal'][$cpzone]['nomacfilter'])) {
+        $rule_entry .= ",{$newmac}";
+    }
+    @pfSense_ipfw_table("{$cpzone}_auth_up",   IP_FW_TABLE_XADD, "{$rule_entry}", (int)$pipeno);
+    @pfSense_ipfw_table("{$cpzone}_auth_down", IP_FW_TABLE_XADD, "{$rule_entry}", (int)$pipeno + 1);
+
+    // 3) DB: ip/mac 갱신 (sessionid 유지)
+    $safe_newip  = SQLite3::escapeString($newip);
+    $safe_newmac = SQLite3::escapeString((string)$newmac);
+    $safe_sid    = SQLite3::escapeString($sessionid);
+    captiveportal_write_db("UPDATE captiveportal SET ip='{$safe_newip}', mac='{$safe_newmac}' WHERE sessionid='{$safe_sid}'");
+
+    unlock($cpdblck);
+
+    // 4) 라우팅 테이블: 구IP 제거 + state 정리 → 신IP 추가
+    //    구IP 는 더 이상 사용하지 않으므로 즉시 state kill 해도 현재 포털 연결(신IP)에 영향 없음.
+    del_crew_linked_rule($oldip, $username, true);
+    add_crew_linked_rule($newip, $username);
+
+    cp_wireless_log("[MIGRATE] user={$username} sid={$sessionid} {$oldip} -> {$newip} mac={$newmac}");
+
+    // index.php 가 [5]=sessionid 를 사용하므로 갱신된 row 반환
+    $cpentry[2] = $newip;
+    $cpentry[3] = $newmac;
+    return $cpentry;
+}
+
+/**
+ * 동일 MAC·다른 IP 세션을 찾아 신IP 로 자동 마이그레이션한다.
+ * (정확 일치(IP+MAC) 실패 시 index.php 에서 호출)
+ *
+ * quota 초과 사용자는 마이그레이션하지 않고 기존 세션을 정리한 뒤 false 반환
+ * → 호출측에서 로그인 프롬프트 표시.
+ *
+ * @return array|false  마이그레이션된 cpentry, 또는 false(해당없음/거부)
+ */
+function captiveportal_try_migrate_session_by_mac($newip, $newmac) {
+    global $config, $cpzone;
+
+    if (empty($newmac) || !is_ipaddr($newip)) {
+        return false;
+    }
+
+    // MAC 으로 기존 세션 조회 (IP 는 다를 수 있음)
+    $safe_mac = SQLite3::escapeString($newmac);
+    $rows = captiveportal_read_db("WHERE mac = '{$safe_mac}'");
+    if (empty($rows) || !is_array($rows)) {
+        return false;
+    }
+
+    // IP 가 신IP 와 다른 엔트리만 마이그레이션 대상 (동일 IP 는 already_connected 가 이미 처리)
+    $cpentry = null;
+    foreach ($rows as $row) {
+        if (is_array($row) && isset($row[2]) && $row[2] !== $newip) {
+            $cpentry = $row;  // 마지막(최근) 매칭 우선
+        }
+    }
+    if ($cpentry === null) {
+        return false;
+    }
+
+    $username = $cpentry[4] ?? '';
+
+    // quota 재확인: 사용자의 집계 주기(varuserspointoftime) 기준
+    $timerange = '';
+    foreach (($config['installedpackages']['freeradius']['config'] ?? []) as $u) {
+        if (($u['varusersusername'] ?? '') === $username) {
+            $timerange = $u['varuserspointoftime'] ?? '';
+            break;
+        }
+    }
+    if (captiveportal_check_quota_exceeded($username, $timerange)) {
+        // quota 초과 → 자동 로그인 거부, 기존 세션 정리 후 재인증 유도
+        cp_wireless_log("[MIGRATE-DENY] user={$username} quota exceeded; disconnecting stale session sid={$cpentry[5]}");
+        captiveportal_disconnect_client($cpentry[5], 1);
+        return false;
+    }
+
+    return captiveportal_migrate_session_ip($cpentry, $newip, $newmac);
+}
+
 function getusername($sessionid) {
     global $cpzone;
     $query = "WHERE sessionid = '{$sessionid}'";
@@ -4455,143 +4584,6 @@ function add_crew_linked_rule($sourceip, $userid) {
 
     return true;
 }
-
-/* ---------- datacounter kick spool processor ---------- */
-
-function datacounter_kicklog($msg) {
-    // pfSense는 systemlog가 있기도 하고, 없으면 syslog로
-    if (function_exists('log_error')) {
-        log_error($msg);
-    } else {
-        syslog(LOG_NOTICE, $msg);
-    }
-}
-
-function datacounter_disconnect_user($username, $acctsessionid, $zone = null) {
-    global $config;
-
-    if ($username === '' && $acctsessionid === '') return false;
-
-    // 1) zone 목록
-    $zones = [];
-    if ($zone !== null && $zone !== '') {
-        $zones[] = $zone;
-    } else {
-        if (!empty($config['captiveportal']) && is_array($config['captiveportal'])) {
-            foreach ($config['captiveportal'] as $zname => $zcfg) {
-                if (is_string($zname) && $zname !== '') $zones[] = $zname;
-                elseif (!empty($zcfg['zone'])) $zones[] = $zcfg['zone'];
-            }
-        }
-        $zones = array_values(array_unique(array_filter($zones)));
-    }
-    if (!$zones) return false;
-
-    // 2) captive portal DB에서 매칭 찾기
-    foreach ($zones as $cpzone) {
-        $entries = null;
-        if (function_exists('captiveportal_read_db')) {
-            $entries = @captiveportal_read_db($cpzone);
-        } elseif (function_exists('captiveportal_db_read')) {
-            $entries = @captiveportal_db_read($cpzone);
-        }
-        if (!is_array($entries)) continue;
-
-        foreach ($entries as $dbent) {
-            // pfSense CP dbent는 종종 숫자 인덱스 배열 형태:
-            // [0]=start, [1]=ruleno, [2]=ip, [3]=mac, [4]=username, [5]=sessionid ...
-            $e_user = $dbent[4] ?? ($dbent['username'] ?? $dbent['user'] ?? '');
-            $e_sid  = $dbent[5] ?? ($dbent['sessionid'] ?? $dbent['acctsessionid'] ?? $dbent['session_id'] ?? '');
-            $e_ip   = $dbent[2] ?? ($dbent['ip'] ?? $dbent['clientip'] ?? '');
-            $e_mac  = $dbent[3] ?? ($dbent['mac'] ?? $dbent['clientmac'] ?? '');
-
-            $user_match = ($username !== '' && $e_user !== '' && $e_user === $username);
-            $sid_match  = ($acctsessionid !== '' && $e_sid !== '' && $e_sid === $acctsessionid);
-
-            $ok = false;
-            if ($username !== '' && $acctsessionid !== '') $ok = ($user_match && $sid_match);
-            else $ok = ($user_match || $sid_match);
-
-            if (!$ok) continue;
-
-            // ✅ 핵심: 너 환경의 captiveportal_disconnect()는 (dbent, ...) 시그니처
-            $did = false;
-            if (function_exists('captiveportal_disconnect')) {
-                // captiveportal_disconnect 내부에서 $cpzone 글로벌을 쓰는 환경이 많아 세팅
-                $GLOBALS['cpzone'] = $cpzone;
-                $did = @captiveportal_disconnect($dbent, 1);
-            } elseif (function_exists('captiveportal_disconnect_client')) {
-                // 일부 변형 환경 (zone, ip, mac) 인 경우
-                $did = @captiveportal_disconnect_client($cpzone, $e_ip, $e_mac);
-            }
-
-            datacounter_kicklog(sprintf(
-                "DATACOUNTER KICK: zone=%s user=%s sid=%s ip=%s mac=%s result=%s",
-                $cpzone, $username, $acctsessionid, $e_ip, $e_mac, ($did ? "OK" : "CALLED")
-            ));
-
-            return true;
-        }
-    }
-
-    return false;
-}
-
-
-
-function datacounter_process_kick_spool($kickDir = "/var/run/datacounter-kick", $maxPerRun = 50, $zone = 'crew') {
-    if (!is_dir($kickDir)) return 0;
-
-    $files = glob(rtrim($kickDir, "/") . "/*.kick");
-    if (!$files) return 0;
-
-    sort($files, SORT_STRING);
-
-    $done = 0;
-    foreach ($files as $kickPath) {
-        if ($done >= $maxPerRun) break;
-
-        $workPath = $kickPath . ".work";
-        if (!@rename($kickPath, $workPath)) {
-            continue; // 다른 프로세스가 잡았음
-        }
-
-        $raw = @file_get_contents($workPath);
-        if ($raw === false) {
-            @unlink($workPath);
-            continue;
-        }
-
-        $data = [];
-        foreach (preg_split("/\r\n|\n|\r/", trim($raw)) as $line) {
-            $line = trim($line);
-            if ($line === '' || $line[0] === '#') continue;
-            $kv = explode("=", $line, 2);
-            if (count($kv) === 2) $data[trim($kv[0])] = trim($kv[1]);
-        }
-
-        $username = $data['username'] ?? '';
-        $sid      = $data['acctsessionid'] ?? '';
-        $reason   = $data['reason'] ?? '';
-        $ts       = $data['ts'] ?? '';
-
-        $ok = datacounter_disconnect_user($username, $sid, $zone);
-
-        datacounter_kicklog(sprintf(
-            "DATACOUNTER KICK-REQUEST consumed file=%s user=%s sid=%s reason=%s ts=%s match=%s",
-            basename($workPath), $username, $sid, $reason, $ts, ($ok ? "YES" : "NO")
-        ));
-
-        $donePath = preg_replace('/\.kick\.work$/', '.kick.done', $workPath);
-        @file_put_contents($donePath, "ts=" . time() . "\nresult=" . ($ok ? "YES" : "NO") . "\n");
-
-        @unlink($workPath);
-        $done++;
-    }
-
-    return $done;
-}
-
 
 function renderLoginPortalHtml(array $data = []): string
 {

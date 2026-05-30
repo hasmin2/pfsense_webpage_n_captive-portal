@@ -565,6 +565,16 @@ if (is_array($sessionInfo) && array_key_exists(5, $sessionInfo)) {
 	$connectedSession = (string)$sessionInfo[5];
 }
 
+// Case 2: 정확 일치(IP+MAC) 실패 시, 동일 MAC·다른 IP 세션을 신IP 로 마이그레이션한다.
+// (DHCP 등으로 IP 만 바뀐 같은 기기 → 재인증 없이 자동 로그인)
+// quota 초과 사용자는 마이그레이션 거부 → 아래 로그인 프롬프트로 떨어진다.
+if ($connectedSession === '' && $macfilter && !empty($clientmac)) {
+	$migrated = captiveportal_try_migrate_session_by_mac($clientip, $clientmac);
+	if (is_array($migrated) && array_key_exists(5, $migrated)) {
+		$connectedSession = (string)$migrated[5];
+	}
+}
+
 if ($connectedSession==='') {
 
 	$host   = $_SERVER['HTTP_HOST'] ?? '';
