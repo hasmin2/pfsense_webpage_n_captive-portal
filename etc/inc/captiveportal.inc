@@ -2764,16 +2764,11 @@ function portal_hostname_from_client_ip($cliip) {
 
 function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = null, $clientip = null, $username = null, $password = null, $voucher = null) {
     global $g, $config, $cpzone;
-    error_log("[CP_TIMING] P0 portal_reply_page start type=$type t=" . sprintf('%.3f', microtime(true)));
     $cpcfg = $config['captiveportal'][$cpzone];
-    error_log("[CP_TIMING] P1 portal_hostname start t=" . sprintf('%.3f', microtime(true)));
     $ourhostname = portal_hostname_from_client_ip($clientip);
-    error_log("[CP_TIMING] P2 portal_hostname end   t=" . sprintf('%.3f', microtime(true)));
     $protocol = (isset($cpcfg['httpslogin'])) ? 'https://' : 'http://';
     $portal_url=$redirurl;
-    error_log("[CP_TIMING] P3 already_connected start t=" . sprintf('%.3f', microtime(true)));
     $connectinfo = already_connected($clientip, $clientmac);
-    error_log("[CP_TIMING] P4 already_connected end   t=" . sprintf('%.3f', microtime(true)));
     $sessionid = $connectinfo[5];
 
     if($username==''){
@@ -2789,11 +2784,8 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         $logo = "captiveportal-logo.svg";
     }
     $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}.html");
-    error_log("[CP_TIMING] G1 getcurquota start t=" . sprintf('%.3f', microtime(true)));
     $currentquota = getcurquota($sessionid);
-    error_log("[CP_TIMING] G2 getcurquota end   t=" . sprintf('%.3f', microtime(true)));
     $maxquota = getmaxquota($username);
-    error_log("[CP_TIMING] G3 getmaxquota end   t=" . sprintf('%.3f', microtime(true)));
 
     if ($type == "redir") {
         $redirurl = is_URL($redirurl) ? $redirurl : $portal_url;
@@ -2851,11 +2843,9 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         //freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
     }
     else if ($type === "connected"){
-        error_log("[CP_TIMING] G4 connected-block start t=" . sprintf('%.3f', microtime(true)));
         $userindex= -1;
         $usernickname = "";
         $usercount=count(captiveportal_read_db());
-        error_log("[CP_TIMING] G5 captiveportal_read_db end t=" . sprintf('%.3f', microtime(true)));
         foreach (($config['installedpackages']['freeradius']['config'] ?? []) as $item => $value) {
             if (($value['varusersusername'] ?? '') === $username) {
                 $userindex = $item;
@@ -2864,7 +2854,6 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             }
         }
         //captiveportal_logportalauth($clientip, $clientmac, $username, $sessionid, "User is showed".$userindex);
-        error_log("[CP_TIMING] G6 user-lookup end userindex=$userindex t=" . sprintf('%.3f', microtime(true)));
         if ($userindex> -1){//사용자가 있을 때
             $terminalType = $config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype'] ?? '';
             if ($terminalType === '') {
@@ -2889,7 +2878,6 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
                     }
                 }
             }
-            error_log("[CP_TIMING] G7 gateway-check end isexist=" . var_export($isexist, true) . " t=" . sprintf('%.3f', microtime(true)));
             if($isexist) {
                 if ($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified'] == "update") {
                     if ($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified'] == "update") {
