@@ -988,8 +988,8 @@ function reset_wifi_user_pw($userlist){
                 cp_wireless_log("Reset initial password: ".$userentry['varusersusername']);
             }
         }
-        freeradius_update_user($user);
     }
+    freeradius_users_resync();
     write_config("Reset password Wifi user");
 }
 
@@ -1010,8 +1010,8 @@ function reset_random_wifi_user_pw($userlist){
                 cp_wireless_log("Reset random password: ".$userentry['varusersusername']);
             }
         }
-        freeradius_update_user($user);
     }
+    freeradius_users_resync();
     write_config("Reset password Wifi user");
 }
 
@@ -1153,7 +1153,7 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
         $created_users[] = $userinfoentry;
     }
 
-    freeradius_update_user($username);
+    freeradius_users_resync();
     write_config("Created Wifi user");
 
     return $created_users;
