@@ -410,6 +410,7 @@ if ($clientmac && portal_consume_passthrough_credit($clientmac)) {
 		'msg' => 'unauthenticated online',
 		'mac' => $clientmac,
 		'ip' => $clientip,
+		'username' => 'unauthenticated',
 	]);
 	cp_redirect_self(['zone' => $cpzone]);
 }
@@ -551,6 +552,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || (($cpcfg['auth_method'] ?? '') === 
 			'msg' => (trim($user) . " online"),
 			'mac' => $clientmac,
 			'ip' => $clientip,
+			'username' => trim($user),
 
 		]);
 		cp_wireless_auth($user, $clientmac, $clientip, $auth_result['login_status'] ?? 'ACCEPT-LOGIN');
@@ -578,9 +580,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || (($cpcfg['auth_method'] ?? '') === 
  * 기존 연결 세션 확인
  */
 $connectedSession = '';
+$connectedUser = '';
 $sessionInfo = already_connected($clientip, $clientmac);
 if (is_array($sessionInfo) && array_key_exists(5, $sessionInfo)) {
 	$connectedSession = (string)$sessionInfo[5];
+	$connectedUser = (string)($sessionInfo[4] ?? '');
 }
 
 // Case 2: 정확 일치(IP+MAC) 실패 시, 동일 MAC·다른 IP 세션을 신IP 로 마이그레이션한다.
@@ -590,6 +594,7 @@ if ($connectedSession === '' && $macfilter && !empty($clientmac)) {
 	$migrated = captiveportal_try_migrate_session_by_mac($clientip, $clientmac);
 	if (is_array($migrated) && array_key_exists(5, $migrated)) {
 		$connectedSession = (string)$migrated[5];
+		$connectedUser = (string)($migrated[4] ?? '');
 	}
 }
 
@@ -652,6 +657,7 @@ cp_flash_set([
 	'msg' => '',
 	'mac' => $clientmac,
 	'ip' => $clientip,
+	'username' => $connectedUser,
 ]);
 cp_redirect_self(['zone' => $cpzone]);
 ob_flush();

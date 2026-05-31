@@ -2769,10 +2769,21 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
     $protocol = (isset($cpcfg['httpslogin'])) ? 'https://' : 'http://';
     $portal_url=$redirurl;
     $connectinfo = already_connected($clientip, $clientmac);
-    $sessionid = $connectinfo[5];
+    $sessionid = (is_array($connectinfo) && isset($connectinfo[5])) ? $connectinfo[5] : '';
 
-    if($username==''){
+    if ($username == '' && is_array($connectinfo) && isset($connectinfo[4])) {
         $username = $connectinfo[4];
+    }
+
+    // already_connected() 는 IP+MAC 정확일치만 본다. 이 재조회가 실패(false)해도
+    // flash 로 전달받은 username 이 있으면 sessionid 를 username 기준으로 복구한다.
+    // (복구하지 않으면 quota 가 0 으로 잘못 표시되거나, 아래 connected 분기에서
+    //  username/sessionid 공백으로 엉뚱하게 'removed' 처리될 수 있다.)
+    if (($sessionid === '' || $sessionid === null) && !empty($username)) {
+        $recovered = getsession($username);
+        if ($recovered !== false) {
+            $sessionid = $recovered;
+        }
     }
     if($config['system']['vesselinfo']['logo']==="sktelink") {
         $logo = "captiveportal-skt-logo.svg";
@@ -2843,6 +2854,40 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         //freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
     }
     else if ($type === "connected"){
+        // ── passthrough(freelogins) 게스트 처리 ──────────────────────────────
+        // 'unauthenticated' 세션은 freeradius config 사용자가 아니므로 아래의
+        // config 조회·quota·suspend·removed 판정 대상이 아니다. 과거에는 config 에서
+        // 못 찾아 $userindex=-1 → 'User is removed' 분기로 빠져 게스트가 강제
+        // disconnect 되었다(재오픈 시마다 끊김).
+        //
+        // 게스트는 끊지 않고 목적지로 바로 redirect 한다.
+        // 단, 포털 호스트로 redirect 하면 무한 루프가 되므로, 존 설정의 redirurl
+        // (로그인 후 리디렉션 URL)이 유효한 외부 URL 일 때만 redirect 하고,
+        // 대상이 없으면 게스트 상태 페이지로 폴백한다(루프 방지).
+        if ($username === 'unauthenticated') {
+            $guest_redir = '';
+            if (is_URL($config['captiveportal'][$cpzone]['redirurl'] ?? '')) {
+                $guest_redir = $config['captiveportal'][$cpzone]['redirurl'];
+            }
+            if ($guest_redir !== '') {
+                header("Location: {$guest_redir}");
+                return;
+            }
+            // 폴백: redirect 대상이 없으면 게스트 상태 페이지 표시 (disconnect 안 함)
+            $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLogoutPortalHtml([
+                'logo'           => $logo,
+                'portalError'    => '',
+                'displayname'    => 'Guest',
+                'portalInfo'     => 'You are connected as a guest.',
+                'loginUserValue' => 'unauthenticated',
+                'quotaUsed'      => 0,
+                'quotaAllocated' => 0,
+                'loginUsers'     => count(captiveportal_read_db()),
+            ]), $htmltext);
+            echo $htmltext;
+            return;
+        }
+
         $userindex= -1;
         $usernickname = "";
         $usercount=count(captiveportal_read_db());
@@ -2990,20 +3035,36 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
             }
         }
         else {
-
-            captiveportal_logportalauth($clientip, $clientmac, $username, $sessionid, "User is Removing ".$userindex);
-            $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
-                    'logo'     => $logo,
-                    'portalError'     => "",
-                    'portalInfo'      => "User has  been removed",
-                    'uiConfig'        => [],
-                    'showQuotaResult' => false,
-                    'subject'  => "User is removed!",
-            ]), $htmltext);
-            captiveportal_disconnect_client($sessionid);
-            echo $htmltext;
-            //captiveportal_disconnect_client($sessionid);
-            //write_config("FreeRADIUS user change applied");
+            // userindex == -1 인 경우는 두 가지로 나뉜다.
+            //   (A) $username 이 빈 값  → username 회수 실패(already_connected 재조회 실패 등).
+            //       실제 사용자 삭제가 아니므로 강제 disconnect 하면 안 되고, WELCOME 로그인
+            //       페이지를 띄워야 한다. (기존엔 무조건 removing 으로 빠져 세션이 끊겼다.)
+            //   (B) $username 은 있으나 freeradius config 에 없음 → 진짜 삭제된 사용자.
+            if ($username === '' || $username === null) {
+                $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+                        'logo'     => $logo,
+                        'portalError'     => "",
+                        'portalInfo'      => "",
+                        'loginUserValue'  => "",
+                        'uiConfig'        => [],
+                        'showQuotaResult' => false,
+                        'subject'  => "Welcome",
+                ]), $htmltext);
+                echo $htmltext;   // disconnect 호출하지 않음
+            }
+            else {
+                captiveportal_logportalauth($clientip, $clientmac, $username, $sessionid, "User is Removing ".$userindex);
+                $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+                        'logo'     => $logo,
+                        'portalError'     => "",
+                        'portalInfo'      => "User has  been removed",
+                        'uiConfig'        => [],
+                        'showQuotaResult' => false,
+                        'subject'  => "User is removed!",
+                ]), $htmltext);
+                captiveportal_disconnect_client($sessionid);
+                echo $htmltext;
+            }
         }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     }
