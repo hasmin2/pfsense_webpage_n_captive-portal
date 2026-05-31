@@ -1532,7 +1532,18 @@ function freeradius_validate_radiusd_config(): bool
 	return true;
 }
 
-function freeradius_reload_or_restart_radiusd(bool $reload_radiusd = true): bool
+/*
+ * radiusd 에 변경을 반영한다.
+ *
+ * [중요] users / authorize 파일(rlm_files) 변경은 kill -HUP 로 반영되지 않는다.
+ *        rlm_files 는 기동(instantiation) 시점에만 사용자 파일을 읽으므로,
+ *        비밀번호 등 사용자 파일을 바꾼 뒤에는 반드시 "전체 재시작"이 필요하다.
+ *        (HUP 는 radiusd.conf / clients 같은 일부 설정만 다시 읽는다.)
+ *
+ * @param bool $allow_hup  true  : HUP 우선 시도 후 실패 시 재시작(설정만 바뀐 경우용)
+ *                         false : 곧바로 전체 재시작(사용자 파일 변경의 기본값)
+ */
+function freeradius_reload_or_restart_radiusd(bool $allow_hup = false): bool
 {
 	if (function_exists('platform_booting') && platform_booting()) {
 		return true;
@@ -1543,46 +1554,53 @@ function freeradius_reload_or_restart_radiusd(bool $reload_radiusd = true): bool
 	}
 
 	/*
-     * PID 파일 우선
+     * HUP 는 명시적으로 허용된 경우에만 시도한다.
+     * 사용자 파일(users/authorize) 변경은 HUP 로 반영되지 않으므로
+     * 기본값($allow_hup=false)에서는 곧바로 전체 재시작으로 넘어간다.
      */
-	$pid = '';
+	if ($allow_hup) {
+		/*
+	     * PID 파일 우선
+	     */
+		$pid = '';
 
-	if (is_file('/var/run/radiusd.pid')) {
-		$pid = trim((string)@file_get_contents('/var/run/radiusd.pid'));
-	}
+		if (is_file('/var/run/radiusd.pid')) {
+			$pid = trim((string)@file_get_contents('/var/run/radiusd.pid'));
+		}
 
-	/*
-     * PID 파일 없으면 pgrep
-     */
-	if ($pid === '') {
-		$out = [];
-		$ret = 1;
+		/*
+	     * PID 파일 없으면 pgrep
+	     */
+		if ($pid === '') {
+			$out = [];
+			$ret = 1;
 
-		@exec("/bin/pgrep -f 'radiusd' 2>/dev/null | head -n 1", $out, $ret);
+			@exec("/bin/pgrep -f 'radiusd' 2>/dev/null | head -n 1", $out, $ret);
 
-		if ($ret === 0 && !empty($out[0])) {
-			$pid = trim($out[0]);
+			if ($ret === 0 && !empty($out[0])) {
+				$pid = trim($out[0]);
+			}
+		}
+
+		/*
+	     * HUP reload
+	     */
+		if ($pid !== '' && ctype_digit($pid)) {
+			$out = [];
+			$ret = 1;
+
+			@exec('/bin/kill -HUP ' . escapeshellarg($pid) . ' 2>&1', $out, $ret);
+
+			fr_debug_log("radiusd HUP pid={$pid}, ret={$ret}, out=" . implode(' | ', $out));
+
+			if ($ret === 0) {
+				return true;
+			}
 		}
 	}
 
 	/*
-     * HUP reload
-     */
-	if ($pid !== '' && ctype_digit($pid)) {
-		$out = [];
-		$ret = 1;
-
-		@exec('/bin/kill -HUP ' . escapeshellarg($pid) . ' 2>&1', $out, $ret);
-
-		fr_debug_log("radiusd HUP pid={$pid}, ret={$ret}, out=" . implode(' | ', $out));
-
-		if ($ret === 0) {
-			return true;
-		}
-	}
-
-	/*
-     * fallback
+     * 전체 재시작 — 사용자 파일(users/authorize) 변경을 확실히 반영한다.
      */
 	$out = [];
 	$ret = 1;
@@ -1620,7 +1638,7 @@ function fr_debug_log(string $msg): void
 function freeradius_update_user(
 	string $username,
 	bool   $persist_config = true,
-	bool   $reload_radiusd = true,
+	bool   $reload_radiusd = true,   // (미사용) 사용자 파일 변경은 항상 전체 재시작으로 반영됨
 	bool   $sync_changes = false
 ) {
 	global $config;
@@ -1745,7 +1763,9 @@ function freeradius_update_user(
 
 		fr_debug_log("freeradius_update_user: radius reload/restart start username={$username}");
 
-		$radius_result = freeradius_reload_or_restart_radiusd($reload_radiusd);
+		// users/authorize 파일을 방금 수정했으므로 HUP 로는 반영되지 않는다.
+		// 반드시 전체 재시작으로 적용한다.
+		$radius_result = freeradius_reload_or_restart_radiusd(false);
 
 		fr_debug_log(
 			"freeradius_update_user: freeradius_reload_or_restart_radiusd result=" .
