@@ -11,8 +11,8 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | 최신 | #1~#8 전부 포함, 작업 기준 브랜치 |
-| `main` | 최신(develop 반영) | #1~#8 전부 반영 완료 |
+| `develop` | `c62e1f2` | #1~#10 전부 포함, 작업 기준 브랜치 |
+| `main` | `0b5cfa3` | #1~#10 전부 반영 완료 (merge 커밋) |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
 ## Repo 정보
@@ -29,6 +29,9 @@
 | `usr/local/pkg/freeradius.inc` | FreeRADIUS 설정 생성 (datacounter_acct.sh embedded) |
 | `usr/local/etc/raddb/scripts/datacounter_acct.sh` | RADIUS 회계 처리 (Start/Interim/Stop) |
 | `usr/local/etc/raddb/scripts/datacounter_auth.sh` | RADIUS 인증 시 쿼터 확인 |
+| `etc/inc/manage_crew_wifi_account.inc` | crew wifi 계정 CRUD·PW 변경 (admin GUI 백엔드) |
+| `usr/local/cron/crew_*usage_reset_check.php` | 주기별 쿼터 reset 크론 (모두 config writer) |
+| `etc/inc/vlanstate.sh` | VLAN 상태 telnet 조회 셸 (vlan_state_timeperiod_check.php가 호출) |
 
 > **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` /
 > `freeradius_datacounter_auth_resync()` 함수가 `datacounter_acct.sh` /
@@ -162,13 +165,75 @@
 - **교훈**: `$config['captiveportal']`는 **zone 전용**. 전역 플래그를 절대 그 아래 두지 말 것
   (zone 순회 오염). 시스템 전역 토글은 `$config['system']` 사용.
 
+### 9. vlanstate.sh 간헐 미동작 (develop + main 반영)
+- **증상**: `vlan_state_timeperiod_check.php`가 호출하는 내부 셸 `vlanstate.sh`가 간혹 동작 안 함.
+- **근본 원인**: `timeout 5`인데 스크립트 내부 `sleep` 합계도 정확히 **5초** → telnet 연결/응답이
+  조금만 지연돼도 timeout이 프로세스를 kill → `/etc/inc/<dev>.log`가 비거나 불완전.
+- **수정**:
+  - `vlanstate.sh`: `timeout 5` → `timeout 12` (여유 확보).
+  - `vlan_state_timeperiod_check.php`: `trim(preg_replace(...) === '')` **괄호 오배치** →
+    `trim(preg_replace(...)) === ''` 수정. `mwexec()`(동기)는 이미 완료 후 반환하므로 뒤의
+    불필요한 `sleep(1)` 제거.
+
+### 10. 사용자 PW 변경이 간헐적으로 반영 안 됨 (재시작해도) (develop + main 반영)
+- **증상**: 계정 PW를 바꿔도 **무작위로 옛 PW 유지**. 대부분 pfSense 재시작하면 해결되나
+  **가끔 재시작해도 안 됨**. 특히 **두 명의 PW를 거의 동시에 바꾸면 한 명만** 적용됨.
+- 원인/수정이 **3개 층위**로 누적됨:
+
+  **(A) 다중선택 PW: 마지막 1명만 적용** (`manage_crew_wifi_account.inc`)
+  - `freeradius_update_user($user)` 호출이 inner `foreach($userlist)` **밖**(바깥 루프 레벨)에
+    있어 `$user`가 항상 **userlist의 마지막 원소**로 고정 → 선택된 나머지는 런타임 users 파일
+    미갱신(재시작 시 resync로만 반영).
+  - 수정: 증분 호출 제거 → 루프 종료 후 `freeradius_users_resync()` **1회**(전체 재생성).
+    `reset_wifi_user_pw`/`reset_random_wifi_user_pw`/`create_wifi_user` 모두.
+
+  **(B) 적용수단(HUP↔재시작) + accounting**
+  - rlm_files(users/authorize)는 **HUP로 재읽기됨** → 사용자 파일 변경 반영에 전체 재시작 불필요.
+    반대로 **전체 재시작은 1813 listener를 닫아 Accounting Start/Interim/Stop 유실**
+    (= "RADIUS ACCOUNTING FAILED") → 재시작은 금물.
+  - 수정: `freeradius_reload_or_restart_radiusd($allow_hup=true)` **기본 HUP**(graceful), 재시작은
+    HUP 전달 불가(데몬 미기동/PID 없음) 시 **fallback 전용**. `freeradius_users_resync()`도
+    `restart_service` → **HUP**로 바꾸고, `/users`뿐 아니라 **활성 파일(`mods-config/files/authorize`)
+    까지** 기록(`freeradius_get_target_user_files()`)해 증분 경로와 타깃 일치.
+  - (이력: 중간에 HUP→restart로 과도교정했다가 accounting 회귀 발견 → **다시 HUP로 환원**. 최종 HUP.)
+
+  **(C) lost-update 동시성 (재시작해도 안 되는 케이스의 진범)**
+  - pfSense 전역 `$config`를 **여러 프로세스가 락 없이 read-modify-write** → 나중 writer가 자기
+    **옛 스냅샷으로 config.xml 전체를 저장**하며 PW 변경을 되돌림. config.xml 자체가 reverted라
+    재시작해도 복구 안 됨. "두 명 동시 → 한 명만"이 이 전형적 증상.
+  - **C-1 reset 크론 가드**: `crew_{daily,weekly,halfmonthly,monthly}usage_reset_check.php`가 변경
+    없어도 **무조건 `write_config()`/resync** → stale 스냅샷으로 PW를 덮어씀. `if ($changed)`
+    가드로 **변경 시에만** 쓰도록(가능하면 resync도 가드). (prepaid는 이미 동일 패턴이라 무수정.)
+  - **C-2 PW 진입점 전용 락 (P2a)**: 모든 PW 쓰기 경로를
+    `lock('freeradius_user_config', LOCK_EX)` → `parse_config(true)` **재로딩** → 수정 →
+    `write_config` → `unlock` 패턴으로. 두 번째 요청이 첫 번째 변경을 본 뒤 얹어 **둘 다 보존**.
+    대상: `reset_wifi_user_pw`/`reset_random_wifi_user_pw`/`create_wifi_user`
+    (manage_crew_wifi_account.inc) + `commit_change_pw`(captiveportal.inc 로그인 자가변경; 락 밖
+    `freeradius_update_user($u, false)`로 중복 write=재clobber 방지).
+- **교훈**:
+  - `write_config()`는 **내부에서 `lock('config')`를 잡으므로** RMW를 감쌀 땐 반드시 **다른 락
+    이름**을 쓸 것(같은 `'config'`면 self-deadlock).
+  - 동시성 안전엔 **락 안에서 `parse_config(true)`로 최신본 재로딩 후 수정**해야 lost-update가
+    사라짐(미리 읽어둔 값 기반 수정은 무효). 충돌하는 **모든** writer가 **같은 락**을 공유해야 효과.
+  - 사용자 파일 반영은 **HUP(graceful)**; 전체 재시작은 accounting을 끊으므로 fallback 전용.
+- **남은 갭(미적용, 후속)**: PW 변경과 **동시 실행 시** 여전히 clobber 가능 —
+  - 형제 admin writer: `reset_wifi_user`(쿼터리셋)/`modify_wifi_user`/`del_wifi_user`
+  - 매분 writer 크론: `manual_routing`/`network_usage`/`vlan_state` (curl 대기를 락 밖으로 빼는
+    구조 재배치 필요 — 락을 길게 잡으면 안 됨)
+  - API 단건 생성(`APIFreeRADIUSUserCreate` 비-bulk; bulk는 `create_wifi_user` 경유라 이미 보호됨)
+  → 같은 `lock('freeradius_user_config')` 패턴으로 단계 확대 예정.
+
 ## 다음 작업 대기 중
 
-- [ ] 선박에서 수정사항 테스트 (특히 #2, #3, #4, #6, #7, #8)
+- [ ] 선박에서 수정사항 테스트 (특히 #2, #3, #4, #6, #7, #8, #10)
 - [ ] #7: interim 집계 동작 확인 (REGRESS-KEEP 로그 / export 비차단 / interim 마커 갱신)
 - [ ] #8: prepaid self-heal 확인 (배포 후 첫 관리 UI 로드 시 가짜 zone 자동 제거 + prepaid 상태 보존)
 - [ ] #6: REMOVING 오탐 재현 안 됨 + passthrough 게스트 redirect 동작 확인
-- [x] main 반영 완료 (#1~#8)
+- [ ] #9: vlanstate.sh 간헐 미동작 해소 확인 (`.log` 정상 생성)
+- [ ] #10 핵심: **두 명 동시 PW 변경 → 둘 다 적용** 확인 / radiusd 로그 `RADIUS ACCOUNTING FAILED` 없음 / 단건 PW 즉시 반영
+- [ ] #10 가정 확인: `grep -R usersfile /usr/local/etc/raddb/mods-enabled/files` → radiusd 활성 파일이 resync 타깃과 일치 + 그 파일이 패키지 전량생성인지
+- [ ] #10 후속(B/C): 형제 admin writer(reset/modify/del_wifi_user) → 매분 writer 크론 → API 단건 생성에 동일 `lock('freeradius_user_config')` 확대
+- [x] main 반영 완료 (#1~#10)
 - [ ] prod 반영은 별도 명시적 명령 (main → prod 는 재확인 후)
 
 ## 명령어 가이드
