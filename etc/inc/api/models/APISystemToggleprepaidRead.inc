@@ -28,6 +28,8 @@ class APISystemToggleprepaidRead extends APIModel {
 
     private function __get_prepaid_enabled()
     {
-        return ["prepaid_enabled" => isset($this->config['captiveportal']['prepaid_enabled'])];
+        // system(신 위치) 또는 captiveportal(구 위치, 미이전분) 어느 쪽이든 있으면 활성으로 본다.
+        return ["prepaid_enabled" => (isset($this->config['system']['prepaid_enabled'])
+            || isset($this->config['captiveportal']['prepaid_enabled']))];
     }
 }

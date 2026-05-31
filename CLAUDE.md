@@ -11,8 +11,8 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `a10e670` | 모든 수정 포함, 작업 기준 브랜치 |
-| `main` | `30a66ae` | develop 반영 완료 (#1~#6 전부 포함) |
+| `develop` | 최신 | #1~#8 전부 포함, 작업 기준 브랜치 |
+| `main` | `30a66ae` | #1~#6 까지만 반영 (#7, #8 미반영) |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
 ## Repo 정보
@@ -30,9 +30,12 @@
 | `usr/local/etc/raddb/scripts/datacounter_acct.sh` | RADIUS 회계 처리 (Start/Interim/Stop) |
 | `usr/local/etc/raddb/scripts/datacounter_auth.sh` | RADIUS 인증 시 쿼터 확인 |
 
-> **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` 함수가
-> `datacounter_acct.sh`를 **덮어씌워 생성**한다.
-> `datacounter_acct.sh`를 수정하면 반드시 `freeradius.inc` 내 동일 위치도 함께 수정할 것.
+> **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` /
+> `freeradius_datacounter_auth_resync()` 함수가 `datacounter_acct.sh` /
+> `datacounter_auth.sh`를 각각 nowdoc으로 **덮어씌워 생성**한다.
+> 두 셸 스크립트를 수정하면 반드시 `freeradius.inc` 내 **임베디드 사본도 함께** 수정할 것.
+> (검증법: freeradius.inc에서 nowdoc 블록 추출 후 standalone과 diff → 내용 동일해야 함.
+> CRLF/말미개행 차이는 Windows 체크아웃 아티팩트이며 git이 LF로 정규화하므로 무시.)
 
 ## 아키텍처 — 방화벽 서브시스템
 
@@ -117,11 +120,56 @@
   첫 게스트 세션 반환 → 동시 게스트 다수 시 다른 게스트가 끊길 수 있음(기존 전원
   disconnect보다는 개선). 정확한 per-게스트 로그아웃은 sessionid 기반 재설계 필요.
 
+### 7. Interim 회계(집계) 누락 케이스 수정 (develop 반영)
+- **핵심 통찰**: RADIUS Acct 카운터는 세션 내 **누적**이고 SESSFILE=현재 누적값이라,
+  중간 Interim 1개가 빠져도 **다음 Interim/Stop이 누적값으로 자가복구**한다.
+  따라서 영구 손실은 3가지로 압축: (A) 마지막 구간(최종 Interim→Stop) Stop 유실,
+  (B) SESSFILE 역행(같은 SID에서 0<cur<기존이 덮어씀), (C) 동기 export 블로킹 연쇄장애.
+- **L1 (export 분리 + mysql 타임아웃)** `datacounter_acct.sh` + `freeradius.inc`:
+  - Interim 경로의 InfluxDB(로컬+중앙)/MySQL export를 **백그라운드 서브셸**(fire-and-forget)로 분리.
+    `wait=yes` 동기 블로킹 → FreeRADIUS `max_request_time` 초과 → Accounting-Response 미응답
+    → NAS 재전송 폭주 → **타 세션 Stop까지 연쇄 유실**을 차단. 쿼터(SESSFILE/PREVFILE)는
+    백그라운드 진입 **전에 동기 기록**되므로 손실 없음.
+  - `get_vessel_imo()` mysql 호출에 `--connect-timeout=2` 추가(블랙홀 호스트 hang 방지).
+- **L2 (SESSFILE 단조성/high-water-mark)** `datacounter_acct.sh` + `freeradius.inc`:
+  - 비-zero Interim에서 `CUR_TOTAL < 기존 SESSFILE`이면 **덮어쓰지 않음**(로그 REGRESS-KEEP).
+    ipfw 카운터 리셋/룰 리로드/IP 마이그레이션으로 SESSFILE이 줄면 차액이 USEDFILE에
+    접힌 적 없어 **조용히 쿼터 손실**되던 것을 차단. (zero-guard의 일반화.)
+- **M4 (auth glob prefix 충돌)** `datacounter_auth.sh` + `freeradius.inc`:
+  - 합산 glob `"$USED_FILE"*` → `"$USED_FILE" "$USED_FILE"-*` (대시).
+    `crust1`이 `crust10` 사용량까지 합산하던 **과다계상** 차단. (PHP쪽은 이미 `-*`로 되어 있었음.)
+- **M1 (interim 송신 신뢰성)** `captiveportal.inc` `captiveportal_prune_old()`:
+  - 송신 조건을 modulo 창(`session_time % interval <= 59`)에서 **경과시간 threshold**
+    ("마지막 송신 후 interval초 경과", `/var/run/cp_lastinterim_{zone}_{sid}` 마커 mtime)로 교체.
+    minicron 드리프트로 60초 창을 통째로 건너뛰어 interim이 누락되던 문제 제거(→ L3 확률↓).
+  - `captiveportal_disconnect()`에 세션 종료 시 마커 unlink 추가(누수 방지).
+- **L3 (감수)**: 마지막 구간 Stop 유실 손실은 UDP/리부트 등 구조적이라 **감수**.
+  M1으로 발생 확률을 최소화. (필요 시 부팅 시 고아 SESSFILE 회수 크론으로 추가 완화 가능.)
+
+### 8. 파일 배포 시 '내부가 빈' captiveportal zone 1개 추가 생성 (develop 반영)
+- **증상**: 파일 배포 후 pfSense CP zone 목록에 이름/내부가 비어있는 zone이 하나 더 생김.
+- **근본 원인**: `APISystemToggleprepaidUpdate.inc`가
+  `$config['captiveportal']['prepaid_enabled'] = ""`로 **zone 배열에 비-zone 스칼라 키**를 주입.
+  `$config['captiveportal']`는 zone 전용 배열이라, zone을 순회하는 모든 코드
+  (`captiveportal_configure()`, `captiveportal_init_rules_byinterface()`, 기본 UI zones 페이지)가
+  `prepaid_enabled`를 **가짜 zone**으로 처리 → 빈 zone 표시 + CP configure 시 오작동 소지.
+- **수정 (플래그를 `$config['system']['prepaid_enabled']`로 이전)**:
+  - 쓰기 `APISystemToggleprepaidUpdate.inc`: system에 set/unset + **구 오염키 항상 unset**.
+  - 읽기 4곳(Update/Read API, `common_ui.inc` `print_sidebar`, `captiveportal-crew.html`):
+    신(system)/구(captiveportal) **동시 검사**로 활성상태 보존.
+  - **self-heal** `common_ui.inc print_sidebar`: 구 키 발견 시 system 이전 + 구 키 제거 +
+    `write_config` 1회 → 배포 후 첫 관리 UI 로드 시 **기존 가짜 zone 자동 제거**(이후 no-op).
+- **교훈**: `$config['captiveportal']`는 **zone 전용**. 전역 플래그를 절대 그 아래 두지 말 것
+  (zone 순회 오염). 시스템 전역 토글은 `$config['system']` 사용.
+
 ## 다음 작업 대기 중
 
-- [ ] 선박에서 수정사항 테스트 (특히 #2, #3, #4, #6)
+- [ ] 선박에서 수정사항 테스트 (특히 #2, #3, #4, #6, #7, #8)
+- [ ] #7: interim 집계 동작 확인 (REGRESS-KEEP 로그 / export 비차단 / interim 마커 갱신)
+- [ ] #8: prepaid self-heal 확인 (배포 후 첫 관리 UI 로드 시 가짜 zone 자동 제거 + prepaid 상태 보존)
 - [ ] #6: REMOVING 오탐 재현 안 됨 + passthrough 게스트 redirect 동작 확인
-- [ ] prod 반영은 별도 명시적 명령 (#1~#6 main 반영 완료 상태)
+- [ ] main 반영은 별도 명시적 명령 (현재 develop=#1~#8, main=#1~#6)
+- [ ] prod 반영은 별도 명시적 명령
 
 ## 명령어 가이드
 
