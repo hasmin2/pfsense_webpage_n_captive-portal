@@ -62,6 +62,7 @@ foreach (array_keys($radiusUsers) as $item) {
     if ($resetQuota !== 'true' || $modified !== 'update') {
         $userEntry['varusersresetquota'] = "true";
         $userEntry['varusersmodified'] = "update";
+        $changed = true;
     }
 
     unset($userEntry);
@@ -71,14 +72,15 @@ foreach (array_keys($radiusUsers) as $item) {
  * 변경이 있을 때만 반영
  */
 
-    if (function_exists('freeradius_users_resync')) {
-        freeradius_users_resync();
+    if ($changed) {
+        if (function_exists('freeradius_users_resync')) {
+            freeradius_users_resync();
+        }
+        write_config("Reset Weekly datausage Wifi user");
         cp_wireless_log("Reset Weekly datausage Wifi user");
     } else {
-        cp_wireless_log("Reset Weekly datausage Wifi user: freeradius_users_resync() function not found");
+        cp_wireless_log("Reset Weekly datausage Wifi user: no changes");
     }
-
-    write_config("Reset Weekly datausage Wifi user");
 
 
 ?>

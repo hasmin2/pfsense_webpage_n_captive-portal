@@ -2849,16 +2849,25 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         echo $htmltext;
     }
     else if ($type=="commit_change_pw"){
-        foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
-            if($username===$value['varusersusername']){
-                $config['installedpackages']['freeradius']['config'][$item]['varuserspassword']=$password;
+        // 동시 PW 변경 lost-update 방지: 전용 락 + 락 안에서 config 최신본 재로딩 후 저장.
+        // (write_config 내부의 lock('config') 와 데드락되지 않도록 다른 이름의 락 사용.)
+        $cnf_lock = lock('freeradius_user_config', LOCK_EX);
+        try {
+            $config = parse_config(true);
+            foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
+                if($username===$value['varusersusername']){
+                    $config['installedpackages']['freeradius']['config'][$item]['varuserspassword']=$password;
+                }
             }
+            write_config("{$username} change password applied");
+        } finally {
+            unlock($cnf_lock);
         }
-        write_config("{$username} change password applied");
         captiveportal_disconnect_client($sessionid);
         sleep(2);
 
-        if(freeradius_update_user($username)){
+        // persist=false: 위 락 구간에서 이미 write_config 했으므로 중복 write(=clobber) 방지.
+        if(freeradius_update_user($username, false)){
             $title="Password Changed Successfully!!";
             $result='Your Password has been successfully changed.';
         }

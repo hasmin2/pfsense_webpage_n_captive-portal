@@ -981,42 +981,70 @@ function reset_wifi_user($userlist){
 
 function reset_wifi_user_pw($userlist){
     global $config;
-    foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
-        foreach ($userlist as $user) {
-            if ($user === $userentry['varusersusername']) {
-                $config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword'] = "1111";
-                cp_wireless_log("Reset initial password: ".$userentry['varusersusername']);
+    // 동시 PW 변경 lost-update 방지: 전용 락 + 락 안에서 config 최신본 재로딩 후 저장.
+    // (write_config 는 내부적으로 lock('config') 를 쓰므로 다른 이름의 락이어야 데드락이 없다.)
+    $cnf_lock = lock('freeradius_user_config', LOCK_EX);
+    try {
+        $config = parse_config(true);
+        $changed = false;
+        foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
+            foreach ($userlist as $user) {
+                if ($user === $userentry['varusersusername']) {
+                    $config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword'] = "1111";
+                    $changed = true;
+                    cp_wireless_log("Reset initial password: ".$userentry['varusersusername']);
+                }
             }
         }
-        freeradius_update_user($user);
+        if ($changed) {
+            freeradius_users_resync();
+            write_config("Reset password Wifi user");
+        }
+    } finally {
+        unlock($cnf_lock);
     }
-    write_config("Reset password Wifi user");
 }
 
 function reset_random_wifi_user_pw($userlist){
     global $config;
-    foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
-        foreach ($userlist as $user) {
-            if ($user === $userentry['varusersusername']) {
-                $alphabet = '1234567890';
-                $pass = array();
-                $alphaLength = strlen($alphabet) - 1;
+    // 동시 PW 변경 lost-update 방지: 전용 락 + 락 안에서 config 최신본 재로딩 후 저장.
+    $cnf_lock = lock('freeradius_user_config', LOCK_EX);
+    try {
+        $config = parse_config(true);
+        $changed = false;
+        foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
+            foreach ($userlist as $user) {
+                if ($user === $userentry['varusersusername']) {
+                    $alphabet = '1234567890';
+                    $pass = array();
+                    $alphaLength = strlen($alphabet) - 1;
 
-                for ($passwordchar = 0; $passwordchar < 6; $passwordchar++) {
-                    $n = rand(0, $alphaLength);
-                    $pass[] = $alphabet[$n];
+                    for ($passwordchar = 0; $passwordchar < 6; $passwordchar++) {
+                        $n = rand(0, $alphaLength);
+                        $pass[] = $alphabet[$n];
+                    }
+                    $config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword'] = implode($pass);
+                    $changed = true;
+                    cp_wireless_log("Reset random password: ".$userentry['varusersusername']);
                 }
-                $config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword'] = implode($pass);
-                cp_wireless_log("Reset random password: ".$userentry['varusersusername']);
             }
         }
-        freeradius_update_user($user);
+        if ($changed) {
+            freeradius_users_resync();
+            write_config("Reset password Wifi user");
+        }
+    } finally {
+        unlock($cnf_lock);
     }
-    write_config("Reset password Wifi user");
 }
 
 function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltype, $timeperiod, $issimplefied){
     global $config;
+
+    // 동시 생성/변경 lost-update 방지: 전용 락 + 락 안에서 config 최신본 재로딩.
+    $cnf_lock = lock('freeradius_user_config', LOCK_EX);
+    try {
+    $config = parse_config(true);
 
     $created_users = array();
 
@@ -1153,10 +1181,13 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
         $created_users[] = $userinfoentry;
     }
 
-    freeradius_update_user($username);
+    freeradius_users_resync();
     write_config("Created Wifi user");
 
     return $created_users;
+    } finally {
+        unlock($cnf_lock);
+    }
 }
 
 function getSyllableAbbr(string $word, int $maxLen = 4): string {

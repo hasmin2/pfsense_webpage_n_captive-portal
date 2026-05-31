@@ -10,7 +10,6 @@ if ($config['vlan_device']['item'] && $vlandevices[0]!==""){
     $newstate = [];
     foreach($vlandevices as $vlandevice){
         mwexec("sh ".$filepath."vlanstate.sh ".$vlandevice);
-        sleep (1);
         $handle = fopen($filepath.$vlandevice.".log", "r");
         if ($handle) {
             $vlan_state='';
@@ -24,7 +23,7 @@ if ($config['vlan_device']['item'] && $vlandevices[0]!==""){
                         $vlan_state.="DN||";
                     }
                     $pvidarray = explode( " ", fgets($handle));//next line
-                    if(trim(preg_replace('/\s\s+/', ' ', $pvidarray[4]) ==='')){
+                    if(trim(preg_replace('/\s\s+/', ' ', $pvidarray[4])) === ''){
                         $vlan_id.='1||';
                     }
                     else{

@@ -60,12 +60,16 @@ foreach (array_keys($radiusUsers) as $item) {
     unset($userEntry);
 }
 
-if (function_exists('freeradius_users_resync')) {
-    freeradius_users_resync();
+// 변경이 있을 때만 반영. stale 스냅샷으로 write_config/resync 하여 동시 변경(예: 비밀번호)을
+// 덮어쓰는 lost-update 를 막는다.
+if ($changed) {
+    if (function_exists('freeradius_users_resync')) {
+        freeradius_users_resync();
+    }
+    write_config("Reset Daily datausage Wifi user");
     cp_wireless_log("Reset Daily datausage Wifi user successfully");
 } else {
-    cp_wireless_log("Reset Daily datausage Wifi user: freeradius_users_resync() function not found");
+    cp_wireless_log("Reset Daily datausage Wifi user: no changes");
 }
-write_config("Reset Daily datausage Wifi user");
 
 ?>

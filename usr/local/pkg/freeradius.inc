@@ -918,16 +918,18 @@ EOD;
 EOD;
 			}
 		}
-		$filename = FREERADIUS_RADDB . '/users';
-
-		// users 파일도 원자 교체
-		freeradius_atomic_write_file($filename, $conf, 0640);
+		// users 파일 + 실제 활성 파일(mods-config/files/authorize) 모두 원자 교체.
+		// 증분 경로(freeradius_update_user)와 타깃을 일치시켜 런타임 파일 불일치를 제거.
+		foreach (freeradius_get_target_user_files() as $target_file) {
+			freeradius_atomic_write_file($target_file, $conf, 0640);
+		}
 
 		freeradius_sync_on_changes();
 
-		// 락을 잡은 상태에서 restart까지 수행하면 동시 호출 시 서비스 재시작도 직렬화됨
+		// 락을 잡은 상태에서 reload까지 수행하면 동시 호출 시 reload 도 직렬화됨.
+		// 전체 파일을 재생성했으므로 HUP(graceful)로 충분하며 accounting(1813)을 끊지 않는다.
 		if ($via_rpc === false && !platform_booting()) {
-			restart_service("radiusd");
+			freeradius_reload_or_restart_radiusd(true);
 		}
 
 		return true;
@@ -1532,7 +1534,21 @@ function freeradius_validate_radiusd_config(): bool
 	return true;
 }
 
-function freeradius_reload_or_restart_radiusd(bool $reload_radiusd = true): bool
+/*
+ * radiusd 에 변경을 반영한다.
+ *
+ * 기본은 kill -HUP(graceful reload) 이다. HUP 는 listener(1812/1813)를 닫지 않으므로
+ * accounting(1813) 패킷 유실이 없다. rlm_files 는 HUP 시 재읽기되어 users/authorize
+ * 변경(비밀번호 등)이 런타임에 반영된다.
+ *
+ * 전체 재시작(service radiusd onerestart)은 재시작 창 동안 1813 listener 가 닫혀
+ * Accounting Start/Interim/Stop 이 유실(= RADIUS ACCOUNTING FAILED)될 수 있으므로,
+ * HUP 전달이 불가능할 때(데몬 미기동/ PID 없음 등)의 fallback 으로만 사용한다.
+ *
+ * @param bool $allow_hup  true(기본) : HUP 우선, 전달 불가 시에만 재시작(accounting-safe)
+ *                         false      : 곧바로 전체 재시작(특수 상황 전용)
+ */
+function freeradius_reload_or_restart_radiusd(bool $allow_hup = true): bool
 {
 	if (function_exists('platform_booting') && platform_booting()) {
 		return true;
@@ -1543,46 +1559,53 @@ function freeradius_reload_or_restart_radiusd(bool $reload_radiusd = true): bool
 	}
 
 	/*
-     * PID 파일 우선
+     * HUP 는 명시적으로 허용된 경우에만 시도한다.
+     * 사용자 파일(users/authorize) 변경은 HUP 로 반영되지 않으므로
+     * 기본값($allow_hup=false)에서는 곧바로 전체 재시작으로 넘어간다.
      */
-	$pid = '';
+	if ($allow_hup) {
+		/*
+	     * PID 파일 우선
+	     */
+		$pid = '';
 
-	if (is_file('/var/run/radiusd.pid')) {
-		$pid = trim((string)@file_get_contents('/var/run/radiusd.pid'));
-	}
+		if (is_file('/var/run/radiusd.pid')) {
+			$pid = trim((string)@file_get_contents('/var/run/radiusd.pid'));
+		}
 
-	/*
-     * PID 파일 없으면 pgrep
-     */
-	if ($pid === '') {
-		$out = [];
-		$ret = 1;
+		/*
+	     * PID 파일 없으면 pgrep
+	     */
+		if ($pid === '') {
+			$out = [];
+			$ret = 1;
 
-		@exec("/bin/pgrep -f 'radiusd' 2>/dev/null | head -n 1", $out, $ret);
+			@exec("/bin/pgrep -f 'radiusd' 2>/dev/null | head -n 1", $out, $ret);
 
-		if ($ret === 0 && !empty($out[0])) {
-			$pid = trim($out[0]);
+			if ($ret === 0 && !empty($out[0])) {
+				$pid = trim($out[0]);
+			}
+		}
+
+		/*
+	     * HUP reload
+	     */
+		if ($pid !== '' && ctype_digit($pid)) {
+			$out = [];
+			$ret = 1;
+
+			@exec('/bin/kill -HUP ' . escapeshellarg($pid) . ' 2>&1', $out, $ret);
+
+			fr_debug_log("radiusd HUP pid={$pid}, ret={$ret}, out=" . implode(' | ', $out));
+
+			if ($ret === 0) {
+				return true;
+			}
 		}
 	}
 
 	/*
-     * HUP reload
-     */
-	if ($pid !== '' && ctype_digit($pid)) {
-		$out = [];
-		$ret = 1;
-
-		@exec('/bin/kill -HUP ' . escapeshellarg($pid) . ' 2>&1', $out, $ret);
-
-		fr_debug_log("radiusd HUP pid={$pid}, ret={$ret}, out=" . implode(' | ', $out));
-
-		if ($ret === 0) {
-			return true;
-		}
-	}
-
-	/*
-     * fallback
+     * 전체 재시작 — 사용자 파일(users/authorize) 변경을 확실히 반영한다.
      */
 	$out = [];
 	$ret = 1;
@@ -1620,7 +1643,7 @@ function fr_debug_log(string $msg): void
 function freeradius_update_user(
 	string $username,
 	bool   $persist_config = true,
-	bool   $reload_radiusd = true,
+	bool   $reload_radiusd = true,   // true=HUP 리로드, false=리로드 보류(호출측 일괄 리로드용)
 	bool   $sync_changes = false
 ) {
 	global $config;
@@ -1745,7 +1768,13 @@ function freeradius_update_user(
 
 		fr_debug_log("freeradius_update_user: radius reload/restart start username={$username}");
 
-		$radius_result = freeradius_reload_or_restart_radiusd($reload_radiusd);
+		// 기본은 HUP(graceful reload) — accounting(1813) 무중단.
+		// $reload_radiusd=false 면 호출측이 일괄 리로드하므로 여기서는 건너뛴다(배치용).
+		if ($reload_radiusd) {
+			$radius_result = freeradius_reload_or_restart_radiusd(true);
+		} else {
+			$radius_result = true;
+		}
 
 		fr_debug_log(
 			"freeradius_update_user: freeradius_reload_or_restart_radiusd result=" .
