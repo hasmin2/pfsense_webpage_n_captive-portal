@@ -12,7 +12,7 @@
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
 | `develop` | 최신 | #1~#8 전부 포함, 작업 기준 브랜치 |
-| `main` | `30a66ae` | #1~#6 까지만 반영 (#7, #8 미반영) |
+| `main` | 최신(develop 반영) | #1~#8 전부 반영 완료 |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
 ## Repo 정보
@@ -168,8 +168,8 @@
 - [ ] #7: interim 집계 동작 확인 (REGRESS-KEEP 로그 / export 비차단 / interim 마커 갱신)
 - [ ] #8: prepaid self-heal 확인 (배포 후 첫 관리 UI 로드 시 가짜 zone 자동 제거 + prepaid 상태 보존)
 - [ ] #6: REMOVING 오탐 재현 안 됨 + passthrough 게스트 redirect 동작 확인
-- [ ] main 반영은 별도 명시적 명령 (현재 develop=#1~#8, main=#1~#6)
-- [ ] prod 반영은 별도 명시적 명령
+- [x] main 반영 완료 (#1~#8)
+- [ ] prod 반영은 별도 명시적 명령 (main → prod 는 재확인 후)
 
 ## 명령어 가이드
 
