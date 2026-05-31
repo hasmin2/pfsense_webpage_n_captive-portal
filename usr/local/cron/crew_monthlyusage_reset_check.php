@@ -181,7 +181,11 @@ if (
     }
 }
 
-cp_wireless_log("Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset");
-
-write_config(    "Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset");
+// 변경이 있을 때만 반영 (lost-update 방지)
+if ($changed) {
+    cp_wireless_log("Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset");
+    write_config("Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset");
+} else {
+    cp_wireless_log("Reset Monthly Crew wifi usage: no changes");
+}
 ?>

@@ -69,14 +69,15 @@ foreach (array_keys($radiusUsers) as $idx) {
 }
 
 
-if (function_exists('freeradius_users_resync')) {
-    freeradius_users_resync();
+// 변경이 있을 때만 반영 (lost-update 방지)
+if ($changed) {
+    if (function_exists('freeradius_users_resync')) {
+        freeradius_users_resync();
+    }
+    write_config("Reset half monthly datausage Wifi user");
     cp_wireless_log("Reset half monthly datausage Wifi user (updated)");
 } else {
-    cp_wireless_log("Reset half monthly: freeradius_users_resync() function not found");
+    cp_wireless_log("Reset half monthly datausage Wifi user: no changes");
 }
-
-
-write_config("Reset half monthly datausage Wifi user");
 
 ?>
