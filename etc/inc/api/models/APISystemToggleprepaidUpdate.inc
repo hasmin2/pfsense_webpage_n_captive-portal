@@ -29,13 +29,16 @@ class APISystemToggleprepaidUpdate extends APIModel {
         }
 
         if ($this->initial_data['prepaid_enabled']) {
-            $this->config['captiveportal']['prepaid_enabled'] = "";
+            $this->config['system']['prepaid_enabled'] = "";
         } else {
-            unset($this->config['captiveportal']['prepaid_enabled']);
+            unset($this->config['system']['prepaid_enabled']);
         }
+        // 과거 오염 정리: captiveportal zone 배열에 잘못 저장돼 '내부가 빈 가짜 zone'
+        // 으로 보이던 키를 제거한다. (이 키가 CP zone 목록을 오염시키던 근본 원인)
+        unset($this->config['captiveportal']['prepaid_enabled']);
         $this->write_config();
 
-        $enabled = isset($this->config['captiveportal']['prepaid_enabled']);
+        $enabled = isset($this->config['system']['prepaid_enabled']);
         return APIResponse\get(0, ["prepaid_enabled" => $enabled]);
     }
 }

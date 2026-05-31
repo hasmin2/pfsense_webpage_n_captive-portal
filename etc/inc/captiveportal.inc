@@ -979,17 +979,35 @@ function captiveportal_prune_old() {
                         $cpentry[3], // clientmac
                         $cpentry[5]); // sessionid
                 } else if ($cpcfg['reauthenticateacct'] == "interimupdate") {
-                    $session_time = $pruning_time - $cpentry[0];
-                    if (!empty($cpentry[10]) && $cpentry[10] > 60) {
-                        $interval = $cpentry[10];
+                    // interim_interval(DB col 10) 이 60 초과로 설정된 경우에만 주기를 적용한다.
+                    // 미설정/≤60 이면 interval=0 → 매 prune 사이클마다 송신(가장 견고).
+                    $interval = (!empty($cpentry[10]) && $cpentry[10] > 60) ? (int)$cpentry[10] : 0;
+
+                    // 경과시간(threshold) 기반 송신.
+                    // 기존 modulo 창(session_time % interval <= 59) 은 minicron 드리프트로
+                    // 60초 창을 통째로 건너뛰어 interim 이 누락(→ 마지막 구간 손실 확률↑)됐다.
+                    // "마지막 송신 후 interval 초 이상 경과" 는 한 번 참이 되면 송신 전까지
+                    // 계속 참이라 드리프트로 건너뛸 수 없다. 마지막 송신 시각은 /var/run 마커의
+                    // mtime 으로 추적한다(리부트 시 자동 정리, 세션 종료 시 disconnect 가 제거).
+                    $do_update = false;
+                    $mfile = '';
+                    if ($interval === 0) {
+                        $do_update = true;
                     } else {
-                        $interval = 0;
+                        $sid_safe = preg_replace('/[^0-9a-zA-Z]/', '', (string)$cpentry[5]);
+                        $mfile = "{$g['varrun_path']}/cp_lastinterim_{$cpzone}_{$sid_safe}";
+                        $last_sent = @filemtime($mfile);
+                        if ($last_sent === false) {
+                            // 마커 없음(첫 송신 전): 세션이 interval 이상 지속됐을 때부터 송신.
+                            if (($pruning_time - $cpentry[0]) >= $interval) {
+                                $do_update = true;
+                            }
+                        } else if (($pruning_time - $last_sent) >= $interval) {
+                            $do_update = true;
+                        }
                     }
-                    $past_interval_min = ($session_time > $interval);
-                    if ($interval != 0) {
-                        $within_interval = ($session_time % $interval >= 0 && $session_time % $interval <= 59);
-                    }
-                    if ($interval === 0 || ($interval > 0 && $past_interval_min && $within_interval)) {
+
+                    if ($do_update) {
                         captiveportal_send_server_accounting('update',
                             $cpentry[1], // ruleno
                             $cpentry[4], // username
@@ -997,6 +1015,9 @@ function captiveportal_prune_old() {
                             $cpentry[3], // clientmac
                             $cpentry[5], // sessionid
                             $cpentry[0]); // start time
+                        if ($mfile !== '') {
+                            @touch($mfile, $pruning_time);
+                        }
                     }
                 }
             }
@@ -1130,6 +1151,11 @@ function captiveportal_disconnect($dbent, $term_cause = 1, $stop_time = null, $c
     global $g, $config, $cpzone, $cpzoneid;
 
     $stop_time = (empty($stop_time)) ? time() : $stop_time;
+
+    /* interimupdate 송신 추적 마커 정리: 세션 종료 시 /var/run 마커 제거(누수 방지). */
+    if (!empty($dbent[5])) {
+        @unlink("{$g['varrun_path']}/cp_lastinterim_{$cpzone}_" . preg_replace('/[^0-9a-zA-Z]/', '', (string)$dbent[5]));
+    }
 
     /* this client needs to be deleted - remove ipfw rules */
     if (isset($config['captiveportal'][$cpzone]['radacct_enable']) && $dbent['authmethod'] == 'radius') {

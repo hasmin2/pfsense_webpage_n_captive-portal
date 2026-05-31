@@ -17,7 +17,8 @@ $uiConfig = [
 ];
 
 global $config;
-$prepaidEnabled = isset($config['captiveportal']['prepaid_enabled']);
+$prepaidEnabled = isset($config['system']['prepaid_enabled'])
+    || isset($config['captiveportal']['prepaid_enabled']);
 
 /* ---------------------------
 * Common helpers

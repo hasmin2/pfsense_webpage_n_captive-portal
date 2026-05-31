@@ -146,7 +146,18 @@ function print_sidebar($inputlink)
     $rtnstr .= $mk("terminal.php", "Antenna", "ic-lnb03");
     $rtnstr .= $mk("lan_svrstatus.php", "LAN", "ic-lnb04");
     $rtnstr .= $mk("crew_account.php", "Crew Account", "ic-lnb05");
+    // prepaid_enabled self-heal: 과거 코드가 captiveportal zone 배열에 플래그를 저장해
+    // CP zone 목록에 '내부가 빈 가짜 zone' 이 생기던 버그를 정리한다.
+    // 구 위치(captiveportal)가 보이면 system 으로 이전하고 구 키를 제거한 뒤 1회 영구화한다.
+    // (이후 요청부터는 구 키가 없어 no-op)
     if (isset($config['captiveportal']['prepaid_enabled'])) {
+        $config['system']['prepaid_enabled'] = "";
+        unset($config['captiveportal']['prepaid_enabled']);
+        if (function_exists('write_config')) {
+            write_config("prepaid_enabled: captiveportal->system 이전(가짜 zone 제거)");
+        }
+    }
+    if (isset($config['system']['prepaid_enabled'])) {
         $rtnstr .= $mk("prepaid_account.php", "Prepaid Account", "ic-lnb05");
     }
     $rtnstr .= $mk("download_center.php", "Download Center", "ic-lnb06");

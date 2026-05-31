@@ -47,6 +47,8 @@ fi
 ### Important:
 ### Do NOT use: cat used-octets-* | awk ...
 ### Because files without newline can be concatenated like 3374670277 + 371347344 => 3374670277371347344
+### Glob 은 base 파일 + "-*" 세션 파일만 합산한다. "$USED_FILE"* (대시 없음) 는
+### 같은 prefix 의 다른 사용자(예: crust1 ↔ crust10)까지 합산해 과다계상되므로 쓰지 않는다.
 USEDOCTETSUSERNAME=`/usr/bin/awk '
 	/^[0-9]+$/ {
 		SUM += $1
@@ -54,7 +56,7 @@ USEDOCTETSUSERNAME=`/usr/bin/awk '
 	END {
 		printf "%.0f\n", SUM
 	}
-' "$USED_FILE"* 2>/dev/null`
+' "$USED_FILE" "$USED_FILE"-* 2>/dev/null`
 
 if [ -z "$USEDOCTETSUSERNAME" ]; then
 	USEDOCTETSUSERNAME=0

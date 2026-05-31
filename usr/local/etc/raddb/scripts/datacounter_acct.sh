@@ -197,6 +197,7 @@ get_vessel_imo() {
     -P "$VESSEL_DB_PORT" \
     -u "$VESSEL_DB_USER" \
     --password="$VESSEL_DB_PASS" \
+    --connect-timeout=2 \
     "$VESSEL_DB_NAME" \
     -e "SELECT ${VESSEL_COLUMN} FROM ${VESSEL_TABLE} WHERE ${VESSEL_COLUMN} IS NOT NULL AND ${VESSEL_COLUMN} <> '' LIMIT 1;" \
     2>/dev/null | head -n 1)"
@@ -434,7 +435,21 @@ if [ "$STATUS" = "Interim-Update" ]; then
   fi
 
   # ---- 정상(non-zero) 처리: SESSFILE 기록 + 로그 + Influx export ----
-  echo "$CUR_TOTAL" > "$SESSFILE"
+  # 단조성(high-water-mark) 보장: 같은 세션(SID)에서 카운터가 역행(0<cur<기존)하면
+  # 더 작은 값으로 덮어쓰지 않는다. ipfw 카운터 리셋/룰 리로드/IP 마이그레이션 등으로
+  # SESSFILE 이 줄면 그 차액은 USEDFILE 에 접힌 적이 없어 영구 손실되기 때문이다.
+  # (zero-guard 가 CUR_TOTAL==0 을 막는 것과 동일 철학의 일반화.)
+  if [ -f "$SESSFILE" ]; then
+    OLD_SESS=$(head -n1 "$SESSFILE" 2>/dev/null | tr -cd '0-9')
+    [ -z "$OLD_SESS" ] && OLD_SESS=0
+  else
+    OLD_SESS=0
+  fi
+  if [ "$CUR_TOTAL" -lt "$OLD_SESS" ] 2>/dev/null; then
+    log "DATACOUNTER INTERIM REGRESS-KEEP user=$USERNAME range=$TIMERANGE sid=$SESSIONID old=$OLD_SESS cur=$CUR_TOTAL (kept high-water)"
+  else
+    echo "$CUR_TOTAL" > "$SESSFILE"
+  fi
 
   log "DATACOUNTER INTERIM user=$USERNAME range=$TIMERANGE sid=$SESSIONID in=$((CUR_IN/1048576))MB out=$((CUR_OUT/1048576))MB total=$((CUR_TOTAL/1048576))MB"
 
@@ -543,12 +558,16 @@ if [ "$STATUS" = "Interim-Update" ]; then
 
   line="${MEASUREMENT},user=$(esc_tag "$USERNAME"),sid=$(esc_tag "$SESSIONID") in_bytes=${in_bytes}i,out_bytes=${out_bytes}i,total_bytes=${total_bytes}i,current_in_bytes=${CUR_IN}i,current_out_bytes=${CUR_OUT}i,current_total_bytes=${CUR_TOTAL}i,prev_in_bytes=${PREV_IN}i,prev_out_bytes=${PREV_OUT}i,prev_total_bytes=${PREV_TOTAL}i,first_point=${FIRST_POINT}i,session_changed=${SESSION_CHANGED}i,reset=${RESET_DETECTED}i,reset_in=${RESET_IN}i,reset_out=${RESET_OUT}i,reset_total=${RESET_TOTAL}i ${ts_m}"
 
-  influx_prepare >/dev/null 2>&1 || true
-  influx_write_line "$line" || true
-
-  # 중앙/가상 InfluxDB export.
-  # sid/range는 저장하지 않고 vessel_imo/user + 숫자 사용량만 저장한다.
-  central_influx_export_usage || true
+  # InfluxDB/MySQL export 는 RADIUS 응답 경로에서 분리(fire-and-forget)한다.
+  # wait=yes 라도 스크립트가 즉시 반환하도록 백그라운드 서브셸로 보낸다.
+  # 쿼터(SESSFILE/PREVFILE)는 위에서 이미 동기 기록되었으므로 손실되지 않으며,
+  # export 의 지연/블로킹이 Accounting-Response 지연 → NAS 재전송 폭주로 번져
+  # 다른 세션의 회계까지 무너뜨리는 연쇄장애를 차단한다.
+  (
+    influx_prepare >/dev/null 2>&1 || true
+    influx_write_line "$line" || true
+    central_influx_export_usage || true
+  ) >/dev/null 2>&1 &
   # ===== /Influx export =====
 
   exit 0
