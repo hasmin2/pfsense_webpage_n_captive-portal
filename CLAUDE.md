@@ -11,8 +11,8 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `ee74616` | 모든 수정 포함, 작업 기준 브랜치 |
-| `main` | `961a2a8` | develop보다 3커밋 뒤처짐 (아직 미반영) |
+| `develop` | `a10e670` | 모든 수정 포함, 작업 기준 브랜치 |
+| `main` | `30a66ae` | develop 반영 완료 (#1~#6 전부 포함) |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
 ## Repo 정보
@@ -91,11 +91,37 @@
 ### 5. get_suspend_timeschedule() 오탐 (develop 반영)
 - null/빈 loginId 조기 반환, 단일 schedule flat array 정규화, 진단 로그 추가
 
+### 6. 포털 재오픈 시 오탐 "User is removed!" + 강제 disconnect (develop + main 반영 완료)
+- **증상**: 로그인 중 어떤 경우엔 무조건 "REMOVING(User is removed!)"으로 빠져
+  복구 안 됨. 실제로는 user id가 삭제되지 않았는데도 발생.
+- **근본 원인**: `portal_reply_page(type="connected")`가 username을 flash로 받지
+  않고 `already_connected()`로 **재조회**함. 이 재조회는 IP+MAC **정확 일치**만
+  보므로(clientmac 공백·대소문자·타이밍) 실패 시 `$username` 공백 →
+  freeradius config 매칭 실패(`$userindex=-1`) → "removed" 분기 + disconnect.
+  즉 **username 회수 실패가 사용자 삭제로 오인**됨 (HTML에 로그인 id 미주입).
+- **수정 (`index.php`)**:
+  - connected flash 3곳(로그인 성공/종료부/passthrough)에 `username` **명시 전달**
+    → `already_connected` 재조회 의존 제거. `$connectedUser` 확보.
+- **수정 (`captiveportal.inc` `portal_reply_page`)**:
+  - **빈 username 안전망**: removed 분기에서 username 공백이면 disconnect 없이
+    **WELCOME 로그인 페이지** 표시.
+  - **sessionid 복구**: `already_connected` 실패해도 username으로 `getsession()`
+    복구 → quota 0% 오표시·오판정 방지.
+  - **passthrough(freelogins) 게스트(`'unauthenticated'`) 전용 처리**: config
+    조회/quota/removed 판정을 건너뛰고, **존 설정 `redirurl`(외부 URL)로 즉시
+    redirect**. 대상 없으면 게스트 상태 페이지로 폴백(무한 루프 방지).
+    → 게스트가 재오픈마다 강제 disconnect 되던 문제 해결.
+- **주의**: voucher 미사용 환경이라 voucher 경로(동일 구조적 결함)는 미수정.
+  voucher를 켜면 바우처 코드 username도 config에 없어 같은 오탐 발생 → 별도 처리 필요.
+  passthrough 게스트 logout 버튼은 `logout_id='unauthenticated'`→`getsession()`이
+  첫 게스트 세션 반환 → 동시 게스트 다수 시 다른 게스트가 끊길 수 있음(기존 전원
+  disconnect보다는 개선). 정확한 per-게스트 로그아웃은 sessionid 기반 재설계 필요.
+
 ## 다음 작업 대기 중
 
-- [ ] 선박에서 수정사항 테스트 (특히 #2, #3, #4)
-- [ ] 테스트 통과 후 → "develop를 main에 병합해"
-- [ ] main 반영 확인 후 → prod는 별도 명시적 명령
+- [ ] 선박에서 수정사항 테스트 (특히 #2, #3, #4, #6)
+- [ ] #6: REMOVING 오탐 재현 안 됨 + passthrough 게스트 redirect 동작 확인
+- [ ] prod 반영은 별도 명시적 명령 (#1~#6 main 반영 완료 상태)
 
 ## 명령어 가이드
 
