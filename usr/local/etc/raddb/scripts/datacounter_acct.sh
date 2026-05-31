@@ -307,23 +307,15 @@ MAXFILE="$BASE/max-octets-$USERNAME"
 USEDFILE="$BASE/used-octets-$USERNAME"
 SESSFILE="$BASE/used-octets-$USERNAME-$SESSIONID"
 
-# ---------- kick spool (in /var/run => reboot clears) ----------
-KICKDIR="/var/run/datacounter-kick"
-mkdir -p "$KICKDIR" 2>/dev/null || true
-
 # ---------- state (in /var/run => reboot clears) ----------
+# InfluxDB delta 계산용 직전 Interim 값 저장 디렉터리.
 STATE_ROOT="/var/run/datacounter-state"
 STATE_DIR="${STATE_ROOT}/${TIMERANGE}"
 mkdir -p "$STATE_DIR" 2>/dev/null || true
-STATEFILE="${STATE_DIR}/state-${USERNAME}-${SESSIONID}"
 
 # 사용자/range 기준 직전 Interim 값 저장 파일.
 # SESSIONID를 일부러 빼서 세션 재시작 후 카운터가 작아지는 상황도 감지한다.
 PREVFILE="${STATE_DIR}/prev-${USERNAME}"
-
-# kick 파일이 소비/삭제돼도 재생성하지 않도록 마커 유지
-KICKMARK="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.sent"
-KICKDONE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.done"
 
 # Ensure base dir exists
 [ -d "$BASE" ] || mkdir -p "$BASE" 2>/dev/null
@@ -347,10 +339,7 @@ fi
 
 if [ $((NOW_TS - last_clean)) -ge 3600 ] 2>/dev/null; then
   echo "$NOW_TS" > "$CLEAN_STAMP" 2>/dev/null || true
-  find "$STATE_ROOT" -type f -name "state-*" -mmin +720 -delete >/dev/null 2>&1 || true
   find "$STATE_ROOT" -type f -name "prev-*" -mmin +720 -delete >/dev/null 2>&1 || true
-  # kick 파일 TTL 정리 (24시간 이상 된 파일 삭제)
-  find "$KICKDIR" -type f -mmin +1440 -delete >/dev/null 2>&1 || true
 fi
 
 # ---------- sanity guards ----------
@@ -375,85 +364,47 @@ if [ "$CUR_IN" -lt 0 ] || [ "$CUR_OUT" -lt 0 ] || [ "$CUR_TOTAL" -lt 0 ]; then
 fi
 
 # ---------- STOP zero-guard ----------
+# CUR_TOTAL=0 으로 Stop 이 오는 경우(로그아웃 없이 WiFi/LAN 절단 등):
+# NAS 가 최종 사용량을 0 으로 보고하므로, 아래 lockf STOP 섹션의 누적 로직을
+# 그대로 타면 마지막 SESSFILE 값이 USEDFILE 에 반영되지 않고 사라진다.
+# 따라서 여기서 SESSFILE 값을 USEDFILE 에 누적한 뒤 정리하고 종료한다.
 if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
-  tmp="${STATEFILE}.$$"
-  {
-    echo "last_seen_ts=$NOW_TS"
-    echo "last_stop_zero_ts=$NOW_TS"
-    echo "username=$USERNAME"
-    echo "timerange=$TIMERANGE"
-    echo "sessionid=$SESSIONID"
-  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATEFILE" 2>/dev/null || true
-
-  # PREVFILE 정리: zero Stop이라도 세션 종료이므로 다음 세션의 delta 오염 방지
+  # PREVFILE 정리: 세션 종료이므로 다음 세션의 delta 오염 방지
   rm -f "$PREVFILE" 2>/dev/null || true
 
-  if [ -f "$KICKMARK" ] || [ -f "$KICKDONE" ]; then
-    log "DATACOUNTER IGNORE STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets; kick already marked)"
-    exit 0
+  # SESSFILE 정리: 마지막 Interim 이 non-zero 였다면 SESSFILE 이 남아있다.
+  # 이 파일을 삭제하지 않으면 다음 인증 시 datacounter_auth.sh 의 glob 이
+  # 구 세션 bytes 를 합산해 quota 합계가 부풀려지는 버그가 발생한다.
+  # 단, USEDFILE 에 반영되지 않은 bytes 이므로 먼저 USEDFILE 에 누적한 후 삭제한다.
+  if [ -f "$SESSFILE" ]; then
+    LAST_SESS=$(head -n1 "$SESSFILE" 2>/dev/null | tr -cd '0-9')
+    [ -z "$LAST_SESS" ] && LAST_SESS=0
+    if [ "$LAST_SESS" -gt 0 ]; then
+      # USEDFILE 에 마지막 세션 bytes 반영 (atomic)
+      lockf -t 10 "/tmp/datacounter_${TIMERANGE}_${USERNAME}.lock" sh -c '
+        USEDFILE="$1"; LAST_SESS="$2"
+        OLD=$(head -n1 "$USEDFILE" 2>/dev/null | tr -cd "0-9")
+        [ -z "$OLD" ] && OLD=0
+        NEW=$(( OLD + LAST_SESS ))
+        printf "%s\n" "$NEW" > "$USEDFILE"
+      ' sh "$USEDFILE" "$LAST_SESS" 2>/dev/null || true
+    fi
+    rm -f "$SESSFILE" 2>/dev/null || true
   fi
 
-  KICKFILE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick"
-  if [ ! -f "$KICKFILE" ]; then
-    {
-      echo "ts=$NOW_TS"
-      echo "reason=stop_zero"
-      echo "username=$USERNAME"
-      echo "timerange=$TIMERANGE"
-      echo "acctsessionid=$SESSIONID"
-    } > "${KICKFILE}.$$" 2>/dev/null && mv -f "${KICKFILE}.$$" "$KICKFILE" 2>/dev/null || true
-
-    : > "$KICKMARK" 2>/dev/null || true
-  fi
-
-  log "DATACOUNTER IGNORE STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets)"
+  log "DATACOUNTER STOP-ZERO user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets; session usage preserved)"
   exit 0
 fi
 
 # ---------- INTERIM ----------
 if [ "$STATUS" = "Interim-Update" ]; then
-  # ---- load previous state (best-effort) ----
-  last_nonzero_ts=0
-  zero_streak=0
-  if [ -f "$STATEFILE" ]; then
-    last_nonzero_ts="$(grep -E '^last_nonzero_ts=' "$STATEFILE" 2>/dev/null | tail -n1 | cut -d= -f2)"
-    zero_streak="$(grep -E '^zero_streak=' "$STATEFILE" 2>/dev/null | tail -n1 | cut -d= -f2)"
-    [ -z "$last_nonzero_ts" ] && last_nonzero_ts=0
-    [ -z "$zero_streak" ] && zero_streak=0
-  fi
-
-  # ---- update streak ----
-  if [ "$CUR_TOTAL" -eq 0 ]; then
-    zero_streak=$((zero_streak + 1))
-  else
-    zero_streak=0
-    last_nonzero_ts="$NOW_TS"
-
-    [ -f "$KICKMARK" ] && rm -f "$KICKMARK" 2>/dev/null || true
-    [ -f "$KICKDONE" ] && rm -f "$KICKDONE" 2>/dev/null || true
-  fi
-
-  # ---- persist state (atomic) ----
-  tmp="${STATEFILE}.$$"
-  {
-    echo "last_seen_ts=$NOW_TS"
-    echo "last_nonzero_ts=$last_nonzero_ts"
-    echo "zero_streak=$zero_streak"
-    echo "username=$USERNAME"
-    echo "timerange=$TIMERANGE"
-    echo "sessionid=$SESSIONID"
-  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATEFILE" 2>/dev/null || true
 
   # ---- if zero, do NOT overwrite SESSFILE, do NOT export influx ----
-  ZERO_STREAK_KICK=2
-  ZERO_MIN_AGE_KICK=1200
-
+  # CUR_TOTAL=0 인 Interim 은 사용량 0 으로 보고된 것이므로 SESSFILE(세션 누적값)을
+  # 덮어쓰지 않는다. (덮어쓰면 quota 가 초기화되어 무제한 사용 가능해짐)
+  # 사용자를 강제 disconnect 하지 않고 그대로 둔다.
   if [ "$CUR_TOTAL" -eq 0 ]; then
-    if [ -f "$KICKMARK" ] || [ -f "$KICKDONE" ]; then
-      exit 0
-    fi
-
-    log "DATACOUNTER INTERIM ZERO user=$USERNAME range=$TIMERANGE sid=$SESSIONID streak=$zero_streak"
+    log "DATACOUNTER INTERIM ZERO user=$USERNAME range=$TIMERANGE sid=$SESSIONID"
 
     # PREVFILE의 ts/sid를 현재 시각으로 갱신한다.
     # in/out/total은 직전 정상값을 그대로 유지해야 다음 정상 Interim에서
@@ -479,25 +430,6 @@ if [ "$STATUS" = "Interim-Update" ]; then
     # PREVFILE이 없는 경우(세션 첫 Interim이 zero): 갱신할 기준값이 없으므로 그냥 둔다.
     # 다음 정상 Interim에서 HAS_PREV=0 → FIRST_POINT=1 로 현재값 전체를 delta로 사용한다.
 
-    age=$(( NOW_TS - last_nonzero_ts ))
-    if [ "$zero_streak" -ge "$ZERO_STREAK_KICK" ] || { [ "$last_nonzero_ts" -gt 0 ] && [ "$age" -ge "$ZERO_MIN_AGE_KICK" ]; }; then
-      KICKFILE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick"
-      if [ ! -f "$KICKFILE" ]; then
-        {
-          echo "ts=$NOW_TS"
-          echo "reason=interim_zero"
-          echo "zero_streak=$zero_streak"
-          echo "last_nonzero_age_sec=$age"
-          echo "username=$USERNAME"
-          echo "timerange=$TIMERANGE"
-          echo "acctsessionid=$SESSIONID"
-        } > "${KICKFILE}.$$" 2>/dev/null && mv -f "${KICKFILE}.$$" "$KICKFILE" 2>/dev/null || true
-
-        : > "$KICKMARK" 2>/dev/null || true
-
-        log "DATACOUNTER KICK-REQUEST user=$USERNAME range=$TIMERANGE sid=$SESSIONID reason=interim_zero streak=$zero_streak age=${age}s"
-      fi
-    fi
     exit 0
   fi
 
@@ -641,18 +573,10 @@ lockf -t 10 "$LOCK" sh -c '
   USEDFILE="$BASE/used-octets-$USERNAME"
   SESSFILE="$BASE/used-octets-$USERNAME-$SESSIONID"
 
-  # state/kick 마커 정리 (Stop 들어오면 세션 종료로 보고 청소)
-  STATEFILE="/var/run/datacounter-state/$TIMERANGE/state-${USERNAME}-${SESSIONID}"
-  rm -f "$STATEFILE" 2>/dev/null || true
-
   # PREVFILE 정리: Stop 수신 시 다음 세션의 첫 Interim이 잘못된 prev 값을
   # 참조하지 않도록 반드시 삭제한다.
   PREVFILE="${STATE_DIR}/prev-${USERNAME}"
   rm -f "$PREVFILE" 2>/dev/null || true
-
-  KICKDIR="/var/run/datacounter-kick"
-  rm -f "$KICKDIR/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.sent" 2>/dev/null || true
-  rm -f "$KICKDIR/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick.done" 2>/dev/null || true
 
   OLD_TOTAL=$(head -n 1 "$USEDFILE" 2>/dev/null | tr -d "\r" | tr -cd "0-9")
   CUR_TOTAL=$(printf "%s" "$CUR_TOTAL" | tr -cd "0-9")
