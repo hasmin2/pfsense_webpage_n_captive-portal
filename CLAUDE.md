@@ -19,6 +19,7 @@
 
 - **Remote**: `hasmin2/pfsense_webpage_n_captive-portal-dev`
 - **플랫폼**: pfSense 2.5.2, PHP-FPM + nginx, FreeRADIUS
+- **PHP 버전**: **7.4** (pfSense 2.5.x 기본값) — PHP 8.x 전용 문법(`match`, `named args`, `enum` 등) 사용 금지
 
 ## 핵심 파일
 
