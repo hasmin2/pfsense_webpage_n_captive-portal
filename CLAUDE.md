@@ -11,9 +11,14 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `2fdc155` | #1~#12 전부 포함, 작업 기준 브랜치 |
-| `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋) |
+| `develop` | `77b4119` | #1~#13 전부 포함, 작업 기준 브랜치 |
+| `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11·#12·#13 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
+
+> **배포 버전 섞임 주의(중요)**: 선상 배포본이 repo보다 **파일별로 뒤처져 섞여 있는** 상태가
+> 여러 번 관측됨(#11 `commit_change_pw` fatal, `cp_find_all_wan_gateways` undefined 등 전부 이 원인).
+> 안정화하려면 `captiveportal.inc` / `freeradius.inc` / `index.php` / cron / `manage_crew_wifi_account.inc`
+> 등을 **반드시 같은 리비전으로 일괄 배포**할 것. 일부만 배포하면 시그니처/함수 불일치로 fatal 발생.
 
 ## Repo 정보
 
@@ -49,6 +54,28 @@
 | **pf** | 라우팅 테이블(`cp_gw_*`) + state 관리 | `pfctl -t`, `pfctl -k` 셸 명령 |
 | **FreeRADIUS** | 인증 + 쿼터 검사 | `datacounter_auth.sh` (exit 0/1) |
 | **datacounter** | 사용량 누적 | `datacounter_acct.sh` (Start/Interim/Stop) |
+
+## 아키텍처 — crew wifi 라우팅 (pfctl 테이블 방식, #1·#4·#12·#13 공통 배경)
+
+- **사용자별 라우팅을 어떻게 하나**: 로그인한 crew 사용자의 IP를 단말타입(terminal_type=gateway)별
+  pf 테이블 `cp_gw_{gwname}`(또는 미설정 시 `cp_gw_default`)에 넣고, floating rule이 그 테이블을
+  source로 route-to 한다. 초기 alias/rule 세팅은 `usr/local/cron/cp_routing_setup.php`가 1회 생성.
+- **신버전(현재) vs 구버전(레거시)**:
+  - **신버전**: `add_crew_linked_rule($ip,$user)` = `pfctl -t cp_gw_* -T add` (config.xml 수정 없음,
+    `filter_configure()` 없음 → 가볍고 빠름). `del_crew_linked_rule($ip,$user,$kill_states=true)` =
+    `pfctl -t cp_gw_* -T delete` (+ 선택적 state kill). 로그인/로그아웃은
+    `captiveportal_send_server_accounting('start'/'stop')` 안에서 호출됨.
+  - **구버전(제거됨)**: 로그인마다 `$config['filter']['rule']`에 `"[User Rule] <id> auto generated rule"`을
+    추가 + `write_config()` + `filter_configure()` 했음 → 로그아웃마다 무거운 filter reload =
+    #1(19초 지연)·lost-update 원인. #13에서 이 레거시 룰을 일괄 purge.
+- **deferred state-kill 메커니즘(#1·#12 핵심)**: `pfSense_kill_states()`/`pfctl -k {clientip}`를
+  HTTP 응답 도중 실행하면 **포털 자신의 TCP 연결이 RST** → spawn-fcgi(=`fastcgi_finish_request()` 부재)
+  에선 ~19초 지연. 그래서 kill 대상 IP를 `$GLOBALS['_cp_deferred_state_kills']`에 적재하고,
+  `cp_flush_deferred_state_kills()`가 **`mwexec_bg("sleep 2; pfctl -k ...")` detached 백그라운드**로
+  응답·연결 종료 **후** 실행한다(web/CLI 공용). 로그인 경로는 애초에 kill_states=false라 큐가 빔.
+- **알려진 트레이드오프(미수정, 의도적)**: 위 `sleep 2` 지연 kill은 **2초 내 같은 IP 재로그인** 시
+  새 세션 state까지 죽일 수 있음(로그아웃→즉시 재로그인 반복 테스트에서만 관측). 실사용 빈도 극히 낮아
+  수용. 필요 시 kill 직전 `cp_gw_*` 테이블 멤버십 확인(=재인증됨)으로 skip 가드 추가 가능.
 
 ## 쿼터 파일 경로
 
@@ -241,11 +268,18 @@
 - **배포 버전 불일치 주의**: 선상 에러 라인(2679)이 repo 라인(~2861)과 다름
   → `captiveportal.inc`가 구버전으로 배포된 상태. `freeradius.inc`(신버전: `string $username` 타입힌트)만
   배포되고 `captiveportal.inc`는 구버전이어서 충돌 발생.
-- **수정 방향 (미적용)**:
-  - 방어: `freeradius_update_user`: `?string $username` nullable + 빈값 early-return → fatal 제거.
-  - 근본: username 전파 정합화 — 폼 hidden `name="login_user"` → `name="auth_user"`,
-    render 데이터 키 `loginUser` → `loginUserValue` 통일, change_pw flash에 username 포함.
-  - **가장 빠른 조치**: `captiveportal.inc` 최신본(repo main) 배포 → 버전 불일치 해소.
+- **수정 (적용 완료, develop `1ed69ad`)** — 3파일:
+  - 방어 `freeradius.inc`: `freeradius_update_user(string)` → `?string $username` + null/빈값
+    early-return false → **어떤 경로로 null이 와도 fatal 불가**(하드 가드).
+  - 근본 `captiveportal.inc`: ① `renderChangepwPortalHtml` 폼 hidden `name="login_user"` →
+    `name="auth_user"`, ② render 데이터 키 `$data['loginUser']` → `$data['loginUserValue']`(통일),
+    ③ `renderLogoutPortalHtml`의 change_pw 폼에 `auth_user` hidden 추가 + `change_pw` 값을 `"true"`로.
+  - 근본 `index.php`: change_pw flash에 `'username' => $auth_user` 추가.
+  - **전파 흐름(수정 후)**: connected 페이지 change_pw 버튼(auth_user) → index.php `$auth_user` →
+    change_pw flash → renderChangepwPortalHtml(loginUserValue) → hidden auth_user →
+    commit_change_pw POST `$auth_user` → `freeradius_update_user(username)` ✓
+  - **주의**: 이 fatal은 **배포 버전 섞임**(freeradius.inc만 신버전, captiveportal.inc 구버전)으로
+    드러난 것 → 3파일 동시 배포 필요.
 
 ### 12. 로그아웃 ~19초 지연 (login은 #1로 해소됐으나 logout 잔존) (develop 반영)
 - **증상**: 로그인 지연(~19초)은 #1에서 사라졌으나 **로그아웃은 여전히 ~19초**.
@@ -269,12 +303,48 @@
 - **잔여 시 후속 후보**: 그래도 느리면 동기 경로(accounting stop / XMLRPC HA sync). 단
   Stop 핸들러(datacounter_acct.sh)는 빠르고 login의 accounting start 정상이라 RADIUS 응답
   양호, HA sync도 login이 빠른 걸로 보아 미구성/정상 → state kill이 유일한 차이였음.
+- **후속 관측(엣지 케이스, 미수정 수용)**: 1~2초 내 로그인↔로그아웃 **반복**(테스트) 시 지연.
+  원인 = 이번 `sleep 2` 지연 kill이 2초 창 안의 **재로그인 새 세션 state를 kill**. 실사용 빈도
+  극히 낮아 수용(가드는 위 "crew wifi 라우팅 아키텍처" 절 참고).
+
+### 13. 구버전 per-user 로그인 룰 config.xml 잔존 → 일괄 purge (develop 반영)
+- **증상/요구**: pfctl 테이블 방식 전환 후, 구버전이 로그인마다 만들던
+  `"[User Rule] <id> auto generated rule"` 필터 룰이 마이그레이션 이전 유저들 것으로
+  config.xml에 **고아로 남음**. 방화벽 룰에서 일일이 수동 삭제하기 번거로움.
+- **위험**: 단순 클러터 아님 — 룰이 `source=옛IP, gateway=단말타입`이라 **DHCP로 그 IP가 다른
+  유저에게 재할당되면 옛 게이트웨이로 오라우팅**될 수 있음 → 정리 필요.
+- **선택지 비교**: 구 `del_crew_linked_rule`(config.xml 룰 제거판) 복원 ❌ — 로그아웃마다
+  `filter_configure()`+`write_config()` 회귀(#1·#10). → **일괄 purge ✅** 채택.
+- **수정 (`captiveportal.inc`)**:
+  - 신규 `cp_purge_legacy_user_login_rules()`: `descr`가 `"[User Rule] "`로 시작하고
+    `" auto generated rule"`로 끝나는 룰만 일괄 제거 → `write_config` 1회 + `filter_configure` 1회.
+    제거할 게 없으면 no-op(멱등). **반환값=제거 개수**, 로그 남김.
+  - `captiveportal_configure()` 진입 시 1회 호출(멱등 self-heal, #8 패턴) → 배포 후 첫
+    CP 재구성/부팅 때 자동 정리, 이후 비용 0.
+- **안전성**: 접미사 `" auto generated rule"`로만 매칭 → 다른 `[User Rule]`(ban-all-rule /
+  allow only 'this' PC / enable_crew_wifi; `crew_internet_control.inc`·`toggle_captive_portal.widget.php`)은
+  **건드리지 않음**.
+- **트리거 주의**: `captiveportal_configure`가 실행돼야 동작 → 배포 후 **CP 설정 한 번 저장 또는 재부팅** 필요.
+
+### (참고) prepaid_enabled 태그 이전 정합성 — 전수 확인 완료
+- #8에서 `$config['captiveportal']['prepaid_enabled']` → `$config['system']['prepaid_enabled']`로 이전.
+- **모든 참조 일관 확인**: 쓰기 1곳(`APISystemToggleprepaidUpdate.inc`: system set/unset + 구 키 항상 제거),
+  읽기 3곳(`APISystemToggleprepaidRead.inc`·`common_ui.inc`·`captiveportal-crew.html`: 전부 신/구 동시 검사
+  또는 self-heal). 구 위치만 보는 누락 참조 없음. zone `enable`(`$config['captiveportal'][zone]['enable']`)은
+  **이동 안 됨**(표준 위치 일관).
 
 ## 다음 작업 대기 중
 
+- [x] **#13**: 구버전 per-user 로그인 룰 일괄 purge (멱등 self-heal) — develop `77b4119`
+- [ ] #13 검증: 배포 후 CP 설정 저장/재부팅 → `[User Rule] ... auto generated rule` 일괄 소멸
+  + `wireless.log`에 `Purged N legacy ...` + 다른 `[User Rule]` 유지 확인
 - [x] **#12**: 로그아웃 ~19초 지연 수정 완료 (deferred state kill → detached 백그라운드) — develop `2fdc155`
 - [ ] #12 검증: 로그아웃 클릭 → 즉시 페이지 전환(19초 소멸) + ~2초 후 기존 연결 종료 확인
 - [x] **#11**: `commit_change_pw` fatal 수정 완료 (username 전파 정합화 + `?string` 방어) — develop `1ed69ad`
+- [ ] **배포 정합성**: 선상에 신버전 파일들(captiveportal.inc/freeradius.inc/index.php/cron/
+  manage_crew_wifi_account.inc)을 **같은 리비전으로 일괄 배포** (버전 섞임이 #11·cp_find_all_wan_gateways
+  fatal의 공통 원인)
+- [ ] **main 반영 대기**: #11·#12·#13 은 아직 develop만 (main은 #1~#10). 명시 지시 시 병합
 - [ ] 선박에서 수정사항 테스트 (특히 #2, #3, #4, #6, #7, #8, #10)
 - [ ] #7: interim 집계 동작 확인 (REGRESS-KEEP 로그 / export 비차단 / interim 마커 갱신)
 - [ ] #8: prepaid self-heal 확인 (배포 후 첫 관리 UI 로드 시 가짜 zone 자동 제거 + prepaid 상태 보존)
