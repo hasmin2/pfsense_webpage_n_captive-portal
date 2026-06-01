@@ -215,6 +215,11 @@ function captiveportal_load_modules() {
 function captiveportal_configure() {
     global $config, $cpzone, $cpzoneid;
 
+    // 멱등 self-heal: 구버전 per-user 로그인 룰("[User Rule] <id> auto generated rule")을
+    // config.xml 에서 일괄 제거한다. (pfctl 테이블 방식으로 전환되며 고아로 남은 룰 →
+    //  DHCP IP 재할당 시 옛 gateway 로 오라우팅될 위험.) 제거할 게 없으면 no-op.
+    cp_purge_legacy_user_login_rules();
+
     if (is_array($config['captiveportal'])) {
         foreach ($config['captiveportal'] as $cpkey => $cp) {
             $cpzone = $cpkey;
@@ -4644,6 +4649,52 @@ function cp_sync_routing_tables() {
     foreach ($table_ips as $table => $ips) {
         cp_sync_pf_table($table, $ips);
     }
+}
+
+/**
+ * 구버전 per-user 로그인 룰 일괄 제거 (멱등 self-heal).
+ *
+ * 과거 구현은 로그인마다 $config['filter']['rule'] 에
+ * "[User Rule] <id> auto generated rule" 을 추가하고 로그아웃 시 제거했다.
+ * 현재는 pfctl 테이블(cp_gw_*) 방식으로 전환되어 이 룰들을 더 이상 만들지/지우지 않으므로,
+ * 마이그레이션 이전 로그인 유저들의 룰이 config.xml 에 고아로 남는다.
+ * → 한 번에 전부 제거(write_config 1회 + filter_configure 1회). 제거할 게 없으면 no-op.
+ *
+ * 주의: 다른 "[User Rule]" 룰(ban-all-rule / allow only 'this' PC / enable_crew_wifi 등)은
+ *       건드리지 않는다. 접미사 " auto generated rule" 로만 정확히 매칭한다.
+ *
+ * @return int 제거한 룰 개수
+ */
+function cp_purge_legacy_user_login_rules(): int {
+    global $config;
+
+    if (empty($config['filter']['rule']) || !is_array($config['filter']['rule'])) {
+        return 0;
+    }
+
+    $suffix = ' auto generated rule';
+    $removed = 0;
+
+    foreach ($config['filter']['rule'] as $k => $rule) {
+        if (!is_array($rule)) {
+            continue;
+        }
+        $descr = (string)($rule['descr'] ?? '');
+        if (strpos($descr, '[User Rule] ') === 0
+            && substr($descr, -strlen($suffix)) === $suffix) {
+            unset($config['filter']['rule'][$k]);
+            $removed++;
+        }
+    }
+
+    if ($removed > 0) {
+        $config['filter']['rule'] = array_values($config['filter']['rule']);
+        write_config("Purged {$removed} legacy per-user CP login rules");
+        filter_configure();
+        cp_wireless_log("Purged {$removed} legacy per-user CP login rules (auto generated)");
+    }
+
+    return $removed;
 }
 
 /**
