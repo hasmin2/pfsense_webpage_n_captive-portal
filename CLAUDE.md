@@ -11,8 +11,8 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `c62e1f2` | #1~#10 전부 포함, 작업 기준 브랜치 |
-| `main` | `0b5cfa3` | #1~#10 전부 반영 완료 (merge 커밋) |
+| `develop` | `de5a2f1` | #1~#10 전부 포함, 작업 기준 브랜치 |
+| `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋) |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
 ## Repo 정보
@@ -224,8 +224,32 @@
   - API 단건 생성(`APIFreeRADIUSUserCreate` 비-bulk; bulk는 `create_wifi_user` 경유라 이미 보호됨)
   → 같은 `lock('freeradius_user_config')` 패턴으로 단계 확대 예정.
 
+### 11. `commit_change_pw` PHP fatal — `freeradius_update_user(NULL)` TypeError (미수정)
+- **증상**: 로그인 화면에서 PW 변경 시도 시 PHP fatal error 발생.
+  ```
+  TypeError: Argument 1 passed to freeradius_update_user() must be of the type string,
+  null given, called in /etc/inc/captiveportal.inc on line 2679
+  ```
+- **근본 원인**: username이 null로 `freeradius_update_user(string $username)`에 전달됨.
+  전파 단절이 **3곳** 중첩:
+  1. **폼 필드명 불일치**: `renderChangepwPortalHtml` 폼의 hidden이 `name="login_user"`인데
+     `index.php`는 `$_POST['auth_user']`를 읽음 → `$auth_user` = 빈 값 → flash에 username 미포함.
+  2. **데이터 키 불일치**: `portal_reply_page`가 `'loginUserValue'` 키로 넘기는데
+     `renderChangepwPortalHtml`은 `$data['loginUser']`를 읽음 → 항상 빈 값.
+  3. **`change_pw` flash에 username 미포함**: `index.php` change_pw 분기가 username을 안 실어
+     변경 페이지 렌더 시 username을 모름.
+- **배포 버전 불일치 주의**: 선상 에러 라인(2679)이 repo 라인(~2861)과 다름
+  → `captiveportal.inc`가 구버전으로 배포된 상태. `freeradius.inc`(신버전: `string $username` 타입힌트)만
+  배포되고 `captiveportal.inc`는 구버전이어서 충돌 발생.
+- **수정 방향 (미적용)**:
+  - 방어: `freeradius_update_user`: `?string $username` nullable + 빈값 early-return → fatal 제거.
+  - 근본: username 전파 정합화 — 폼 hidden `name="login_user"` → `name="auth_user"`,
+    render 데이터 키 `loginUser` → `loginUserValue` 통일, change_pw flash에 username 포함.
+  - **가장 빠른 조치**: `captiveportal.inc` 최신본(repo main) 배포 → 버전 불일치 해소.
+
 ## 다음 작업 대기 중
 
+- [ ] **#11 긴급**: `commit_change_pw` fatal 수정 (username 전파 정합화 + `?string` 방어) → develop 반영
 - [ ] 선박에서 수정사항 테스트 (특히 #2, #3, #4, #6, #7, #8, #10)
 - [ ] #7: interim 집계 동작 확인 (REGRESS-KEEP 로그 / export 비차단 / interim 마커 갱신)
 - [ ] #8: prepaid self-heal 확인 (배포 후 첫 관리 UI 로드 시 가짜 zone 자동 제거 + prepaid 상태 보존)
