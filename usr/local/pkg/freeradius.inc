@@ -1641,12 +1641,18 @@ function fr_debug_log(string $msg): void
 }
 
 function freeradius_update_user(
-	string $username,
-	bool   $persist_config = true,
-	bool   $reload_radiusd = true,   // true=HUP 리로드, false=리로드 보류(호출측 일괄 리로드용)
-	bool   $sync_changes = false
+	?string $username,
+	bool    $persist_config = true,
+	bool    $reload_radiusd = true,   // true=HUP 리로드, false=리로드 보류(호출측 일괄 리로드용)
+	bool    $sync_changes = false
 ) {
 	global $config;
+
+	// null/빈 username 은 치명적 TypeError 대신 조용히 false 반환
+	if ($username === null || $username === '') {
+		fr_debug_log("freeradius_update_user: SKIP empty/null username");
+		return false;
+	}
 
 	fr_debug_log("freeradius_update_user: START username={$username}");
 

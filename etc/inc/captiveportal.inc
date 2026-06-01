@@ -4929,7 +4929,7 @@ function renderChangepwPortalHtml(array $data = []): string
     $logo          = $data['logo'] ?? '';
     $portalError   = $data['portalError'] ?? '';
     $portalInfo    = $data['portalInfo'] ?? '';
-    $loginUser     = $data['loginUser'] ?? '';
+    $loginUser     = $data['loginUserValue'] ?? '';   // portal_reply_page 전달 키와 통일
     $loginPassword = $data['loginPassword'] ?? '';
 
     if (!function_exists('h')) {
@@ -5008,7 +5008,7 @@ function renderChangepwPortalHtml(array $data = []): string
                     </div>
 
                     <input name="commit_change_pw" type="hidden" value="true">
-                    <input name="login_user" type="hidden" value="<?= h($loginUser) ?>">
+                    <input name="auth_user" type="hidden" value="<?= h($loginUser) ?>">
                     <input name="login_password" type="hidden" value="<?= h($loginPassword) ?>">
 
                     <div class="helper">
@@ -5279,7 +5279,8 @@ function renderLogoutPortalHtml(array $data = []): string
                         id="change_pw"
                 >
             </div>
-            <input name="change_pw" type="hidden" value="<?=h($loginUserValue)?>">
+            <input name="change_pw" type="hidden" value="true">
+            <input name="auth_user" type="hidden" value="<?=h($loginUserValue)?>">
 
     </div>
     </section>

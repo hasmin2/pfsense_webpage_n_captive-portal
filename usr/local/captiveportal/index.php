@@ -360,6 +360,7 @@ if (!empty($_POST['change_pw'])) {
 		'msg' => 'Reset PW',
 		'mac' => $clientmac,
 		'ip' => $clientip,
+		'username' => $auth_user,   // change_pw 폼의 auth_user hidden 필드에서 옴
 	]);
 	cp_redirect_self(['zone' => $cpzone]);
 }
