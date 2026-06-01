@@ -210,17 +210,10 @@ $GLOBALS['_cp_deferred_state_kills'] = [];
 // HTTP 응답 전송(fastcgi_finish_request) 이후 pf state 정리
 // → 로그아웃 시 포털 TCP 연결이 응답 도달 전에 RST 되는 것 방지
 register_shutdown_function(function() {
-	foreach (($GLOBALS['_cp_deferred_state_kills'] ?? []) as $ip) {
-		if (!filter_var($ip, FILTER_VALIDATE_IP)) {
-			continue;
-		}
-		if (function_exists('pfSense_kill_states')) {
-			@pfSense_kill_states(utf8_encode($ip));
-			@pfSense_kill_srcstates(utf8_encode($ip));
-		}
-		if (function_exists('cp_kill_states_for_ip')) {
-			cp_kill_states_for_ip($ip);
-		}
+	// 즉시 kill 하면 spawn-fcgi(=fastcgi_finish_request 부재) 환경에서 응답/연결 종료 전에
+	// 포털 TCP 가 RST 되어 ~19초 지연. detached 백그라운드(짧은 sleep)로 분리한다.
+	if (function_exists('cp_flush_deferred_state_kills')) {
+		cp_flush_deferred_state_kills();
 	}
 });
 

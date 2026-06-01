@@ -1202,15 +1202,11 @@ function captiveportal_disconnect($dbent, $term_cause = 1, $stop_time = null, $c
         static $_cp_kill_shutdown_registered = false;
         if (!$_cp_kill_shutdown_registered) {
             $_cp_kill_shutdown_registered = true;
+            // 즉시 kill 금지: 응답/연결 종료 전에 RST 되면 ~19초 지연.
+            // detached 백그라운드(짧은 sleep)로 분리 — cp_flush_deferred_state_kills().
             register_shutdown_function(static function() {
-                foreach (($GLOBALS['_cp_deferred_state_kills'] ?? []) as $ip) {
-                    if (is_ipaddr($ip)) {
-                        @pfSense_kill_states(utf8_encode($ip));
-                        @pfSense_kill_srcstates(utf8_encode($ip));
-                        if (function_exists('cp_kill_states_for_ip')) {
-                            cp_kill_states_for_ip($ip);
-                        }
-                    }
+                if (function_exists('cp_flush_deferred_state_kills')) {
+                    cp_flush_deferred_state_kills();
                 }
             });
         }
@@ -4701,6 +4697,39 @@ function cp_kill_states_for_ip($ip) {
     // IPv6 states
     mwexec("/sbin/pfctl -k {$safeIp} -k ::/0");
     return true;
+}
+
+/**
+ * deferred 큐에 쌓인 IP 의 pf state 를 정리한다 (web/CLI 공용 shutdown 처리).
+ *
+ * 주의: pfSense spawn-fcgi 에는 fastcgi_finish_request() 가 없어서 shutdown 함수가
+ *       HTTP 응답/연결 종료 "전"에 실행된다. 여기서 즉시 pfctl -k 로 클라이언트 IP 의
+ *       state 를 kill 하면 포털 자신의 TCP 연결이 RST 되어 응답 전달 전에 끊긴다
+ *       (지연 큰 선박 WiFi 에서 일관되게 ~19초 지연 발생).
+ *       → 짧게 대기 후 kill 하는 detached 백그라운드 프로세스로 분리한다.
+ *       (로그아웃 즉시 ipfw auth 테이블/DB 에서는 이미 제거되어 신규 트래픽은 차단됨;
+ *        state kill 은 기존 연결 종료용이라 2초 지연은 기능상 무해.)
+ */
+function cp_flush_deferred_state_kills(): void {
+    if (empty($GLOBALS['_cp_deferred_state_kills'])) {
+        return;
+    }
+    $ips = array_values(array_unique($GLOBALS['_cp_deferred_state_kills']));
+    $GLOBALS['_cp_deferred_state_kills'] = [];
+
+    $cmds = array();
+    foreach ($ips as $ip) {
+        if (!is_ipaddr($ip)) {
+            continue;
+        }
+        $s = escapeshellarg($ip);
+        $cmds[] = "/sbin/pfctl -k {$s} -k 0.0.0.0/0";
+        $cmds[] = "/sbin/pfctl -k {$s} -k ::/0";
+    }
+    if (empty($cmds)) {
+        return;
+    }
+    mwexec_bg("/bin/sleep 2; " . implode("; ", $cmds));
 }
 
 
