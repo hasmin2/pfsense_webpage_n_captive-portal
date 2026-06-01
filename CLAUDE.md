@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `de5a2f1` | #1~#10 전부 포함, 작업 기준 브랜치 |
+| `develop` | `1ed69ad` | #1~#11 전부 포함, 작업 기준 브랜치 |
 | `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋) |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
@@ -224,7 +224,7 @@
   - API 단건 생성(`APIFreeRADIUSUserCreate` 비-bulk; bulk는 `create_wifi_user` 경유라 이미 보호됨)
   → 같은 `lock('freeradius_user_config')` 패턴으로 단계 확대 예정.
 
-### 11. `commit_change_pw` PHP fatal — `freeradius_update_user(NULL)` TypeError (미수정)
+### 11. `commit_change_pw` PHP fatal — `freeradius_update_user(NULL)` TypeError (develop 반영)
 - **증상**: 로그인 화면에서 PW 변경 시도 시 PHP fatal error 발생.
   ```
   TypeError: Argument 1 passed to freeradius_update_user() must be of the type string,
@@ -249,7 +249,7 @@
 
 ## 다음 작업 대기 중
 
-- [ ] **#11 긴급**: `commit_change_pw` fatal 수정 (username 전파 정합화 + `?string` 방어) → develop 반영
+- [x] **#11**: `commit_change_pw` fatal 수정 완료 (username 전파 정합화 + `?string` 방어) — develop `1ed69ad`
 - [ ] 선박에서 수정사항 테스트 (특히 #2, #3, #4, #6, #7, #8, #10)
 - [ ] #7: interim 집계 동작 확인 (REGRESS-KEEP 로그 / export 비차단 / interim 마커 갱신)
 - [ ] #8: prepaid self-heal 확인 (배포 후 첫 관리 UI 로드 시 가짜 zone 자동 제거 + prepaid 상태 보존)
