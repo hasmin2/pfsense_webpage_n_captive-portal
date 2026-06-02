@@ -11,8 +11,8 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `77b4119` | #1~#13 전부 포함, 작업 기준 브랜치 |
-| `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11·#12·#13 미반영** |
+| `develop` | `f0822ca` | #1~#14b 전부 포함, 작업 기준 브랜치 |
+| `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#14b 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
 > **배포 버전 섞임 주의(중요)**: 선상 배포본이 repo보다 **파일별로 뒤처져 섞여 있는** 상태가
@@ -333,8 +333,68 @@
   또는 self-heal). 구 위치만 보는 누락 참조 없음. zone `enable`(`$config['captiveportal'][zone]['enable']`)은
   **이동 안 됨**(표준 위치 일관).
 
+## 아키텍처 — WIFI DATA RESET (쿼터 리셋) 흐름 (#14 배경)
+
+- **2태그 메커니즘(역할 분리)**:
+  - `varusersresetquota="true"` = **사용량 0 리셋** 트리거.
+  - `varusersmodified="update"` = **강제 로그아웃** 트리거. (connected 페이지 재오픈 시 +
+    매분 크론 `crew_usage_timeperiod_check.php`가 modified=update 유저를 disconnect.)
+  - → 데이터한도만 바꾸는 `modify_wifi_user`는 modified만 set(resetquota 미set) → 로그아웃은 되지만
+    사용량 유지. (의도된 설계.)
+- **사용량 계산/리셋 단위**: 사용량 = `used-octets-{user}`(메인) + `used-octets-{user}-*`(세션) **합산**
+  (`datacounter_auth.sh` / PHP `check_quota`). `max-octets-{user}` = 한도(보존). **리셋 = used-octets 삭제**.
+- **리셋 명령 진입점(모두 위 2태그를 set)**: GUI `reset_wifi_user`(crew_account.php `resetdata`),
+  원격 API `usersreset`(`APIFreeRadiusUserUpdate`), 주기 크론(daily/weekly/halfmonthly/monthly/prepaid),
+  대시보드 위젯(`manage_freeradiususer.widget.php`), 계정 생성(create 시 resetquota=true).
+
+### 14. WIFI DATA RESET — 태그만 달고 "차후 로그인" 리셋 → "즉시" 리셋+로그아웃 (develop 반영)
+- **기존**: 리셋 명령은 2태그만 달고, 실제 사용량 0 리셋은 **차후 로그인** 시
+  `captiveportal_authenticate_user`가 used-octets 파일 삭제로 수행.
+- **요구/변경**: 태그는 유지하되 **명령 시점에 바로** (로그아웃 + 사용량 0).
+- **신규 `captiveportal_reset_user_usage($username)` (`captiveportal.inc`)** — 순서가 핵심:
+  1. 활성 세션이면 **먼저 `captiveportal_disconnect_client`(로그아웃)** → accounting Stop으로 세션 종료
+     + ipfw 카운터 정리. (살아있는 세션 중 파일 삭제 시 다음 Interim/Stop이 다시 써서 0이 안 됨.
+     Stop 핸들러는 `wait=yes` 동기 실행 → disconnect 반환 후 삭제 순서 안전.)
+  2. `used-octets-{user}` + `used-octets-{user}-*` 삭제(daily/weekly/monthly/forever 전 디렉터리 →
+     pointoftime↔maxtotaloctetstimerange 불일치에도 안전). `max-octets`(한도) 보존.
+- **연결(즉시 리셋) — #14**: GUI `reset_wifi_user` + 원격 `usersreset`
+  (API 분기 내 `captiveportal.inc` lazy require + `function_exists` 가드 → 다른 API 영향 없음, 실패 시
+  fallback으로 degrade). 커밋 `d1c0f88`.
+- **유지(fallback)**: `authenticate_user`의 차후-로그인 리셋은 **그대로 둠** → 명령 시 오프라인이던
+  유저 / 레이스 / 미연결 경로를 계속 커버하는 안전망.
+- **동작 변경(개선) 주의**: GUI `reset_wifi_user`는 **forever(one-time) 유저도 선택 시 즉시 0 리셋**
+  (헬퍼가 forever 디렉터리도 처리). 기존엔 authenticate_user 화이트리스트가 forever 제외라 사실상
+  no-op였음. (API `usersreset`는 자체적으로 `timerange !== 'forever'` 필터 유지.)
+
+### 14b. 주기 reset 크론 + 위젯도 "즉시" 리셋 + daily/halfmonthly 복원 (develop 반영)
+- **#14b 연결**: weekly/monthly/prepaid 크론 + 위젯(resetuser). 각 경로에서 플래그 set한 유저명을
+  `$reset_targets`로 수집 → `write_config` 후 `captiveportal_reset_user_usage()` 호출(가드 포함). 커밋 `f0822ca`.
+- **daily/halfmonthly 크론 복원(중요)**: 두 크론 루프가 reset 플래그를 **전혀 set 안 하는 gutted 상태**였음
+  → **현재 daily/halfmonthly 리셋이 아예 안 되고 있었음.** 파일명·cron 스케줄(매일 00:00 / 1·15일)·의도상
+  명백히 리셋 대상이라 weekly 패턴으로 복원:
+  - **기본값 버그 교정**: 누락 필드 기본값 `'true'/'Update'` → `''`. (기존 기본값이면 "이미 리셋됨"으로
+    오판해 플래그를 영영 안 달았음.)
+  - 플래그 set + `$changed` 마킹 + 즉시 리셋 연결.
+  - → daily/halfmonthly 사용자도 이제 실제 주기 리셋. (daily 유저 없으면 no-op.)
+  - **주의**: 만약 daily/halfmonthly 리셋을 **의도적으로 비활성화**한 것이었다면 되돌릴 것.
+
+## 운영·보안 참고
+
+- **주석 정책**: 코드 주석은 **한국어 그대로 유지**. 일괄 영어 변환은 보류 — 문자열 리터럴(`"// ..."`,
+  here-doc 내 `#`) 오변경 + 거대 diff 회귀 위험이 이득보다 큼. (Claude는 한/영 주석 동일하게 처리하므로
+  AI 작업 편의상 변환할 이유 없음.)
+- **하드코딩 비밀(보안 후속 권장)**: 소스 노출 대비 시 **주석 제거보다 코드 내 하드코딩 자격증명/엔드포인트
+  정리가 훨씬 효과적**. 관측된 예: `Authorization: Basic YWRtaW46YWRtaW4=`(= **admin:admin**),
+  InfluxDB `192.168.209.210`(db `acustatus`/`wifiusage`) 등 내부 IP·계정 하드코딩. → 환경설정/secret 이전 권장.
+
 ## 다음 작업 대기 중
 
+- [x] **#14 / #14b**: WIFI DATA RESET 즉시화 (명령/크론/위젯 시점에 로그아웃+사용량 0) +
+  daily/halfmonthly gutted 복원 — develop `d1c0f88`·`f0822ca`
+- [ ] #14 검증: 온라인 유저 Reset Data → **즉시 로그아웃 + 사용량 0** / `wireless.log`에
+  `DATA RESET applied (usage=0...)` / 재로그인 시 0부터
+- [ ] #14b 검증: 각 주기 경계(특히 **daily 리셋 실제 동작**) + 위젯 reset 즉시 반영 /
+  daily·halfmonthly 비활성화 의도였는지 사용자 확인
 - [x] **#13**: 구버전 per-user 로그인 룰 일괄 purge (멱등 self-heal) — develop `77b4119`
 - [ ] #13 검증: 배포 후 CP 설정 저장/재부팅 → `[User Rule] ... auto generated rule` 일괄 소멸
   + `wireless.log`에 `Purged N legacy ...` + 다른 `[User Rule]` 유지 확인
@@ -344,7 +404,7 @@
 - [ ] **배포 정합성**: 선상에 신버전 파일들(captiveportal.inc/freeradius.inc/index.php/cron/
   manage_crew_wifi_account.inc)을 **같은 리비전으로 일괄 배포** (버전 섞임이 #11·cp_find_all_wan_gateways
   fatal의 공통 원인)
-- [ ] **main 반영 대기**: #11·#12·#13 은 아직 develop만 (main은 #1~#10). 명시 지시 시 병합
+- [ ] **main 반영 대기**: #11~#14b 는 아직 develop만 (main은 #1~#10). 명시 지시 시 병합
 - [ ] 선박에서 수정사항 테스트 (특히 #2, #3, #4, #6, #7, #8, #10)
 - [ ] #7: interim 집계 동작 확인 (REGRESS-KEEP 로그 / export 비차단 / interim 마커 갱신)
 - [ ] #8: prepaid self-heal 확인 (배포 후 첫 관리 UI 로드 시 가짜 zone 자동 제거 + prepaid 상태 보존)
