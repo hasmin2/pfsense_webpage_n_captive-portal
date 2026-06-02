@@ -387,6 +387,26 @@
   정리가 훨씬 효과적**. 관측된 예: `Authorization: Basic YWRtaW46YWRtaW4=`(= **admin:admin**),
   InfluxDB `192.168.209.210`(db `acustatus`/`wifiusage`) 등 내부 IP·계정 하드코딩. → 환경설정/secret 이전 권장.
 
+## 이번 세션에서 수정된 주요 버그 (추가)
+
+### 15. 배포 시 phantom CP zone 2개 생성 (develop 반영)
+- **증상**: 젠킨스 배포 후 pfSense CP zone 목록에 의도치 않은 zone이 1~2개 추가 생성됨.
+- **Bug 1 (주범, 배포마다 발생)**: `cp_routing_setup.php`의
+  `init_config_arr(['captiveportal','filter','aliases','gateways'])` 가
+  중첩 경로 함수이므로 `$config['captiveportal']['filter']['aliases']['gateways'] = []` 를 생성.
+  → `$config['captiveportal']['filter']` 배열 키 = phantom zone **'filter'**.
+  첫 배포 시 `$changed=true` → `write_config()` → config.xml 영구 저장.
+  **수정**: `init_config_arr(['filter','rule'])` + `init_config_arr(['aliases','alias'])` 분리.
+- **Bug 2 (게이트웨이 차단 이벤트마다, #8 재발)**: `network_usage_timeperiod_check.php`의
+  `captiveportal_add/remove_shutdown_gateway()`가 `$config['captiveportal']['shutdown_gateways']`
+  에 문자열 직접 저장 → phantom zone **'shutdown_gateways'**.
+  **수정**: `$config['system']['cp_shutdown_gateways']` 로 이전.
+  `captiveportal.inc` 읽기 참조도 동일 이전.
+- **self-heal** (`common_ui.inc`): 기존 배포본 config.xml 에 잔존하는 `filter` / `shutdown_gateways`
+  키를 관리 UI 첫 로드 시 자동 제거 + `write_config` 1회.
+- **교훈**: `init_config_arr`는 **중첩 경로** 함수 — 여러 top-level 키 초기화 시 각각 별도 호출 필요.
+  `$config['captiveportal']`는 zone 전용 (#8과 동일 원칙).
+
 ## 다음 작업 대기 중
 
 - [x] **#14 / #14b**: WIFI DATA RESET 즉시화 (명령/크론/위젯 시점에 로그아웃+사용량 0) +
@@ -398,6 +418,8 @@
 - [x] **#13**: 구버전 per-user 로그인 룰 일괄 purge (멱등 self-heal) — develop `77b4119`
 - [ ] #13 검증: 배포 후 CP 설정 저장/재부팅 → `[User Rule] ... auto generated rule` 일괄 소멸
   + `wireless.log`에 `Purged N legacy ...` + 다른 `[User Rule]` 유지 확인
+- [x] **#15**: phantom CP zone 2개 제거 — `init_config_arr` 오용 + `shutdown_gateways` 위치 오류 — develop `9bc6053`
+- [ ] #15 검증: 배포 후 관리 UI 로드 → `filter` / `shutdown_gateways` zone 소멸 + 정상 crew zone 유지
 - [x] **#12**: 로그아웃 ~19초 지연 수정 완료 (deferred state kill → detached 백그라운드) — develop `2fdc155`
 - [ ] #12 검증: 로그아웃 클릭 → 즉시 페이지 전환(19초 소멸) + ~2초 후 기존 연결 종료 확인
 - [x] **#11**: `commit_change_pw` fatal 수정 완료 (username 전파 정합화 + `?string` 방어) — develop `1ed69ad`
