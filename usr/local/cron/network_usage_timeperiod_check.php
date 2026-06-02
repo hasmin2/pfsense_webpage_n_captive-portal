@@ -207,12 +207,14 @@ function captiveportal_add_shutdown_gateway(string $gatewayName): bool
         return false;
     }
 
-    if (!isset($config['captiveportal']['shutdown_gateways']) ||
-        !is_string($config['captiveportal']['shutdown_gateways'])) {
-        $config['captiveportal']['shutdown_gateways'] = '';
+    // $config['captiveportal']['shutdown_gateways'] 는 zone 배열에 비-zone 키를 주입해
+    // phantom CP zone 을 만든다 (#8 prepaid_enabled 동일 패턴). $config['system'] 에 보관.
+    if (!isset($config['system']['cp_shutdown_gateways']) ||
+        !is_string($config['system']['cp_shutdown_gateways'])) {
+        $config['system']['cp_shutdown_gateways'] = '';
     }
 
-    $gatewayNameString = $config['captiveportal']['shutdown_gateways'];
+    $gatewayNameString = $config['system']['cp_shutdown_gateways'];
 
     if (strpos($gatewayNameString, $gatewayName . "||") !== false) {
         return false;
@@ -220,7 +222,7 @@ function captiveportal_add_shutdown_gateway(string $gatewayName): bool
 
     $gatewayNameString .= $gatewayName . "||";
 
-    $config['captiveportal']['shutdown_gateways'] = $gatewayNameString;
+    $config['system']['cp_shutdown_gateways'] = $gatewayNameString;
 
     return true;
 }
@@ -235,12 +237,12 @@ function captiveportal_remove_shutdown_gateway(string $gatewayName): bool
         return false;
     }
 
-    if (!isset($config['captiveportal']['shutdown_gateways']) ||
-        !is_string($config['captiveportal']['shutdown_gateways'])) {
+    if (!isset($config['system']['cp_shutdown_gateways']) ||
+        !is_string($config['system']['cp_shutdown_gateways'])) {
         return false;
     }
 
-    $gatewayList = explode('||', $config['captiveportal']['shutdown_gateways']);
+    $gatewayList = explode('||', $config['system']['cp_shutdown_gateways']);
 
     // 빈 값 제거
     $gatewayList = array_filter($gatewayList, function ($value) {
@@ -255,7 +257,7 @@ function captiveportal_remove_shutdown_gateway(string $gatewayName): bool
         return $value !== $gatewayName;
     });
 
-    $config['captiveportal']['shutdown_gateways'] = empty($gatewayList)
+    $config['system']['cp_shutdown_gateways'] = empty($gatewayList)
         ? ''
         : implode('||', $gatewayList) . '||';
 

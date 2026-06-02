@@ -2117,7 +2117,7 @@ function antenna_allowed($username)
         return true;
     }
 
-    $shutdown_gateways = $config['captiveportal']['shutdown_gateways'] ?? '';
+    $shutdown_gateways = $config['system']['cp_shutdown_gateways'] ?? '';
     if ($terminaltype !== '' && strpos($shutdown_gateways, $terminaltype . '||') !== false) {
         return false;
     }

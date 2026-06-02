@@ -28,7 +28,12 @@ require_once("filter.inc");
 require_once("util.inc");
 require_once("gwlb.inc");
 
-init_config_arr(['captiveportal', 'filter', 'aliases', 'gateways']);
+// init_config_arr 는 중첩 경로 함수이므로, 배열로 묶어 호출하면
+// $config['captiveportal']['filter']['aliases']['gateways'] 가 생성되어
+// 'filter' 라는 phantom CP zone 이 config.xml 에 주입된다.
+// 각 top-level 키를 개별 경로로 초기화한다.
+init_config_arr(['filter', 'rule']);
+init_config_arr(['aliases', 'alias']);
 
 global $config;
 
