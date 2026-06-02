@@ -11,9 +11,14 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `f0822ca` | #1~#14b 전부 포함, 작업 기준 브랜치 |
-| `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#14b 미반영** |
+| `develop` | `d90e288`+ | #1~#17 전부 포함, 작업 기준 브랜치 (이후 #13확장·#16 문서 커밋 추가) |
+| `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#17 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
+
+> **develop 최근 작업 묶음(#13확장·#15~#17)**: 배포 시 구룰 자동 purge + 로그인 유지 마이그레이션
+> (`4df5de3`), phantom CP zone 제거·즉시정리(`9bc6053`·`9476e47`), getsession 무효리셋 가드 +
+> monthly resync + prepaid 중복 cron 제거(`28c0876`·`cde34a5`·`9b8cbf7`), 리셋 자가복구 날짜키
+> (`aa0c759`). 상세는 아래 #13/#15/#16/#17 항목.
 
 > **배포 버전 섞임 주의(중요)**: 선상 배포본이 repo보다 **파일별로 뒤처져 섞여 있는** 상태가
 > 여러 번 관측됨(#11 `commit_change_pw` fatal, `cp_find_all_wan_gateways` undefined 등 전부 이 원인).
@@ -36,7 +41,10 @@
 | `usr/local/etc/raddb/scripts/datacounter_acct.sh` | RADIUS 회계 처리 (Start/Interim/Stop) |
 | `usr/local/etc/raddb/scripts/datacounter_auth.sh` | RADIUS 인증 시 쿼터 확인 |
 | `etc/inc/manage_crew_wifi_account.inc` | crew wifi 계정 CRUD·PW 변경 (admin GUI 백엔드) |
-| `usr/local/cron/crew_*usage_reset_check.php` | 주기별 쿼터 reset 크론 (모두 config writer) |
+| `usr/local/cron/crew_*usage_reset_check.php` | 주기별 쿼터 reset 경계 크론 (모두 config writer) |
+| `etc/inc/cp_usage_reset.inc` | 리셋 자가복구 날짜키 헬퍼 (#16, 파일 기반·config 미사용) |
+| `usr/local/cron/crew_usage_reset_selfheal.php` | 리셋 누락 보충 크론 (#16, 분 15,45) |
+| `usr/local/cron/cp_routing_setup.php` | pfctl 라우팅 초기세팅 + 배포 시 phantom 정리·구룰 purge |
 | `etc/inc/vlanstate.sh` | VLAN 상태 telnet 조회 셸 (vlan_state_timeperiod_check.php가 호출) |
 
 > **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` /
@@ -324,7 +332,15 @@
 - **안전성**: 접미사 `" auto generated rule"`로만 매칭 → 다른 `[User Rule]`(ban-all-rule /
   allow only 'this' PC / enable_crew_wifi; `crew_internet_control.inc`·`toggle_captive_portal.widget.php`)은
   **건드리지 않음**.
-- **트리거 주의**: `captiveportal_configure`가 실행돼야 동작 → 배포 후 **CP 설정 한 번 저장 또는 재부팅** 필요.
+- **배포 시 자동화 (`cp_routing_setup.php`, 커밋 `4df5de3`)**: `captiveportal_configure` 외에
+  **배포마다 실행되는 `cp_routing_setup.php` 시작부에서도 purge 호출**(function_exists 가드).
+  → 배포 시 **CP 설정 저장/재부팅 없이** 즉시 구룰 정리. `update.sh` 무수정(이미 cp_routing_setup 실행함).
+- **로그인 유지 마이그레이션(중요)**: 구방식으로 **로그인된 채** 배포받으면 → cp_routing_setup 이
+  ① 구룰 purge ② `cp_sync_routing_tables()`로 **세션 DB의 로그인 유저를 pfctl `cp_gw_*` 테이블로 이관**.
+  **로그아웃 안 됨**(purge/cp_routing_setup 은 pf/pfctl 만 건드리고 **ipfw 인증 테이블 미손상**;
+  `disconnect_all` 미호출). 기존 pf state 는 만료까지 옛 경로 유지 → 신규 연결부터 신방식(끊김 없는 점진 전환).
+  단 게이트웨이 정확 배정은 `cp_get_terminaltype_for_user`의 username 매칭에 의존하는데 **아직 `===`
+  (대소문자 구분)** → 불일치 시 `cp_gw_default` 로 이관됨(후속: getsession 처럼 CI 화 가능).
 
 ### (참고) prepaid_enabled 태그 이전 정합성 — 전수 확인 완료
 - #8에서 `$config['captiveportal']['prepaid_enabled']` → `$config['system']['prepaid_enabled']`로 이전.
@@ -402,10 +418,12 @@
   에 문자열 직접 저장 → phantom zone **'shutdown_gateways'**.
   **수정**: `$config['system']['cp_shutdown_gateways']` 로 이전.
   `captiveportal.inc` 읽기 참조도 동일 이전.
-- **self-heal** (`common_ui.inc`): 기존 배포본 config.xml 에 잔존하는 `filter` / `shutdown_gateways`
-  키를 관리 UI 첫 로드 시 자동 제거 + `write_config` 1회.
+- **self-heal 2중화** (커밋 `9476e47`): ① `common_ui.inc` print_sidebar — 관리 UI 첫 로드 시
+  `filter`/`shutdown_gateways` 키 자동 제거(3개 dirty 플래그로 묶어 `write_config` **1회**로 통합).
+  ② `cp_routing_setup.php` — **배포마다** 두 phantom 키 제거 + 기존 `$changed` 에 합산해 말미
+  `write_config` 1회에 포함(추가 I/O 0) → GUI 방문 없이도 배포 시 정리.
 - **교훈**: `init_config_arr`는 **중첩 경로** 함수 — 여러 top-level 키 초기화 시 각각 별도 호출 필요.
-  `$config['captiveportal']`는 zone 전용 (#8과 동일 원칙).
+  `$config['captiveportal']`는 zone 전용 (#8과 동일 원칙). 커밋 `9bc6053`·`9476e47`.
 
 ### 16. CREW WIFI 리셋 자가복구(self-healing) 날짜키 (develop 반영)
 - **문제**: 주기 리셋 크론(daily/weekly/halfmonthly/monthly)은 주기 경계에 **1회 발화**하는데
@@ -428,12 +446,33 @@
 - **한계(후속)**: 자가복구는 **usage-only**. monthly 의 forever 유저 삭제 / gateway usage 리셋
   side-logic 은 경계 크론에서만 수행(누락 시 미보충). prepaid 는 자체 크론(별도).
 
+### 17. 리셋 견고성 보강 3종 (develop 반영)
+- **(A) getsession 케이스 미스 → 무효 데이터 리셋** (커밋 `28c0876`): `reset_user_usage`가
+  `getsession`(정확 일치)으로 활성 세션을 못 찾으면 disconnect 를 건너뛰고 used-octets 만 삭제 →
+  **살아있는 세션의 다음 Interim 이 사용량을 되써서 리셋이 조용히 무효화**(로그는 success 오인).
+  - `getsession()` → `strcasecmp` 케이스-무시(세션복구 #6 / index.php 로그아웃 경로 공통 이득).
+  - `cp_get_sessionids_for_username_ci()` 신규: 다중 기기 동시 로그인의 **모든** 세션 반환.
+  - `reset_user_usage()`: 매칭 세션 **전부** disconnect → **재확인 가드**(disconnect 후에도 활성
+    세션 잔존 시 파일 삭제 건너뛰고 `DATA RESET aborted` 경고 + false → "조용한 실패" 가시화).
+- **(B) monthly resync 누락** (커밋 `cde34a5`): monthly 크론이 forever 유저를 config 에서 삭제하나
+  `freeradius_users_resync()` 미호출 → **삭제 유저가 radiusd 재로드 전까지 인증 통과**.
+  daily/weekly/half/prepaid 와 동일하게 `$changed` 시 resync(HUP) 추가. (리셋 결과엔 무관, 삭제 전파용.)
+- **(C) prepaid 중복 cron** (커밋 `9b8cbf7`): `firewall_cronlist` 에 `crew_prepaidmonthlyusage_reset_check.php`
+  가 1일 00:00 **2개 항목** 중복 → 동시 실행(가드 없는 무조건 write → lost-update + 이중 resync/disconnect).
+  중복 1개 제거(JSON 검증).
+
 ## 다음 작업 대기 중
 
+- [x] **#17**: 리셋 견고성 3종 — getsession 무효리셋 가드 / monthly resync / prepaid 중복 cron 제거
+  — develop `28c0876`·`cde34a5`·`9b8cbf7`
+- [ ] #17 검증: (A) 케이스 다른 username 으로 리셋 → 즉시 0 + 활성세션 잔존 시 `DATA RESET aborted`
+  / (B) monthly forever 삭제 유저가 radiusd 에서 즉시 인증 차단 / (C) prepaid cron 1회만 실행
 - [x] **#16**: 리셋 자가복구 날짜키 (cron 발화 누락 시 다음 틱 보충) — develop `aa0c759`
 - [ ] #16 검증: 경계 cron 강제 미발화(예: 시각 점프 모의) 후 `wireless.log` 에
   `SELF-HEAL reset (missed ...)` + 재로그인 시 0 / 정상 경계 시 자가복구 no-op(중복 없음)
-- [x] **#15(getsession/monthly resync/prepaid dup)**: 무효리셋 가드 + monthly resync + prepaid 중복 cron 제거 — develop `28c0876`·`cde34a5`·`9b8cbf7`
+- [x] **#15**: phantom CP zone 2개 제거 + 배포 시 즉시정리 — develop `9bc6053`·`9476e47`·`cfbf2e0`
+- [ ] #15 검증: 배포 후 CP zone 목록에 `filter`/`shutdown_gateways` 소멸 + 정상 crew zone 유지
+- [x] **#13 확장**: 배포마다 구룰 자동 purge(cp_routing_setup 통합) + 로그인 유지 마이그레이션 — develop `4df5de3`
 - [x] **#14 / #14b**: WIFI DATA RESET 즉시화 (명령/크론/위젯 시점에 로그아웃+사용량 0) +
   daily/halfmonthly gutted 복원 — develop `d1c0f88`·`f0822ca`
 - [ ] #14 검증: 온라인 유저 Reset Data → **즉시 로그아웃 + 사용량 0** / `wireless.log`에
@@ -441,10 +480,8 @@
 - [ ] #14b 검증: 각 주기 경계(특히 **daily 리셋 실제 동작**) + 위젯 reset 즉시 반영 /
   daily·halfmonthly 비활성화 의도였는지 사용자 확인
 - [x] **#13**: 구버전 per-user 로그인 룰 일괄 purge (멱등 self-heal) — develop `77b4119`
-- [ ] #13 검증: 배포 후 CP 설정 저장/재부팅 → `[User Rule] ... auto generated rule` 일괄 소멸
-  + `wireless.log`에 `Purged N legacy ...` + 다른 `[User Rule]` 유지 확인
-- [x] **#15**: phantom CP zone 2개 제거 — `init_config_arr` 오용 + `shutdown_gateways` 위치 오류 — develop `9bc6053`
-- [ ] #15 검증: 배포 후 관리 UI 로드 → `filter` / `shutdown_gateways` zone 소멸 + 정상 crew zone 유지
+- [ ] #13 검증: 배포 후 CP 설정 저장/재부팅 또는 배포 자체 → `[User Rule] ... auto generated rule`
+  일괄 소멸 + `wireless.log`에 `Purged N legacy ...` + 다른 `[User Rule]` 유지 + 로그인 유저 끊김 없이 pfctl 이관
 - [x] **#12**: 로그아웃 ~19초 지연 수정 완료 (deferred state kill → detached 백그라운드) — develop `2fdc155`
 - [ ] #12 검증: 로그아웃 클릭 → 즉시 페이지 전환(19초 소멸) + ~2초 후 기존 연결 종료 확인
 - [x] **#11**: `commit_change_pw` fatal 수정 완료 (username 전파 정합화 + `?string` 방어) — develop `1ed69ad`
