@@ -150,23 +150,20 @@ function print_sidebar($inputlink)
     // CP zone 목록에 '내부가 빈 가짜 zone' 이 생기던 버그를 정리한다.
     // 구 위치(captiveportal)가 보이면 system 으로 이전하고 구 키를 제거한 뒤 1회 영구화한다.
     // (이후 요청부터는 구 키가 없어 no-op)
+    // phantom CP zone self-heal: 아래 3가지 비-zone 키가 $config['captiveportal'] 에
+    // 남아있으면 pfSense CP zone 목록에 빈 zone 으로 표시된다.
+    // 수정은 cp_routing_setup.php(배포 시)에서 먼저 처리하므로 여기는 fallback 역할.
+    // write_config() 는 비용이 크므로 변경이 있을 때만 1회만 호출한다.
+    $_cp_sidebar_dirty = false;
     if (isset($config['captiveportal']['prepaid_enabled'])) {
         $config['system']['prepaid_enabled'] = "";
         unset($config['captiveportal']['prepaid_enabled']);
-        if (function_exists('write_config')) {
-            write_config("prepaid_enabled: captiveportal->system 이전(가짜 zone 제거)");
-        }
+        $_cp_sidebar_dirty = true;
     }
-    // cp_routing_setup.php 의 init_config_arr 오용으로 $config['captiveportal']['filter'] 배열이
-    // 생성되어 phantom CP zone 'filter' 가 config.xml 에 주입되던 문제 self-heal.
     if (isset($config['captiveportal']['filter'])) {
         unset($config['captiveportal']['filter']);
-        if (function_exists('write_config')) {
-            write_config("phantom zone 'filter' 제거 (cp_routing_setup init_config_arr 오용)");
-        }
+        $_cp_sidebar_dirty = true;
     }
-    // network_usage_timeperiod_check.php 가 shutdown_gateways 를 captiveportal zone 배열에
-    // 직접 저장하던 버그 self-heal: system 으로 이전 후 구 키 제거.
     if (isset($config['captiveportal']['shutdown_gateways'])) {
         if (!isset($config['system']['cp_shutdown_gateways']) ||
             $config['captiveportal']['shutdown_gateways'] !== '') {
@@ -174,9 +171,10 @@ function print_sidebar($inputlink)
                 $config['captiveportal']['shutdown_gateways'];
         }
         unset($config['captiveportal']['shutdown_gateways']);
-        if (function_exists('write_config')) {
-            write_config("shutdown_gateways: captiveportal->system 이전(가짜 zone 제거)");
-        }
+        $_cp_sidebar_dirty = true;
+    }
+    if ($_cp_sidebar_dirty && function_exists('write_config')) {
+        write_config("phantom CP zone 키 정리(captiveportal→system 이전)");
     }
     if (isset($config['system']['prepaid_enabled'])) {
         $rtnstr .= $mk("prepaid_account.php", "Prepaid Account", "ic-lnb05");

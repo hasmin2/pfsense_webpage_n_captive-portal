@@ -38,6 +38,39 @@ init_config_arr(['aliases', 'alias']);
 global $config;
 
 // ----------------------------------------------------------------
+// 구 phantom CP zone 키 정리 (배포 시 즉시 제거)
+// ----------------------------------------------------------------
+// 아래 두 키는 과거 코드가 $config['captiveportal'] zone 배열에 직접 저장해
+// pfSense CP zone 목록에 phantom zone 을 만들던 버그의 잔재다.
+// cp_routing_setup 은 배포마다 실행되므로 여기서 제거하면 GUI 방문 없이도 정리된다.
+// $changed = true 로 표시만 해두면 스크립트 말미의 write_config() 한 번에 같이 저장된다.
+
+$_cp_phantom_cleaned = false;
+
+// Bug 1: init_config_arr(['captiveportal','filter','aliases','gateways']) 오용으로
+//        $config['captiveportal']['filter'] 배열이 주입되어 phantom zone 'filter' 생성.
+if (isset($config['captiveportal']['filter'])) {
+    unset($config['captiveportal']['filter']);
+    $_cp_phantom_cleaned = true;
+    setup_log("CLEAN phantom zone 'filter' 제거");
+}
+
+// Bug 2: shutdown_gateways 를 captiveportal zone 배열에 문자열로 직접 저장하던 버그.
+//        system 으로 이전 후 구 키 제거.
+if (isset($config['captiveportal']['shutdown_gateways'])) {
+    if (!isset($config['system']['cp_shutdown_gateways']) ||
+        $config['captiveportal']['shutdown_gateways'] !== '') {
+        $config['system']['cp_shutdown_gateways'] =
+            $config['captiveportal']['shutdown_gateways'];
+    }
+    unset($config['captiveportal']['shutdown_gateways']);
+    $_cp_phantom_cleaned = true;
+    setup_log("CLEAN phantom zone 'shutdown_gateways' → system 이전");
+}
+
+// $_cp_phantom_cleaned 는 아래 $changed 선언 시 OR 로 합산된다 (추가 I/O 없음).
+
+// ----------------------------------------------------------------
 // 헬퍼
 // ----------------------------------------------------------------
 
@@ -200,7 +233,7 @@ echo "\n";
 // 모든 WAN 인터페이스 목록 (블록룰 생성용)
 $all_ifaces = array_unique(array_column($all_gws, 'interface'));
 
-$changed = false;
+$changed = $_cp_phantom_cleaned;
 
 // ---- 2. Alias 생성 ----
 
