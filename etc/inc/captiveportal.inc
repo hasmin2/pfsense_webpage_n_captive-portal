@@ -4128,13 +4128,37 @@ function getusername($sessionid) {
 function getsession($username) {
     global $cpzone;
     $cpdb = captiveportal_read_db();
-    /* Lookup the username*/
+    /* Lookup the username (대소문자 무시).
+       세션 DB 의 username 과 config/요청 username 의 대소문자 불일치로 조회가
+       실패하면 무효 리셋(파일만 삭제 → 살아있는 세션이 되씀)·로그아웃 실패로
+       이어지므로 strcasecmp 로 매칭한다. */
     foreach ($cpdb as $cpentry) {
-        if ($cpentry[4] == $username){
+        if (isset($cpentry[4]) && strcasecmp((string)$cpentry[4], (string)$username) === 0){
             return $cpentry[5];
         }
     }
     return false;
+}
+
+/**
+ * 주어진 username 의 활성 CP 세션 ID 를 전부 반환 (대소문자 무시).
+ * getsession()은 첫 세션만 반환하므로, 다중 기기 동시 로그인 대응으로 별도 제공.
+ * captiveportal_read_db() 는 전역 $cpzone 에 의존한다.
+ */
+function cp_get_sessionids_for_username_ci(string $username): array {
+    global $cpzone;
+    $out  = array();
+    $cpdb = captiveportal_read_db();
+    if (is_array($cpdb)) {
+        foreach ($cpdb as $cpentry) {
+            if (isset($cpentry[4]) && strcasecmp((string)$cpentry[4], $username) === 0) {
+                if (isset($cpentry[5]) && (string)$cpentry[5] !== '') {
+                    $out[] = $cpentry[5];
+                }
+            }
+        }
+    }
+    return $out;
 }
 
 function getcurquota($sessionid) {
@@ -4278,13 +4302,24 @@ function captiveportal_reset_user_usage(string $username): bool {
         return false;
     }
 
-    // 1) 활성 세션이면 먼저 로그아웃 → accounting Stop 으로 세션 종료 + ipfw 카운터 정리
-    $sid = getsession($username);
-    if ($sid !== false && $sid !== '') {
+    // 1) 활성 세션(대소문자 무시, 다중 기기 포함)을 먼저 전부 로그아웃
+    //    → accounting Stop 으로 SESSFILE→USEDFILE 누적 후 세션 종료 + ipfw 카운터 정리.
+    $sids = cp_get_sessionids_for_username_ci($username);
+    foreach ($sids as $sid) {
         captiveportal_disconnect_client($sid, 6, "DATA RESET");
     }
 
-    // 2) used-octets(메인 + 세션) 삭제 → 사용량 0. max-octets(한도)는 보존.
+    // 2) 재확인 가드: disconnect 후에도 활성 세션이 남아 있으면, 파일을 지워도
+    //    살아있는 세션의 다음 Interim 이 사용량을 되써서 리셋이 무효가 된다.
+    //    (getsession 케이스 미스로 disconnect 를 건너뛰던 기존 결함의 안전망.)
+    //    → 삭제를 건너뛰고 경고를 남겨 "조용한 실패"를 가시화한다(다음 주기/명령이 재시도).
+    $still = cp_get_sessionids_for_username_ci($username);
+    if (!empty($still)) {
+        cp_wireless_log("DATA RESET aborted: active session still present after disconnect for '{$username}' (sids=" . implode(',', $still) . ")");
+        return false;
+    }
+
+    // 3) used-octets(메인 + 세션) 삭제 → 사용량 0. max-octets(한도)는 보존.
     $safeUser = preg_replace('/[^0-9a-zA-Z._:-]/', 'X', $username);
     $removed  = 0;
     foreach (array('daily', 'weekly', 'monthly', 'forever') as $range) {
