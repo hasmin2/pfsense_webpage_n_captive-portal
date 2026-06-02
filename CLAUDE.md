@@ -407,8 +407,33 @@
 - **교훈**: `init_config_arr`는 **중첩 경로** 함수 — 여러 top-level 키 초기화 시 각각 별도 호출 필요.
   `$config['captiveportal']`는 zone 전용 (#8과 동일 원칙).
 
+### 16. CREW WIFI 리셋 자가복구(self-healing) 날짜키 (develop 반영)
+- **문제**: 주기 리셋 크론(daily/weekly/halfmonthly/monthly)은 주기 경계에 **1회 발화**하는데
+  표준 cron 은 catch-up 이 없어 **NTP 시각 점프(선박 위성 NTP)·재부팅·고부하**로 그 분을 놓치면
+  해당 주기 리셋이 **통째로 누락**(monthly = 최대 한 달). 더블-런(분 `0,1`)도 2분 내 둘 다 놓치면
+  무력 + 활성 유저 이중 disconnect 부작용.
+- **핵심 설계**: 유저별 "마지막 리셋 주기키"를 **파일에 저장**(`/var/log/radacct/datacounter/reset-state/`)
+  → `config.xml` 미사용이라 **매분 writer 크론과 동시 실행해도 lost-update 무관**(#10 C 회피).
+  - 주기키: `D:YYYY-MM-DD` / `W:일요일날짜` / `M:YYYY-MM` / `H:YYYY-MM-H1|H2`. zero-pad 라 **사전식
+    비교로 신/구 판정** 가능.
+  - `cp_reset_user_if_due()`: 현재키가 저장키보다 **엄격히 최신인데 미마킹**이면(=경계 크론 놓침)
+    즉시 보충 리셋. **최초관측은 마킹만**(배포 직후 진행중 주기 오리셋 방지), **시각역행 가드**
+    (과거 키면 skip), **prepaid(`crewpay-`) 제외**(할당0 의미가 달라 usage-only 자가복구 부적합).
+- **신규 파일**: `etc/inc/cp_usage_reset.inc`(헬퍼), `usr/local/cron/crew_usage_reset_selfheal.php`(점검 크론).
+  `firewall_cronlist` **분 15,45(매30분, 경계 0~10분과 오프셋)**.
+- **경계 크론 4종**: 리셋 직후 `cp_reset_mark_user()` 로 날짜키 마킹 → 자가복구가 같은 주기를
+  **중복 리셋 안 함**(이중 disconnect 도 방지). `function_exists` 가드(버전섞임 방어).
+- **검증**: 주기키 계산/사전식 신구판정/최초관측·중복방지·경계누락보충·이중리셋방지·시각역행·
+  prepaid제외 전 시나리오 단위테스트 통과. 커밋 `aa0c759`.
+- **한계(후속)**: 자가복구는 **usage-only**. monthly 의 forever 유저 삭제 / gateway usage 리셋
+  side-logic 은 경계 크론에서만 수행(누락 시 미보충). prepaid 는 자체 크론(별도).
+
 ## 다음 작업 대기 중
 
+- [x] **#16**: 리셋 자가복구 날짜키 (cron 발화 누락 시 다음 틱 보충) — develop `aa0c759`
+- [ ] #16 검증: 경계 cron 강제 미발화(예: 시각 점프 모의) 후 `wireless.log` 에
+  `SELF-HEAL reset (missed ...)` + 재로그인 시 0 / 정상 경계 시 자가복구 no-op(중복 없음)
+- [x] **#15(getsession/monthly resync/prepaid dup)**: 무효리셋 가드 + monthly resync + prepaid 중복 cron 제거 — develop `28c0876`·`cde34a5`·`9b8cbf7`
 - [x] **#14 / #14b**: WIFI DATA RESET 즉시화 (명령/크론/위젯 시점에 로그아웃+사용량 0) +
   daily/halfmonthly gutted 복원 — develop `d1c0f88`·`f0822ca`
 - [ ] #14 검증: 온라인 유저 Reset Data → **즉시 로그아웃 + 사용량 0** / `wireless.log`에
