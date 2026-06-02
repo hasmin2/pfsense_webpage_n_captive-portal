@@ -187,6 +187,12 @@ if (
 
 // 변경이 있을 때만 반영 (lost-update 방지)
 if ($changed) {
+    // forever 유저 삭제분을 radiusd 활성 users 파일에 반영(HUP).
+    // 누락 시 삭제된 유저가 radiusd 재로드 전까지 계속 인증 통과한다.
+    // (daily/weekly/half/prepaid 와 동일 패턴으로 일치화.)
+    if (function_exists('freeradius_users_resync')) {
+        freeradius_users_resync();
+    }
     cp_wireless_log("Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset");
     write_config("Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset");
 
