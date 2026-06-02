@@ -966,17 +966,25 @@ function modify_wifi_user($userlist, $modifydata){
 
 function reset_wifi_user($userlist){
     global $config;
+    $reset_targets = array();
     foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
         foreach ($userlist as $user) {
             if ($user === $userentry['varusersusername']) {
+                // 태그는 그대로 유지(차후 로그인 fallback). 실제 리셋은 아래에서 "즉시" 수행.
                 $config['installedpackages']['freeradius']['config'][$item]['varusersresetquota'] = "true";
                 $config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
                 cp_wireless_log("Reset Datausage: ".$userentry['varusersusername']);
+                $reset_targets[] = $userentry['varusersusername'];
             }
         }
     }
     freeradius_users_resync();
     write_config("Reset datausage Wifi user");
+
+    // 차후 로그인이 아니라 "이때 바로": 활성 세션 로그아웃 + 사용량 0
+    foreach (array_unique($reset_targets) as $u) {
+        captiveportal_reset_user_usage($u);
+    }
 }
 
 function reset_wifi_user_pw($userlist){

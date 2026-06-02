@@ -4243,6 +4243,71 @@ function getmaxquota($username){
     }
     return $result;
 }
+
+/**
+ * 사용자 사용량(쿼터)을 "즉시" 0 으로 리셋한다. (WIFI DATA RESET 명령 처리용)
+ *
+ * 기존 동작은 resetquota=true 태그만 달아두고 "차후 로그인 시" authenticate_user 에서
+ * 파일을 지웠다. 본 함수는 그 리셋을 명령 시점에 바로 수행한다.
+ *
+ * 순서가 핵심:
+ *   1) 활성 세션이 있으면 먼저 로그아웃(disconnect)시킨다. 로그아웃은 accounting Stop 을
+ *      보내 세션을 종료하고 ipfw 카운터를 정리하므로, 이후 세션이 used-octets 파일을
+ *      다시 쓰지 않는다. (살아있는 세션 중에 파일을 지우면 다음 Interim/Stop 이 다시 써서
+ *      0 이 유지되지 않는다.)
+ *   2) used-octets-{user}(메인) + used-octets-{user}-*(세션) 파일을 삭제 → 합산값 0.
+ *      max-octets-{user}(한도)는 보존한다. timerange 디렉터리 전체를 훑어
+ *      어느 range 든 확실히 0 으로 만든다(pointoftime↔maxtotaloctetstimerange 불일치 안전).
+ *
+ * 주의: resetquota/modified 태그는 호출측이 그대로 유지한다(차후 로그인 fallback).
+ *       authenticate_user 의 차후-로그인 리셋은 그대로 두어 오프라인 유저/레이스를 커버.
+ *
+ * @param string $username
+ * @return bool  유효 username 이면 true
+ */
+function captiveportal_reset_user_usage(string $username): bool {
+    global $cpzone;
+    if (empty($cpzone)) {
+        $cpzone = 'crew';
+    }
+
+    $username = trim($username);
+    // 파일 경로/세션 조회에 쓰이므로 안전한 사용자명만 허용
+    if ($username === '' || !preg_match('/^[A-Za-z0-9_.:-]+$/', $username)) {
+        cp_wireless_log("DATA RESET skipped (invalid username): '{$username}'");
+        return false;
+    }
+
+    // 1) 활성 세션이면 먼저 로그아웃 → accounting Stop 으로 세션 종료 + ipfw 카운터 정리
+    $sid = getsession($username);
+    if ($sid !== false && $sid !== '') {
+        captiveportal_disconnect_client($sid, 6, "DATA RESET");
+    }
+
+    // 2) used-octets(메인 + 세션) 삭제 → 사용량 0. max-octets(한도)는 보존.
+    $safeUser = preg_replace('/[^0-9a-zA-Z._:-]/', 'X', $username);
+    $removed  = 0;
+    foreach (array('daily', 'weekly', 'monthly', 'forever') as $range) {
+        $base = "/var/log/radacct/datacounter/{$range}/used-octets-{$safeUser}";
+        if (is_file($base)) {
+            @unlink($base);
+            $removed++;
+        }
+        $sessfiles = glob($base . '-*');
+        if (is_array($sessfiles)) {
+            foreach ($sessfiles as $f) {
+                if (is_file($f)) {
+                    @unlink($f);
+                    $removed++;
+                }
+            }
+        }
+    }
+
+    cp_wireless_log("DATA RESET applied (usage=0, files={$removed}): {$username}");
+    return true;
+}
+
 function is_using_fx(){
     global $config;
     $result = "";

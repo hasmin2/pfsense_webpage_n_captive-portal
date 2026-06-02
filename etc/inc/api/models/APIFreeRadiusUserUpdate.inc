@@ -44,6 +44,7 @@ class APIFreeRADIUSUserUpdate extends APIModel {
             if (!isset($this->validated_data["freeradius_username"])) {
                 if($this->initial_data['freeradius_username']==='usersreset'){
                     $usercount = count ($this->config["installedpackages"]["freeradius"]["config"]);
+                    $reset_users = array();
                     for ($i=0; $i < $usercount; $i++){
                         if($this->initial_data['freeradius_terminaltype']==="Auto"){$terminaltype="";}
                         else{$terminaltype=$this->initial_data['freeradius_terminaltype'];}
@@ -52,11 +53,23 @@ class APIFreeRADIUSUserUpdate extends APIModel {
                         }
                         if( $terminaltype===$this->config["installedpackages"]["freeradius"]["config"][$i]["varusersterminaltype"] &&
                             strtolower($this->config["installedpackages"]["freeradius"]["config"][$i]["varusersmaxtotaloctetstimerange"]) !== 'forever'){
+                            // 태그는 유지(차후 로그인 fallback), 실제 리셋은 아래에서 즉시 수행
                             $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersresetquota"] = "true";
                             $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersmodified"] = "update";
+                            $reset_users[] = $this->config["installedpackages"]["freeradius"]["config"][$i]["varusersusername"];
                         }
                     }
                     $this->write_config("Reset Crew wifi usage");
+
+                    // 차후 로그인이 아니라 "이때 바로": 활성 세션 로그아웃 + 사용량 0
+                    require_once("captiveportal.inc");
+                    if (function_exists('captiveportal_reset_user_usage')) {
+                        foreach (array_unique($reset_users) as $ru) {
+                            if (is_string($ru) && $ru !== '') {
+                                captiveportal_reset_user_usage($ru);
+                            }
+                        }
+                    }
                 }
                 else{
                     $this->errors[] = APIResponse\get(5001);
