@@ -137,6 +137,15 @@
             "command": "/usr/local/bin/php /usr/local/cron/crew_dailyusage_reset_check.php"
         },
         {
+            "minute": "15,45",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/crew_usage_reset_selfheal.php > /dev/null"
+        },
+        {
             "minute": "*",
             "hour": "*",
             "mday": "*",

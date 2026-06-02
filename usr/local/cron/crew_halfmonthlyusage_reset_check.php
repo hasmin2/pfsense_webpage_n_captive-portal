@@ -1,5 +1,6 @@
 <?php
 require_once("captiveportal.inc");
+require_once("cp_usage_reset.inc");
 
 global $config;
 
@@ -89,7 +90,11 @@ if ($changed) {
     // 차후 로그인이 아니라 "이때 바로": 활성 세션 로그아웃 + 사용량 0
     if (function_exists('captiveportal_reset_user_usage')) {
         foreach (array_unique($reset_targets) as $u) {
-            if (is_string($u) && $u !== '') { captiveportal_reset_user_usage($u); }
+            if (is_string($u) && $u !== '') {
+                captiveportal_reset_user_usage($u);
+                // 자가복구 크론이 이번 주기를 중복 리셋하지 않도록 날짜키 마킹(monthly+half).
+                if (function_exists('cp_reset_mark_user')) { cp_reset_mark_user($u, 'monthly', 'half'); }
+            }
         }
     }
 } else {
