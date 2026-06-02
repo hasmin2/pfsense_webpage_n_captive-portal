@@ -93,6 +93,7 @@ if ($_REQUEST && $_REQUEST['ajax']) {
 if ($_POST['widgetkey']) {//???????????
 	global $config;
 	$userlist = $_POST['userlist'];
+	$reset_targets = array();
 	if($_POST['deluser']){
 		foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
 			foreach ($userlist as $user){
@@ -111,6 +112,7 @@ if ($_POST['widgetkey']) {//???????????
 					$config['installedpackages']['freeradius']['config'][$item]['varusersresetquota'] = "true";
 					$config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
 					cp_wireless_log("Reset Datausage for: ".$userentry['varusersusername']);
+					$reset_targets[] = $userentry['varusersusername'];
 				}
 			}
 		}
@@ -234,6 +236,14 @@ if ($_POST['widgetkey']) {//???????????
 		}
 	}
 	write_config("Modifed freeradius user");
+
+	// resetuser: 차후 로그인이 아니라 "이때 바로" 활성 세션 로그아웃 + 사용량 0
+	if (!empty($reset_targets) && function_exists('captiveportal_reset_user_usage')) {
+		foreach (array_unique($reset_targets) as $u) {
+			if (is_string($u) && $u !== '') { captiveportal_reset_user_usage($u); }
+		}
+	}
+
 	header("Location: /");
 	exit(0);
 }

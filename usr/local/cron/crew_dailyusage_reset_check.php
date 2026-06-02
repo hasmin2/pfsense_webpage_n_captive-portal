@@ -21,6 +21,7 @@ if (
 $radiusUsers =& $config['installedpackages']['freeradius']['config'];
 
 $changed = false;
+$reset_targets = array();
 
 foreach (array_keys($radiusUsers) as $item) {
 
@@ -47,15 +48,22 @@ foreach (array_keys($radiusUsers) as $item) {
     $resetQuota = strtolower(trim((string)(
     isset($userEntry['varusersresetquota'])
         ? $userEntry['varusersresetquota']
-        : 'true'
+        : ''
     )));
 
     $modified = strtolower(trim((string)(
     isset($userEntry['varusersmodified'])
         ? $userEntry['varusersmodified']
-        : 'Update'
+        : ''
     )));
 
+    // (복원) gutted 였던 reset 플래그 설정 — daily 사용자가 실제로 리셋되도록.
+    if ($resetQuota !== 'true' || $modified !== 'update') {
+        $userEntry['varusersresetquota'] = "true";
+        $userEntry['varusersmodified'] = "update";
+        $changed = true;
+        $reset_targets[] = (string)($userEntry['varusersusername'] ?? '');
+    }
 
     unset($userEntry);
 }
@@ -68,6 +76,13 @@ if ($changed) {
     }
     write_config("Reset Daily datausage Wifi user");
     cp_wireless_log("Reset Daily datausage Wifi user successfully");
+
+    // 차후 로그인이 아니라 "이때 바로": 활성 세션 로그아웃 + 사용량 0
+    if (function_exists('captiveportal_reset_user_usage')) {
+        foreach (array_unique($reset_targets) as $u) {
+            if (is_string($u) && $u !== '') { captiveportal_reset_user_usage($u); }
+        }
+    }
 } else {
     cp_wireless_log("Reset Daily datausage Wifi user: no changes");
 }
