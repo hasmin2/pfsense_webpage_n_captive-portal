@@ -71,6 +71,23 @@ if (isset($config['captiveportal']['shutdown_gateways'])) {
 // $_cp_phantom_cleaned 는 아래 $changed 선언 시 OR 로 합산된다 (추가 I/O 없음).
 
 // ----------------------------------------------------------------
+// 구버전 per-user 로그인 룰 일괄 purge (배포 시 자동 정리)
+// ----------------------------------------------------------------
+// 과거 add_crew_linked_rule() 은 로그인마다 config.xml 에
+// "[User Rule] <id> auto generated rule" 룰을 추가했다(현재는 pfctl 테이블 방식).
+// 마이그레이션 이전 유저들의 룰이 고아로 남아 DHCP IP 재할당 시 오라우팅 위험이 있어 제거한다.
+// captiveportal_configure() 의 self-heal(#13)과 동일 함수를 호출 — 멱등(제거할 게 없으면 no-op),
+// 제거 시 자체적으로 write_config + filter_configure 1회 수행.
+// cp_routing_setup 은 배포마다 실행되므로, 여기서 호출하면 GUI 방문/재부팅 없이도 정리된다.
+// 버전 섞임 방어: 구버전 captiveportal.inc 가 먼저 올라온 partial deploy 에서도 fatal 없도록 가드.
+if (function_exists('cp_purge_legacy_user_login_rules')) {
+    $_purged = cp_purge_legacy_user_login_rules();
+    setup_log("purge_legacy: 구버전 per-user 룰 {$_purged}건 제거");
+} else {
+    setup_log("SKIP purge_legacy (함수 없음 — 구버전 captiveportal.inc)");
+}
+
+// ----------------------------------------------------------------
 // 헬퍼
 // ----------------------------------------------------------------
 
