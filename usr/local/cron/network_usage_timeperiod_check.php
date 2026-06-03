@@ -32,15 +32,18 @@ $error = "";
 
 $json_string = str_replace("\n", ' ', fgets($fd));
 if(substr($json_string, 0, 5) === "Error") {
-    throw new Exception(substr($json_string, 7));
+    error_log("[network_usage] vnstat error (skipping): " . trim(substr($json_string, 7)));
+    pclose($fd);
+    exit(0);
 }
 
 while (!feof($fd)) {
     $json_string .= fgets($fd);
 
     if(substr($json_string, 0, 5) === "Error") {
-        throw new Exception(str_replace("\n", ' ', substr($json_string, 7)));
-        break;
+        error_log("[network_usage] vnstat error (skipping): " . trim(str_replace("\n", ' ', substr($json_string, 7))));
+        pclose($fd);
+        exit(0);
     }
 }
 #sleep (10);
