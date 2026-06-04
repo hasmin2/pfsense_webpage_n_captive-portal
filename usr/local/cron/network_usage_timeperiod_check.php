@@ -117,6 +117,10 @@ $interfaces = $config['interfaces'];
 
 $isModified = false;
 
+// Fix#2: 이번 사이클에 게이트웨이가 "새로" shutdown 목록에 추가됐는지 추적.
+// disconnect 는 이 경우에만, 그리고 해당 차단에 걸리는 사용자만 대상으로 한다.
+$shutdownAdded = false;
+
 foreach ($gateways as &$gateway) {
     $gatewayInterface = $gateway['interface'] ?? '';
     $terminalType     = $gateway['terminal_type'] ?? '';
@@ -151,7 +155,17 @@ foreach ($gateways as &$gateway) {
         continue;
     }
 
-    $usage     = get_datausage_from_db($rootIf);
+    // Fix#3: 조회 timeout 상향(1→4초)으로 false-0 오독 빈도 감소.
+    $usage     = get_datausage_from_db($rootIf, 4);
+
+    // Fix#1: InfluxDB 조회 실패(false) 시 게이트웨이 상태를 변경하지 않고 건너뛴다.
+    //        실패를 0(미달)으로 오독해 shutdown 목록을 토글 → 전원 disconnect 하는
+    //        flapping 을 차단한다(이전 상태 유지).
+    if ($usage === false) {
+        echo "usage query failed (influx), keep shutdown state: " . $gatewayName . "\n";
+        continue;
+    }
+
     $allowance = (float)$gateway['allowance'];
 
     $needShutdown = ((float)$usage >= $allowance);
@@ -165,6 +179,7 @@ foreach ($gateways as &$gateway) {
             if (captiveportal_add_shutdown_gateway($gatewayName)) {
                 echo "shutdown gateway added: " . $gatewayName . "\n";
                 $isModified = true;
+                $shutdownAdded = true;
             } else {
                 echo "shutdown gateway already exists: " . $gatewayName . "\n";
             }
@@ -196,10 +211,56 @@ unset($gateway);
 if ($isModified) {
     $cpzone='crew';
     $cpzoneid = $config['captiveportal']['crew']['zoneid'];
-    echo "shutdown gateway applied: " . $gatewayName . "\n";
-    captiveportal_disconnect_all($term_cause = 6, $logoutReason = "DISCONNECT", $carp_loop = false);
+
+    // Fix#2: 게이트웨이가 "새로" shutdown 목록에 추가된 경우에만, 그리고 그 차단에
+    //        실제로 걸리는 사용자(antenna_allowed()=false)만 골라 개별 disconnect 한다.
+    //        기존 captiveportal_disconnect_all() 은 게이트웨이와 무관한 crew zone
+    //        전원을 끊어(blast radius 과다) 무관한 사용자까지 강제 로그아웃 + 전 사용자
+    //        ipfw 카운터 리셋(계측 오차)을 유발했다. turnon(목록 제거)만 있었던
+    //        사이클에서는 아무도 끊지 않는다.
+    if ($shutdownAdded) {
+        $disconnected = cp_disconnect_users_blocked_by_shutdown();
+        echo "shutdown disconnect applied: " . $disconnected . " user(s)\n";
+    }
     write_config("Update captiveportal shutdown gateway list");
 }
+// Fix#2: crew zone 의 활성 세션 중, 현재 cp_shutdown_gateways 로 차단되는
+// 사용자(antenna_allowed()=false)만 골라 개별 로그아웃한다.
+// captiveportal_disconnect_all() 의 zone 전체 disconnect 를 대체해 무관한
+// 게이트웨이 사용자의 강제 로그아웃과 전 사용자 ipfw 카운터 리셋을 막는다.
+// 전제: 호출 전 global $cpzone 가 'crew' 로 설정돼 있어야 한다(captiveportal
+// 함수들이 $cpzone 전역에 의존). 반환값 = 끊은 사용자 수.
+function cp_disconnect_users_blocked_by_shutdown(): int
+{
+    // 버전 섞임 방어: 필요한 함수가 없으면 no-op.
+    if (!function_exists('captiveportal_read_db') ||
+        !function_exists('antenna_allowed') ||
+        !function_exists('captiveportal_disconnect_client')) {
+        return 0;
+    }
+
+    $cpdb = captiveportal_read_db();
+    if (!is_array($cpdb)) {
+        return 0;
+    }
+
+    $count = 0;
+    foreach ($cpdb as $cpentry) {
+        $username  = $cpentry[4] ?? '';
+        $sessionid = $cpentry[5] ?? '';
+        if ($username === '' || $sessionid === '') {
+            continue;
+        }
+        // 현재 shutdown 목록 기준으로 차단되는 사용자만 끊는다(게이트웨이 단위 한정).
+        if (antenna_allowed($username) === false) {
+            captiveportal_disconnect_client($sessionid, 6, "DISCONNECT");
+            $count++;
+        }
+    }
+
+    return $count;
+}
+
 function captiveportal_add_shutdown_gateway(string $gatewayName): bool
 {
     global $config;

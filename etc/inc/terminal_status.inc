@@ -415,7 +415,7 @@ function get_speed($gateway){
     return $speedstring;
 }
 
-function get_datausage_from_db($dataMetric) {
+function get_datausage_from_db($dataMetric, $timeout = 1) {
     global $config;
     $ch = curl_init();
     $dataMetric_rx = $dataMetric."_rx";
@@ -426,7 +426,7 @@ function get_datausage_from_db($dataMetric) {
     $elaspedminutes = ($interval->days * 24 * 60) + ($interval->h * 60) + $interval->i;
     curl_setopt_array($ch, array(
         CURLOPT_URL => "http://192.168.209.210:8086/query?q=select%20sum%28%22".$dataMetric_rx."%22%29,sum%28%22".$dataMetric_tx."%22%29from%20traffic%20where%20time%20%3E%20now()%20-".$elaspedminutes."m&db=acustatus",
-        CURLOPT_TIMEOUT => 1,
+        CURLOPT_TIMEOUT => $timeout,
         CURLOPT_MAXREDIRS => 10,
         CURLOPT_CUSTOMREQUEST => "GET",
         CURLOPT_RETURNTRANSFER => TRUE,
@@ -434,10 +434,28 @@ function get_datausage_from_db($dataMetric) {
     ));
     $response = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlerr = curl_error($ch);
     curl_close($ch);
+
+    // InfluxDB 하드 실패(타임아웃/연결오류/비200)는 false 를 반환한다.
+    // 실패를 0(사용량 미달)으로 오독하면 게이트웨이 shutdown 목록이 토글되어
+    // crew zone 이 강제 disconnect 되는 flapping(전원 로그아웃 + ipfw 카운터 리셋
+    // → 계측 오차)이 발생하기 때문이다. 호출측은 false 를 받으면 상태를 변경하지
+    // 말고 이전 상태를 유지해야 한다.
+    if ($curlerr !== '' || (int)$code !== 200) {
+        return false;
+    }
+
     $responsejson = json_decode($response, true);
-    $totaldata = $responsejson['results'][0]['series'][0]['values'][0][1]+$responsejson['results'][0]['series'][0]['values'][0][2];
-    $totaldata = round($totaldata/1073741824, 2);
+    // 쿼리는 성공했으나 데이터 포인트가 없는 경우(예: 월초)는 influx 사용량 0 으로
+    // 간주하고 basedata(currentusage)만 가산한다. (이는 정상이며 실패가 아니다.)
+    $influxbytes = 0;
+    if (isset($responsejson['results'][0]['series'][0]['values'][0][1]) &&
+        isset($responsejson['results'][0]['series'][0]['values'][0][2])) {
+        $influxbytes = $responsejson['results'][0]['series'][0]['values'][0][1] +
+                       $responsejson['results'][0]['series'][0]['values'][0][2];
+    }
+    $totaldata = round($influxbytes/1073741824, 2);
     $basedata=0;
     foreach($config['gateways']['gateway_item'] as $gateway){
         if($gateway['rootinterface'] == $dataMetric){
