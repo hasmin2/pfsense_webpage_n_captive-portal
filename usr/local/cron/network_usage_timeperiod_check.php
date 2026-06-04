@@ -121,6 +121,13 @@ $isModified = false;
 // disconnect 는 이 경우에만, 그리고 해당 차단에 걸리는 사용자만 대상으로 한다.
 $shutdownAdded = false;
 
+// 불씨 제거: 게이트웨이 월 사용량 판정 소스를 원격 InfluxDB 합산이 아니라
+// 로컬 vnstat "이번달" 누계로 전환한다. vnstat 월 맵을 루프 전 1회만 조회해
+// 재사용(게이트웨이마다 vnstat 호출 방지). influx 는 대시보드 쓰기 용도로만 유지.
+$vnstatMonthMap = function_exists('get_vnstat_month_to_date_map')
+    ? get_vnstat_month_to_date_map()
+    : false;
+
 foreach ($gateways as &$gateway) {
     $gatewayInterface = $gateway['interface'] ?? '';
     $terminalType     = $gateway['terminal_type'] ?? '';
@@ -155,14 +162,16 @@ foreach ($gateways as &$gateway) {
         continue;
     }
 
-    // Fix#3: 조회 timeout 상향(1→4초)으로 false-0 오독 빈도 감소.
-    $usage     = get_datausage_from_db($rootIf, 4);
+    // 불씨 제거: 원격 influx 합산 대신 로컬 vnstat 이번달 누계(+stale 캐시)에서
+    //           게이트웨이 월 사용량을 얻는다. 원격 조회 의존이 없어 타임아웃/
+    //           false-0 오독에 의한 shutdown flapping 이 구조적으로 발생하지 않는다.
+    $usage = function_exists('get_gateway_monthly_usage_local')
+        ? get_gateway_monthly_usage_local($rootIf, $vnstatMonthMap)
+        : false;
 
-    // Fix#1: InfluxDB 조회 실패(false) 시 게이트웨이 상태를 변경하지 않고 건너뛴다.
-    //        실패를 0(미달)으로 오독해 shutdown 목록을 토글 → 전원 disconnect 하는
-    //        flapping 을 차단한다(이전 상태 유지).
+    // Fix#1: 소스(vnstat)도 캐시도 없으면 상태를 바꾸지 말고 건너뛴다(이전 상태 유지).
     if ($usage === false) {
-        echo "usage query failed (influx), keep shutdown state: " . $gatewayName . "\n";
+        echo "usage unavailable (vnstat+cache miss), keep shutdown state: " . $gatewayName . "\n";
         continue;
     }
 

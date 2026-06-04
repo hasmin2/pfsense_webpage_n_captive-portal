@@ -468,6 +468,106 @@ function get_datausage_from_db($dataMetric, $timeout = 1) {
     return $totaldata;
 }
 
+// ---------------------------------------------------------------------------
+// 게이트웨이 월 사용량 소스(로컬 vnstat) — "불씨" 제거용.
+//
+// 기존 get_datausage_from_db() 는 원격 InfluxDB 에 "월초~현재" 한 달치 sum 을
+// 매번 질의했다. 이 쿼리는 (1) 논리 LAN 의 원격 호출이라 지연/실패 가능,
+// (2) 조회창이 월 진행에 따라 단조 증가해 월말로 갈수록 무거워져 1~수초를
+// 넘김 → 실패를 0(미달)으로 오독 → shutdown flapping → 전원 로그아웃의 발화점.
+//
+// 그런데 InfluxDB 의 traffic 데이터는 애초에 이 박스의 vnstat 5분 표본을
+// 이 크론이 밀어넣은 "원격 사본"이다. 따라서 로컬 vnstat 의 이번달 누계를
+// 직접 읽으면 원격 의존이 사라지고(불씨 제거) 정확도도 더 높다(틱 누락 무관).
+// ---------------------------------------------------------------------------
+
+// vnstat 의 "이번 달" 누계를 인터페이스명 => bytes(rx+tx) 맵으로 1회 조회한다.
+// 루프에서 게이트웨이마다 vnstat 를 호출하지 않도록 호출측이 1회만 부르고 재사용.
+// 실패(미설치/오류/파싱불가)면 false 를 반환한다.
+function get_vnstat_month_to_date_map() {
+    $json = shell_exec('/usr/local/bin/vnstat --json m 2>/dev/null');
+    if (!is_string($json) || $json === '' || strncmp($json, "Error", 5) === 0) {
+        return false;
+    }
+    $data = json_decode($json, true);
+    if (!isset($data['interfaces']) || !is_array($data['interfaces'])) {
+        return false;
+    }
+
+    $now = new DateTime();
+    $cy  = (int)$now->format('Y');
+    $cm  = (int)$now->format('n');
+
+    $out = array();
+    foreach ($data['interfaces'] as $iface) {
+        $name = $iface['name'] ?? '';
+        if ($name === '' ||
+            !isset($iface['traffic']['month']) ||
+            !is_array($iface['traffic']['month'])) {
+            continue;
+        }
+        $months = $iface['traffic']['month'];
+
+        // 달력상 이번 달 버킷을 우선 매칭, 없으면 가장 최신(마지막) 버킷.
+        $picked = null;
+        foreach ($months as $m) {
+            if ((int)($m['date']['year'] ?? 0) === $cy &&
+                (int)($m['date']['month'] ?? 0) === $cm) {
+                $picked = $m;
+                break;
+            }
+        }
+        if ($picked === null && !empty($months)) {
+            $picked = $months[count($months) - 1];
+        }
+        if ($picked === null) {
+            continue;
+        }
+
+        $rx = (float)($picked['rx'] ?? 0);
+        $tx = (float)($picked['tx'] ?? 0);
+        $out[$name] = $rx + $tx;   // vnstat 2.x JSON 은 bytes 단위
+    }
+
+    return $out;
+}
+
+// 게이트웨이(루트 인터페이스) 월 사용량(GB) = vnstat 이번달 누계 + currentusage baseline.
+// vnstat 맵에서 인터페이스를 찾으면 vnstat GB 를 로컬 캐시에 기록한다.
+// 소스가 없거나(맵 false/미발견) 하면 캐시 직전값(stale)을 사용해 항상 안정값을
+// 돌려준다. 소스도 캐시도 없을 때만 false → 호출측이 상태를 바꾸지 말고 유지(Fix#1).
+// baseline 은 캐시에 넣지 않고 매번 새로 더해 관리자 수정이 즉시 반영되게 한다.
+function get_gateway_monthly_usage_local($rootIf, $vnstatMap) {
+    global $config;
+
+    $cachefile = "/var/db/gwusage-" .
+        preg_replace('/[^0-9a-zA-Z._:-]/', '_', (string)$rootIf);
+
+    $basedata = 0;
+    foreach ($config['gateways']['gateway_item'] as $gateway) {
+        if (($gateway['rootinterface'] ?? '') == $rootIf) {
+            $basedata = intval($gateway['currentusage'] ?? 0);
+            break;
+        }
+    }
+
+    $vnstatGb = null;
+    if (is_array($vnstatMap) && isset($vnstatMap[$rootIf])) {
+        $vnstatGb = round($vnstatMap[$rootIf] / 1073741824, 2);
+        @file_put_contents($cachefile, (string)$vnstatGb, LOCK_EX);
+    } elseif (is_file($cachefile)) {
+        $cached = trim((string)@file_get_contents($cachefile));
+        if ($cached !== '' && is_numeric($cached)) {
+            $vnstatGb = (float)$cached;   // stale-on-failure
+        }
+    }
+
+    if ($vnstatGb === null) {
+        return false;
+    }
+    return $vnstatGb + $basedata;
+}
+
 function get_speed_from_db($dataMetric){
     $ch = curl_init();
     $dataMetric_rx = $dataMetric."_rx";
