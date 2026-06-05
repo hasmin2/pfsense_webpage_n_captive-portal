@@ -5053,6 +5053,19 @@ function renderLoginPortalHtml(array $data = []): string
                     <div class="notice notice-info"><?= h($portalInfo) ?></div>
                 <?php endif; ?>
 
+                <div class="notice notice-warning">
+                    <strong>안정적인 접속을 위해 / For a stable connection</strong><br>
+                    로그인이 자꾸 끊기거나 반복 요청되면, 이 네트워크에 대해 단말의
+                    <b>&ldquo;비공개/랜덤 Wi-Fi 주소(Private / Random MAC)&rdquo;</b>를 꺼 주세요.<br>
+                    If you are repeatedly asked to log in, please turn off
+                    <b>&ldquo;Private / Random Wi-Fi Address&rdquo;</b> for this network on your device.<br>
+                    <small>
+                        iPhone/iPad: Settings(설정) &rarr; Wi-Fi &rarr; (i) &rarr; <b>Private Wi-Fi Address</b> &rarr; Off
+                        &nbsp;|&nbsp;
+                        Android: Wi-Fi &rarr; (network) &rarr; <b>Privacy / MAC type</b> &rarr; <b>Use device MAC (휴대전화 MAC 사용)</b>
+                    </small>
+                </div>
+
                 <form name="login_form" method="post" action="/index.php" autocomplete="on">
                     <div class="field">
                         <label for="login_user">Username</label>
