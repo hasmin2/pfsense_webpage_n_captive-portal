@@ -5054,8 +5054,8 @@ function renderLoginPortalHtml(array $data = []): string
                 <?php endif; ?>
 
                 <div class="notice notice-warning">
-                    If you are repeatedly asked to log in, please turn off
-                    <b>&ldquo;Private / Random Wi-Fi Address&rdquo;</b> for this network on your device.
+                    For a stable connection, please disable
+                    <b>&ldquo;Private / Random Wi-Fi Address&rdquo;</b> for this network.
                 </div>
 
                 <form name="login_form" method="post" action="/index.php" autocomplete="on">
