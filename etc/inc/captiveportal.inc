@@ -4752,6 +4752,98 @@ function cp_sync_routing_tables() {
 }
 
 /**
+ * cp_gw_* pfctl 라우팅 테이블만 CP 세션 DB 기준으로 재적재(안전망).
+ *
+ * cp_sync_routing_tables() 와 달리 config.xml/룰을 건드리지 않는다
+ * (cp_refresh_pass_rules 미호출 → write_config/filter_configure 없음 → #10 무관, 저비용).
+ * 오직 pfctl 테이블 멤버십만 갱신한다.
+ *
+ * 목적(과금 무결성): route-to/block 룰은 테이블에 IP 가 있을 때만 동작한다.
+ *   filter_configure()(게이트웨이 up/down 이 자동 트리거)가 빈 alias 기준으로
+ *   테이블을 flush 하면, 그 순간 고정(pinned) 사용자 트래픽이 기본 경로(반대 uplink)로
+ *   새어 오과금된다. 매분 이 함수로 재적재해 테이블이 절대 비지 않게 유지한다.
+ *
+ * 방어 가드:
+ *   (1) empty-guard: 세션 읽기가 비거나 배열이 아니면 아무 것도 하지 않는다.
+ *       (빈 세트로 전 테이블을 flush 하면 전원 라우팅이 붕괴되므로 절대 금지.
+ *        실유저 0명이면 로그아웃 경로가 이미 테이블을 정리했으므로 skip 해도 안전.)
+ *   (2) 미해석-고정 가드: terminal_type 이 "설정됐는데 매칭 실패"(오타/disabled/rename)면
+ *       cp_gw_default 로 흡수(=누수)하지 않고 경고 로그만 남기고 어느 테이블에도 넣지 않는다.
+ *       공란/'auto' 만 의도된 예외로 cp_gw_default(자동 라우팅) 처리.
+ *       ※ 미해석 사용자의 진짜 블랙홀(전용 block 룰)은 별도 후속(재배포 동반).
+ *
+ * @return int 동기화한 IP 개수. 세션 없음/읽기 실패 시 -1(아무 것도 안 함).
+ */
+function cp_resync_pf_tables_only() {
+    global $config;
+
+    $sessions = cp_read_crew_sessions();
+
+    // (1) empty-guard
+    if (!is_array($sessions) || empty($sessions)) {
+        return -1;
+    }
+
+    // username(소문자) => 원시 varusersterminaltype 맵 1회 구성
+    // (cp_get_terminaltype_for_user 는 공란 시 is_using_fx 로 치환하므로,
+    //  "의도된 auto/공란" vs "미해석 고정" 구분에는 원시값이 필요하다.)
+    $rawMap = array();
+    if (is_array($config['installedpackages']['freeradius']['config'] ?? null)) {
+        foreach ($config['installedpackages']['freeradius']['config'] as $value) {
+            $u = strtolower(trim((string)($value['varusersusername'] ?? '')));
+            if ($u !== '') {
+                $rawMap[$u] = strtolower(trim((string)($value['varusersterminaltype'] ?? '')));
+            }
+        }
+    }
+
+    // 대상 테이블 초기화(default + 모든 WAN GW)
+    $all_gws   = cp_find_all_wan_gateways();
+    $table_ips = array('cp_gw_default' => array());
+    foreach ($all_gws as $gw) {
+        $table_ips[cp_gw_table_name($gw['name'])] = array();
+    }
+
+    $count = 0;
+    foreach ($sessions as $s) {
+        $ip   = $s[2] ?? '';
+        $user = $s[4] ?? '';
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+            continue;
+        }
+
+        $gwname = cp_get_terminaltype_for_user($user);
+        $table  = cp_get_pf_table_for_gateway($gwname);
+
+        if ($table === null) {
+            $rawNorm = $rawMap[strtolower(trim((string)$user))] ?? '';
+            if ($rawNorm === '' || $rawNorm === 'auto') {
+                // 의도된 예외: 공란/'auto' → 기본(자동) 라우팅
+                $table = 'cp_gw_default';
+            } else {
+                // (2) 미해석-고정: 지정 GW 가 오타/disabled/rename 등으로 해석 실패.
+                //     cp_gw_default 로 흡수하면 누수(오과금) → 경고만 남기고 넣지 않는다.
+                cp_wireless_log("[CP Routing] PINNED user '{$user}' terminal_type '{$rawNorm}' unresolved (typo/disabled/renamed gateway) ip={$ip} — left unrouted (not default)");
+                continue;
+            }
+        }
+
+        if (array_key_exists($table, $table_ips)) {
+            $table_ips[$table][] = $ip;
+            $count++;
+        }
+    }
+
+    // 테이블 원자적 교체(replace). empty-guard 통과(세션 존재) 상태이므로,
+    // 특정 GW 테이블이 빈 것은 "그 GW 사용자 없음"이라 정상 flush.
+    foreach ($table_ips as $table => $ips) {
+        cp_sync_pf_table($table, $ips);
+    }
+
+    return $count;
+}
+
+/**
  * 구버전 per-user 로그인 룰 일괄 제거 (멱등 self-heal).
  *
  * 과거 구현은 로그인마다 $config['filter']['rule'] 에

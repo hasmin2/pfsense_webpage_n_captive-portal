@@ -234,6 +234,15 @@
             "wday": "*",
             "who": "root",
             "command": "/usr/local/bin/php /usr/local/cron/manual_routing_timeperiod_check.php > /dev/null"
+        },
+        {
+            "minute": "*",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/cp_routing_table_resync.php > /dev/null"
         }
 
     ]
