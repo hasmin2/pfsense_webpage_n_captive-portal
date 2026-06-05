@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `d90e288`+ | #1~#17 전부 포함, 작업 기준 브랜치 (이후 #13확장·#16 문서 커밋 추가) |
+| `develop` | `04d603e`+ | #1~#23 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락) |
 | `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#17 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
@@ -45,6 +45,9 @@
 | `etc/inc/cp_usage_reset.inc` | 리셋 자가복구 날짜키 헬퍼 (#16, 파일 기반·config 미사용) |
 | `usr/local/cron/crew_usage_reset_selfheal.php` | 리셋 누락 보충 크론 (#16, 분 15,45) |
 | `usr/local/cron/cp_routing_setup.php` | pfctl 라우팅 초기세팅 + 배포 시 phantom 정리·구룰 purge |
+| `usr/local/cron/cp_routing_table_resync.php` | cp_gw_* 테이블 매분 재적재 안전망 (#20, 과금 누수 차단) |
+| `usr/local/sbin/cp_gateway_alarm.sh` | dpinger 알람 래퍼: 표준 핸들러 후 테이블 즉시 재적재 (#20, 0755) |
+| `etc/inc/gwlb.inc` | 게이트웨이 모니터링(dpinger). `start_dpinger` 알람명령을 위 래퍼로 교체(#20) |
 | `etc/inc/vlanstate.sh` | VLAN 상태 telnet 조회 셸 (vlan_state_timeperiod_check.php가 호출) |
 
 > **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` /
@@ -461,8 +464,88 @@
   가 1일 00:00 **2개 항목** 중복 → 동시 실행(가드 없는 무조건 write → lost-update + 이중 resync/disconnect).
   중복 1개 제거(JSON 검증).
 
+### 18. network_usage vnstat 오류 시 uncaught exception → graceful exit (develop `3cbc321`)
+- **증상**: `network_usage_timeperiod_check.php` 가 PHP fatal(Type:1) "attempt to write a readonly database",
+  간헐 발생.
+- **원인**: `vnstat --json` 실행 시 vnstat 내부 SQLite `SQLITE_READONLY(8)` → vnstat 이 stdout 에
+  `Error:...` 출력 → PHP 가 그 문자열을 `throw new Exception` 으로 받고 **uncaught → fatal → cron 전체 abort**.
+- **간헐 이유**: 재부팅 직후 `/var`(tmpfs) vnstatd 초기화 race / 웹경로(`/usr/local/www`)+cron 동시 vnstat 호출 /
+  vnstatd↔CLI write 경합.
+- **수정**: throw 2곳 → `error_log + pclose + exit(0)`. vnstat DB 복구(부팅 후 vnstatd) 되면 다음 cron 부터 자동 정상화.
+
+### 19. 게이트웨이 shutdown flapping → crew zone 전원 강제 로그아웃 (develop `a646380`·`bd317a2`)
+- **증상**: 전 사용자 **동시 `INTERIM ZERO` + `REGRESS-KEEP` 폭주** + 반복 끊김.
+- **사슬**: `network_usage` 게이트웨이 한도 판정이 **InfluxDB 1초 타임아웃**으로 사용량을 0(미달)으로 오독
+  → shutdown 목록이 5분마다 등재/해제 토글 → `$isModified` 마다 **`captiveportal_disconnect_all()` 로 crew
+  zone 전원 로그아웃**(+ ipfw 카운터 전부 리셋 → ZERO/REGRESS). disconnect 인자에 게이트웨이가 없어
+  **무관한 단말까지** 끊김. (조회창이 "월초~현재"라 월말로 갈수록 무거워져 타임아웃 빈도↑.)
+- **수정 3종(`a646380`)**: ① `get_datausage_from_db` 하드실패(타임아웃/비200) 시 `false` → 크론은 false 면
+  상태 변경 없이 skip(flapping 차단). ② zone 전체 disconnect_all 제거 → "새로 shutdown 된 게이트웨이의,
+  실제 차단되는 사용자(`antenna_allowed()=false`)만" 개별 disconnect(`cp_disconnect_users_blocked_by_shutdown`).
+  ③ 조회 timeout 1→4초(크론만, UI 1초 유지).
+- **불씨 제거(`bd317a2`)**: 게이트웨이 사용량 판정을 **원격 influx 합산 → 로컬 vnstat 이번달 누계**로 전환
+  (`get_vnstat_month_to_date_map`/`get_gateway_monthly_usage_local`, `/var/db` 캐시 + stale-on-failure).
+  influx 의 traffic 은 본래 이 박스 vnstat 의 원격 사본이라 왕복 불필요 → 원격 의존 제거 = 타임아웃·flapping
+  원천 차단. influx 쓰기(대시보드)·UI 의 `get_datausage_from_db` 는 유지.
+- **계측 영향(분석, 일부 미수정 수용)**: 카운터 리셋 반복 시 high-water 가드는 세션 중 쿼터만 지키고 Stop 은
+  live(`CUR_TOTAL`)를 접어 **mid-session 리셋분 과소계상** 갭 존재. 게이트웨이/대시보드는 음수 delta·1초
+  timeout drop 으로 손상 + flapping 과 피드백 루프.
+
+### 20. crew 라우팅 과금 무결성 — cp_gw_* 테이블 재동기화(누수 차단) + 즉시화 (develop `0880718`·`7b1a4a7`)
+- **정책 확정(B-1)**: 각 user id 는 `varusersterminaltype` 로 **고정 uplink** 에 route-to. **지정 uplink 다운 시
+  블랙홀**(다른 uplink 로 절대 안 감 — 과금 오귀속 방지). **공란/'auto' 만 예외**(`cp_gw_default`=기본/자동
+  라우팅; 이미 코드 반영: `cp_sync_routing_tables` 의 `null→cp_gw_default`).
+- **누수 버그**: route-to/block 룰은 `cp_gw_*` pfctl 테이블에 IP 가 있을 때만 동작. `filter_configure()`
+  (게이트웨이 up/down 이 자동 트리거)가 **빈 alias 기준으로 테이블 flush** → pass·block 둘 다 매칭 실패 →
+  고정 사용자 트래픽이 **기본경로(반대 uplink)로 새어 오과금**. (block 룰=타 WAN egress 차단이 누수 본체
+  차단이고, 재동기화가 "block 룰 항상 매칭" 보장. 기본경로가 항상 crew WAN 이라 "Skip rules when gw down"
+  GUI 설정은 불필요.)
+- **수정**: ① `cp_resync_pf_tables_only()` 신규 — CP 세션 DB 기준 테이블만 재적재(config/룰 미수정·filter
+  미호출). **empty-guard**(세션 읽기 실패/빈 결과면 no-op → 전 테이블 flush 사고 방지) + **미해석-고정 가드**
+  (terminal_type 설정됐는데 GW 매칭 실패면 cp_gw_default 흡수 안 하고 경고 로그). 매분 크론
+  `cp_routing_table_resync.php` 등록. ② **즉시화**(`7b1a4a7`): dpinger 알람을
+  `/usr/local/sbin/cp_gateway_alarm.sh` 래퍼로 교체(`gwlb.inc start_dpinger`, `file_exists` 폴백) — 표준
+  `/etc/rc.gateway_alarm` 먼저 실행 후 `sleep 3` 백그라운드로 재적재 → 누수창 ~60초 → ~수초.
+
+### 21. 끊김 진단 — 라우팅 버그 아님(사용 행태/단말 설정) + 완화 (develop `7561fe5`·`4e9dc25`·`04d603e`)
+- **다척 로그 진단**: 옛 disconnect_all flapping(#19)은 **미발화**(REGRESS/대량 ZERO 없음). 현재 끊김의 주동인은
+  **(a) Starlink↔VSAT uplink 전환/불안정, (b) 랜덤 MAC**(접속마다 변경 → `already_connected`/MAC
+  마이그레이션 무력화 → 매 재접속 강제 재로그인), **(c) 쿼터 절약 WiFi on/off**(세션 plateau=무트래픽),
+  **(d) 공용/빌려주기 기기 계정 handoff**, **(e) `noconcurrentlogins=last` 의 동시-2기기 kick-war**,
+  **(f) blank 도배 단말**. → **전부 라우팅 패치로 안 잡힘**(라우팅 패치는 과금 누수만 해결).
+  - 계정 정책: **동시 다중기기 불가**(noconcurrent=last 가 옛 세션 강퇴로 구현), **순차 다른기기(공용/빌려주기) 허용**.
+- **완화 적용**:
+  - **랜덤 MAC 끄기 로그인 안내문**(`captiveportal.inc renderLoginPortalHtml`, notice-warning, 영문 단문 `7561fe5`).
+  - **다국어 i18n 1차**(`4e9dc25`): en/ko/tl/vi/id/zh/my 7종. `cp_supported_langs/cp_i18n_dict/cp_t/cp_resolve_lang`
+    (captiveportal.inc). 언어결정 `?lang`→쿠키 `cp_lang`→`Accept-Language`(auto)→en. 로그인 페이지 전체 +
+    셸(`captiveportal-crew.html`) `<html lang>`/title/상단 드롭다운(쿠키 저장 후 GET 재요청)/비번토글.
+    ko 외 best-effort(현지검수 권장, 사전 한곳 수정). **2차(로그아웃/비번변경/JS 메시지) 미진행**.
+  - **blank 폭주 완화**(`04d603e`): `index.php` 로그인 처리가 (line 497 가드가 `REQUEST_METHOD==='POST'` 로
+    바뀌어) **로그인 의도 없는 POST**(OS 캡티브 탐지 자동 POST·빈 폼 재제출)에도 `authenticate_user('')` 호출 →
+    `FAILURE("Username blank")` 로깅 + 빈 인증 spawn. → **빈 username 단락**: radmac 외 username 비면 인증·로깅
+    없이 `portal_reply_page("login")` 만. 후속옵션(미적용): line 497 가드 `!empty($_POST['accept'])` 환원.
+  - **운영 레버**: 만성 blank 도배 단말 식별(패스스루/차단) + 랜덤 MAC 끄기 안내 + dpinger 튜닝(uplink 전환↓)
+    + DHCP 리스/idle-timeout 조정(WiFi 토글 시 무중단 복귀).
+
 ## 다음 작업 대기 중
 
+- [x] **#21**: 끊김 진단(라우팅 버그 아님) + 완화 — 랜덤MAC 안내·i18n 1차·blank 단락
+  — develop `7561fe5`·`4e9dc25`·`04d603e`
+- [ ] #21 검증: 배포 후 `Username blank` 빈도 급감 / 로그인 페이지 언어 드롭다운·자동감지 동작 /
+  ko 외 번역 현지검수 / blank 도배 단말 식별·정리
+- [ ] #21 후속(미적용): index.php line 497 가드 `!empty($_POST['accept'])` 환원(영향확인 후) /
+  i18n 2차(로그아웃·비번변경·JS 메시지)
+- [x] **#20**: cp_gw_* 테이블 재동기화(과금 누수 차단) + dpinger 알람 즉시화 — develop `0880718`·`7b1a4a7`
+- [ ] #20 검증: crew 로그인 상태에서 `pfctl -t cp_gw_starlink -T show` → filter reload(방화벽 저장/게이트웨이
+  flap) 후에도 1분 내 자동 복구(즉시화면 수초) / dpinger `-C ".../cp_gateway_alarm.sh"` 로 기동(재시작 후) /
+  `PINNED user ... unresolved` 경고 시 terminal_type 점검 / 기본경로가 항상 crew WAN 인지(block 커버리지)
+- [x] **#19**: 게이트웨이 shutdown flapping 전원 로그아웃 차단(3종) + 판정 vnstat 로컬 전환
+  — develop `a646380`·`bd317a2`
+- [ ] #19 검증: `wireless.log` 대량 동시 `INTERIM ZERO`/`REGRESS-KEEP` 소멸 / 한도초과 시 해당 단말만 끊김 /
+  크론 stdout `usage unavailable (vnstat+cache miss)`·`shutdown disconnect applied: N` / vnstat 월버킷 monthrotate=1 확인
+- [x] **#18**: network_usage vnstat 오류 시 uncaught exception → graceful exit — develop `3cbc321`
+- [ ] **main 반영 대기(갱신)**: #11~#21 은 아직 develop 만 (main 은 #1~#10). 명시 지시 시 병합.
+  특히 #19·#20(라우팅/과금)·#21(blank/안내)은 **최신 develop 일괄 배포**가 전제(버전 섞임 금지).
 - [x] **#17**: 리셋 견고성 3종 — getsession 무효리셋 가드 / monthly resync / prepaid 중복 cron 제거
   — develop `28c0876`·`cde34a5`·`9b8cbf7`
 - [ ] #17 검증: (A) 케이스 다른 username 으로 리셋 → 즉시 0 + 활성세션 잔존 시 `DATA RESET aborted`
