@@ -509,7 +509,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || (($cpcfg['auth_method'] ?? '') === 
 		$context = 'first';
 	}
 
-	$pipeno = captiveportal_get_next_dn_ruleno('auth');
+	// 빈 username 단락(short-circuit): OS 캡티브 탐지/빈 폼 재제출 등 "로그인 의도 없는" 요청은
+		// username 이 비어 있다. 인증 + FAILURE("Username blank") 로깅 시 로그 폭주 + 빈 인증 spawn.
+		// → username 비면 인증·로깅 없이 로그인 페이지만 재표시(radmac 은 MAC 인증이라 제외).
+		if ($context !== 'radmac' && trim((string)$user) === '') {
+			portal_reply_page($redirurl, "login", null, $clientmac, $clientip);
+			ob_flush();
+			exit;
+		}
+
+		$pipeno = captiveportal_get_next_dn_ruleno('auth');
 	if (is_null($pipeno)) {
 		$replymsg = gettext("System reached maximum login capacity");
 		if (($cpcfg['auth_method'] ?? '') === 'radmac') {
