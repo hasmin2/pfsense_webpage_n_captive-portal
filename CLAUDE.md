@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `04d603e`+ | #1~#23 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락) |
+| `develop` | `549681f`+ | #1~#22 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단) |
 | `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#17 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
@@ -255,12 +255,12 @@
   - 동시성 안전엔 **락 안에서 `parse_config(true)`로 최신본 재로딩 후 수정**해야 lost-update가
     사라짐(미리 읽어둔 값 기반 수정은 무효). 충돌하는 **모든** writer가 **같은 락**을 공유해야 효과.
   - 사용자 파일 반영은 **HUP(graceful)**; 전체 재시작은 accounting을 끊으므로 fallback 전용.
-- **남은 갭(미적용, 후속)**: PW 변경과 **동시 실행 시** 여전히 clobber 가능 —
-  - 형제 admin writer: `reset_wifi_user`(쿼터리셋)/`modify_wifi_user`/`del_wifi_user`
-  - 매분 writer 크론: `manual_routing`/`network_usage`/`vlan_state` (curl 대기를 락 밖으로 빼는
-    구조 재배치 필요 — 락을 길게 잡으면 안 됨)
-  - API 단건 생성(`APIFreeRADIUSUserCreate` 비-bulk; bulk는 `create_wifi_user` 경유라 이미 보호됨)
-  → 같은 `lock('freeradius_user_config')` 패턴으로 단계 확대 예정.
+- **남은 갭(부분 적용, 후속)**: PW 변경과 **동시 실행 시** clobber 가능했던 writer 들 —
+  - **매분/5분 writer 크론: `manual_routing`/`network_usage`/`vlan_state`/`openvpn_restart` → #22에서
+    해소(develop `549681f`).** 같은 `lock('freeradius_user_config')` + 락 밖 느린 I/O 패턴 적용.
+  - 형제 admin writer(미적용): `reset_wifi_user`(쿼터리셋)/`modify_wifi_user`/`del_wifi_user`
+  - API 단건 생성(미적용): `APIFreeRADIUSUserCreate` 비-bulk; bulk는 `create_wifi_user` 경유라 이미 보호됨
+  → 남은 둘도 같은 `lock('freeradius_user_config')` 패턴으로 단계 확대 예정.
 
 ### 11. `commit_change_pw` PHP fatal — `freeradius_update_user(NULL)` TypeError (develop 반영)
 - **증상**: 로그인 화면에서 PW 변경 시도 시 PHP fatal error 발생.
@@ -527,6 +527,30 @@
   - **운영 레버**: 만성 blank 도배 단말 식별(패스스루/차단) + 랜덤 MAC 끄기 안내 + dpinger 튜닝(uplink 전환↓)
     + DHCP 리스/idle-timeout 조정(WiFi 토글 시 무중단 복귀).
 
+### 22. 관리자 PW 리셋 무작위 미반영 — 매분/5분 writer 크론 lost-update 차단 (develop `549681f`)
+- **증상**: index.php(또는 admin GUI)에서 PW 리셋해도 **무작위로** 반영 안 됨. 재시작해도 안 되는 경우 잔존.
+  (#10에서 PW 경로에 락을 깔았는데도 남아있던 케이스.)
+- **근본 원인(진범 = 반대편 writer)**: PW 경로는 #10 C-2에서 `lock('freeradius_user_config')`로
+  보호됐으나, **락을 공유하지 않는 writer 크론**들이 프로세스 시작 시점의 **stale `$config` 스냅샷**을
+  들고 수 초간 블로킹 I/O(ping/telnet/curl/sleep) 후 `write_config()`로 **전체 트리를 통째 저장** →
+  그 창에 끼어든 PW 변경을 되돌림. **config.xml 자체가 reverted라 재시작해도 복구 안 됨.**
+  lost-update 는 대칭이라 **충돌하는 모든 writer 가 같은 락 + 최신 재로딩을 공유**해야 사라진다(#10 교훈).
+- **진범 크론(위험순)**: `openvpn_restart`(매분, ping 5초 + VPN 끊김 중 매분 write) >
+  `vlan_state`(5분, telnet 장치당 최대 12초) > `network_usage`(5분, curl) >
+  `manual_routing`(매분, sleep 2, 만료 시만). 넷 다 동일 결함(스냅샷·락 미공유·재로딩 없음).
+- **수정 (4개 크론, 동일 패턴)**: **느린 I/O 는 락 밖**에서 끝내고, 락 안에서 `parse_config(true)`로
+  최신본 재로딩 후 **이 크론의 delta 만 재적용** → PW writer 와 같은 락 공유. 락은 짧게(I/O 제외).
+  - `manual_routing`: `gateways` 의 `manualroute*` 키 unset, `sleep(2)`를 락 밖으로.
+  - `openvpn_restart`: `openvpnrestart` 플래그 unset + **VPN 끊김 중 매분 불필요 write 제거**(플래그
+    실제 존재 시에만 write → clobber 창 자체 축소), `$pingresult` 초기화.
+  - `vlan_state`: `vlan_device.config=$newstate`, 두 `write_config`를 1개로 통합(net 결과 동일).
+  - `network_usage`: `system.cp_shutdown_gateways` 만 재적용. **주의**: `$gateways`는
+    `$config['gateways']['gateway_item']`의 **값 복사본**이라 루프 안 `rootinterface` 변경은
+    config 에 반영 안 됨 → 실제 config delta 는 shutdown 목록 문자열 하나뿐.
+- **무관 writer(무수정 확인)**: `gps_update`(write_config 주석처리), `crew_usage_timeperiod_check`(write_config 없음).
+- **남은 갭(#10 후속, 미적용)**: 형제 admin writer(`reset_wifi_user`/`modify_wifi_user`/`del_wifi_user`) +
+  API 단건 생성(`APIFreeRADIUSUserCreate` 비-bulk). 같은 락 패턴으로 확대 예정.
+
 ## 다음 작업 대기 중
 
 - [x] **#21**: 끊김 진단(라우팅 버그 아님) + 완화 — 랜덤MAC 안내·i18n 1차·blank 단락
@@ -579,7 +603,12 @@
 - [ ] #9: vlanstate.sh 간헐 미동작 해소 확인 (`.log` 정상 생성)
 - [ ] #10 핵심: **두 명 동시 PW 변경 → 둘 다 적용** 확인 / radiusd 로그 `RADIUS ACCOUNTING FAILED` 없음 / 단건 PW 즉시 반영
 - [ ] #10 가정 확인: `grep -R usersfile /usr/local/etc/raddb/mods-enabled/files` → radiusd 활성 파일이 resync 타깃과 일치 + 그 파일이 패키지 전량생성인지
-- [ ] #10 후속(B/C): 형제 admin writer(reset/modify/del_wifi_user) → 매분 writer 크론 → API 단건 생성에 동일 `lock('freeradius_user_config')` 확대
+- [x] **#22 (= #10 후속 일부)**: 매분/5분 writer 크론(manual_routing/network_usage/vlan_state/openvpn_restart)
+  lost-update 차단 — develop `549681f`
+- [ ] #22 검증: **두 명 동시 PW 변경 → 둘 다 적용** 유지 / VPN 끊김 중 `openvpn_restart` 매분 write_config
+  안 함 / vlan 상태변경·게이트웨이 shutdown 토글 후에도 직전 PW 변경 생존 / config.xml revert 소멸
+- [ ] #10 후속 잔여: 형제 admin writer(reset/modify/del_wifi_user) + API 단건 생성에 동일
+  `lock('freeradius_user_config')` 확대
 - [x] main 반영 완료 (#1~#10)
 - [ ] prod 반영은 별도 명시적 명령 (main → prod 는 재확인 후)
 
