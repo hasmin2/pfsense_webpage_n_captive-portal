@@ -5005,14 +5005,261 @@ function add_crew_linked_rule($sourceip, $userid) {
     return true;
 }
 
+/* =========================================================================
+ * Captive Portal i18n (다국어)
+ *   지원: en, ko, tl(타갈로그), vi(베트남어), id(인도네시아어), zh(중국어), my(미얀마어)
+ *   언어 결정: ?lang / 쿠키 cp_lang / 브라우저 Accept-Language(auto) / en 폴백
+ *   누락 키는 en 으로 폴백.
+ *   주의: ko 외 비영어 번역은 best-effort — 현지(선원) 검수 권장. 사전 한 곳만 고치면 됨.
+ * ========================================================================= */
+function cp_supported_langs(): array {
+    // code => 드롭다운에 표시할 원어명
+    return array(
+        'en' => 'English',
+        'ko' => '한국어',
+        'tl' => 'Tagalog',
+        'vi' => 'Tiếng Việt',
+        'id' => 'Bahasa Indonesia',
+        'zh' => '中文',
+        'my' => 'မြန်မာ',
+    );
+}
+
+function cp_resolve_lang(): string {
+    $supported = cp_supported_langs();
+
+    // 1) 명시적 선택(?lang / POST)
+    $req = '';
+    if (isset($_GET['lang']))       { $req = strtolower(trim((string)$_GET['lang'])); }
+    elseif (isset($_POST['lang']))  { $req = strtolower(trim((string)$_POST['lang'])); }
+    if ($req !== '' && isset($supported[$req])) { return $req; }
+
+    // 2) 쿠키(드롭다운이 JS 로 저장)
+    if (isset($_COOKIE['cp_lang'])) {
+        $c = strtolower(trim((string)$_COOKIE['cp_lang']));
+        if (isset($supported[$c])) { return $c; }
+    }
+
+    // 3) 브라우저 Accept-Language 자동감지(auto)
+    //    예: "ko-KR,ko;q=0.9,en;q=0.8" → 우선순위대로 첫 매칭
+    if (!empty($_SERVER['HTTP_ACCEPT_LANGUAGE'])) {
+        $al = strtolower((string)$_SERVER['HTTP_ACCEPT_LANGUAGE']);
+        foreach (explode(',', $al) as $part) {
+            $code    = trim(explode(';', $part)[0]); // "ko-kr"
+            $primary = explode('-', $code)[0];       // "ko"
+            if ($primary === 'zh' && isset($supported['zh'])) { return 'zh'; }
+            if (isset($supported[$primary])) { return $primary; }
+        }
+    }
+
+    // 4) 폴백
+    return 'en';
+}
+
+function cp_t(string $key, string $lang = 'en'): string {
+    static $dict = null;
+    if ($dict === null) { $dict = cp_i18n_dict(); }
+    if (isset($dict[$lang][$key])) { return $dict[$lang][$key]; }
+    if (isset($dict['en'][$key]))  { return $dict['en'][$key]; }
+    return $key;
+}
+
+function cp_i18n_dict(): array {
+    return array(
+        'en' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'Welcome!',
+            'subtitle'     => 'Secure network access with login, status information, and quota lookup in one place.',
+            'username'     => 'Username',
+            'ph_username'  => 'Enter your username',
+            'password'     => 'Password',
+            'ph_password'  => 'Enter your password',
+            'show'         => 'Show',
+            'hide'         => 'Hide',
+            'terms_agree'  => 'I agree with the %s.',
+            'terms_link'   => 'terms & licences',
+            'login'        => 'Login',
+            'login_helper' => 'Login errors, session notices, and other messages are displayed in the alert area above.',
+            'mac_notice'   => 'For a stable connection, please disable %s for this network.',
+            'quota_title'  => 'Check quota',
+            'quota_subtitle' => 'Check usage for your reference.',
+            'ph_quota_user'=> 'Enter username for quota check',
+            'check_usage'  => 'Check data usage',
+            'quota_helper' => 'The quota lookup button is enabled after a username is entered.',
+            'quota_loaded' => 'Quota result loaded.',
+            'total'        => 'Total',
+            'used'         => 'Used',
+            'remain'       => 'Remain',
+            'lang_label'   => 'Language',
+        ),
+        'ko' => array(
+            'title'        => '캡티브 포털',
+            'welcome'      => '환영합니다!',
+            'subtitle'     => '로그인, 상태 정보, 사용량 조회를 한 곳에서.',
+            'username'     => '사용자 이름',
+            'ph_username'  => '사용자 이름을 입력하세요',
+            'password'     => '비밀번호',
+            'ph_password'  => '비밀번호를 입력하세요',
+            'show'         => '표시',
+            'hide'         => '숨기기',
+            'terms_agree'  => '%s에 동의합니다.',
+            'terms_link'   => '약관 및 라이선스',
+            'login'        => '로그인',
+            'login_helper' => '로그인 오류 및 알림 메시지는 위 알림 영역에 표시됩니다.',
+            'mac_notice'   => '안정적인 연결을 위해 이 네트워크에서 %s를 꺼 주세요.',
+            'quota_title'  => '사용량 조회',
+            'quota_subtitle' => '참고용 사용량을 확인하세요.',
+            'ph_quota_user'=> '조회할 사용자 이름을 입력하세요',
+            'check_usage'  => '데이터 사용량 조회',
+            'quota_helper' => '사용자 이름을 입력하면 조회 버튼이 활성화됩니다.',
+            'quota_loaded' => '사용량 결과를 불러왔습니다.',
+            'total'        => '전체',
+            'used'         => '사용',
+            'remain'       => '남음',
+            'lang_label'   => '언어',
+        ),
+        'tl' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'Maligayang pagdating!',
+            'subtitle'     => 'Ligtas na koneksyon: pag-login, status, at pagtingin ng quota sa isang lugar.',
+            'username'     => 'Username',
+            'ph_username'  => 'Ilagay ang iyong username',
+            'password'     => 'Password',
+            'ph_password'  => 'Ilagay ang iyong password',
+            'show'         => 'Ipakita',
+            'hide'         => 'Itago',
+            'terms_agree'  => 'Sumasang-ayon ako sa %s.',
+            'terms_link'   => 'mga tuntunin at lisensya',
+            'login'        => 'Mag-login',
+            'login_helper' => 'Ang mga error sa login at iba pang mensahe ay ipinapakita sa alerto sa itaas.',
+            'mac_notice'   => 'Para sa matatag na koneksyon, paki-disable ang %s para sa network na ito.',
+            'quota_title'  => 'Tingnan ang quota',
+            'quota_subtitle' => 'Tingnan ang paggamit para sa iyong sanggunian.',
+            'ph_quota_user'=> 'Ilagay ang username para sa quota check',
+            'check_usage'  => 'Tingnan ang paggamit ng data',
+            'quota_helper' => 'Mae-enable ang button matapos maglagay ng username.',
+            'quota_loaded' => 'Na-load ang resulta ng quota.',
+            'total'        => 'Kabuuan',
+            'used'         => 'Nagamit',
+            'remain'       => 'Natitira',
+            'lang_label'   => 'Wika',
+        ),
+        'vi' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'Chào mừng!',
+            'subtitle'     => 'Truy cập mạng an toàn: đăng nhập, trạng thái và tra cứu dung lượng tại một nơi.',
+            'username'     => 'Tên đăng nhập',
+            'ph_username'  => 'Nhập tên đăng nhập của bạn',
+            'password'     => 'Mật khẩu',
+            'ph_password'  => 'Nhập mật khẩu của bạn',
+            'show'         => 'Hiện',
+            'hide'         => 'Ẩn',
+            'terms_agree'  => 'Tôi đồng ý với %s.',
+            'terms_link'   => 'điều khoản và giấy phép',
+            'login'        => 'Đăng nhập',
+            'login_helper' => 'Lỗi đăng nhập và các thông báo khác sẽ hiển thị ở khu vực cảnh báo phía trên.',
+            'mac_notice'   => 'Để kết nối ổn định, vui lòng tắt %s cho mạng này.',
+            'quota_title'  => 'Kiểm tra dung lượng',
+            'quota_subtitle' => 'Xem mức sử dụng để tham khảo.',
+            'ph_quota_user'=> 'Nhập tên đăng nhập để kiểm tra dung lượng',
+            'check_usage'  => 'Kiểm tra mức dùng dữ liệu',
+            'quota_helper' => 'Nút tra cứu sẽ bật sau khi nhập tên đăng nhập.',
+            'quota_loaded' => 'Đã tải kết quả dung lượng.',
+            'total'        => 'Tổng',
+            'used'         => 'Đã dùng',
+            'remain'       => 'Còn lại',
+            'lang_label'   => 'Ngôn ngữ',
+        ),
+        'id' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'Selamat datang!',
+            'subtitle'     => 'Akses jaringan aman: login, status, dan cek kuota dalam satu tempat.',
+            'username'     => 'Nama pengguna',
+            'ph_username'  => 'Masukkan nama pengguna Anda',
+            'password'     => 'Kata sandi',
+            'ph_password'  => 'Masukkan kata sandi Anda',
+            'show'         => 'Tampilkan',
+            'hide'         => 'Sembunyikan',
+            'terms_agree'  => 'Saya menyetujui %s.',
+            'terms_link'   => 'syarat & lisensi',
+            'login'        => 'Masuk',
+            'login_helper' => 'Kesalahan login dan pesan lain ditampilkan di area peringatan di atas.',
+            'mac_notice'   => 'Untuk koneksi yang stabil, harap nonaktifkan %s untuk jaringan ini.',
+            'quota_title'  => 'Cek kuota',
+            'quota_subtitle' => 'Lihat penggunaan untuk referensi Anda.',
+            'ph_quota_user'=> 'Masukkan nama pengguna untuk cek kuota',
+            'check_usage'  => 'Cek penggunaan data',
+            'quota_helper' => 'Tombol cek aktif setelah nama pengguna dimasukkan.',
+            'quota_loaded' => 'Hasil kuota dimuat.',
+            'total'        => 'Total',
+            'used'         => 'Terpakai',
+            'remain'       => 'Sisa',
+            'lang_label'   => 'Bahasa',
+        ),
+        'zh' => array(
+            'title'        => '强制门户',
+            'welcome'      => '欢迎！',
+            'subtitle'     => '安全网络接入：登录、状态信息与流量查询，一处搞定。',
+            'username'     => '用户名',
+            'ph_username'  => '请输入用户名',
+            'password'     => '密码',
+            'ph_password'  => '请输入密码',
+            'show'         => '显示',
+            'hide'         => '隐藏',
+            'terms_agree'  => '我同意%s。',
+            'terms_link'   => '条款与许可',
+            'login'        => '登录',
+            'login_helper' => '登录错误及通知消息将显示在上方提示区域。',
+            'mac_notice'   => '为保持连接稳定，请在本网络关闭%s。',
+            'quota_title'  => '查询流量',
+            'quota_subtitle' => '查看使用量以供参考。',
+            'ph_quota_user'=> '输入要查询的用户名',
+            'check_usage'  => '查询数据使用量',
+            'quota_helper' => '输入用户名后，查询按钮将启用。',
+            'quota_loaded' => '已加载流量结果。',
+            'total'        => '总计',
+            'used'         => '已用',
+            'remain'       => '剩余',
+            'lang_label'   => '语言',
+        ),
+        'my' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'ကြိုဆိုပါတယ်!',
+            'subtitle'     => 'လုံခြုံသော ကွန်ရက်ချိတ်ဆက်မှု — အကောင့်ဝင်ခြင်း၊ အခြေအနေနှင့် ဒေတာသုံးစွဲမှုကို တစ်နေရာတည်းတွင်။',
+            'username'     => 'အသုံးပြုသူအမည်',
+            'ph_username'  => 'သင့်အသုံးပြုသူအမည် ထည့်ပါ',
+            'password'     => 'စကားဝှက်',
+            'ph_password'  => 'သင့်စကားဝှက် ထည့်ပါ',
+            'show'         => 'ပြရန်',
+            'hide'         => 'ဖျောက်ရန်',
+            'terms_agree'  => '%s ကို သဘောတူပါသည်။',
+            'terms_link'   => 'စည်းကမ်းနှင့် လိုင်စင်',
+            'login'        => 'ဝင်ရန်',
+            'login_helper' => 'အကောင့်ဝင်ရာ အမှားနှင့် အကြောင်းကြားချက်များကို အပေါ်ရှိ သတိပေးနေရာတွင် ပြသပါမည်။',
+            'mac_notice'   => 'တည်ငြိမ်သော ချိတ်ဆက်မှုအတွက် ဤကွန်ရက်တွင် %s ကို ပိတ်ပါ။',
+            'quota_title'  => 'ဒေတာသုံးစွဲမှု စစ်ဆေးရန်',
+            'quota_subtitle' => 'ကိုးကားရန် သုံးစွဲမှုကို ကြည့်ပါ။',
+            'ph_quota_user'=> 'စစ်ဆေးရန် အသုံးပြုသူအမည် ထည့်ပါ',
+            'check_usage'  => 'ဒေတာသုံးစွဲမှု စစ်ဆေးရန်',
+            'quota_helper' => 'အသုံးပြုသူအမည် ထည့်ပြီးမှ ခလုတ်ကို အသုံးပြုနိုင်ပါမည်။',
+            'quota_loaded' => 'ဒေတာသုံးစွဲမှု ရလဒ်ကို တင်ပြီးပါပြီ။',
+            'total'        => 'စုစုပေါင်း',
+            'used'         => 'သုံးပြီး',
+            'remain'       => 'ကျန်',
+            'lang_label'   => 'ဘာသာစကား',
+        ),
+    );
+}
+
 function renderLoginPortalHtml(array $data = []): string
 {
+    $lang = $data['lang'] ?? (function_exists('cp_resolve_lang') ? cp_resolve_lang() : 'en');
     $logo    = $data['logo'] ?? '';
     $portalError    = $data['portalError'] ?? '';
     $portalInfo     = $data['portalInfo'] ?? '';
     $loginUser = $data['loginUserValue'] ?? '';
     $uiConfig       = $data['uiConfig'] ?? [];
-    $subject        = $data['subject'] ?? 'Welcome!';
+    $subject        = $data['subject'] ?? cp_t('welcome', $lang);
     $quotaNotice    = $data['quotaNotice'] ?? '';
     $showQuotaResult= $data['showQuotaResult'] ?? false;
     $quotaResultMsg = $data['quotaResultMsg'] ?? '';
@@ -5040,7 +5287,7 @@ function renderLoginPortalHtml(array $data = []): string
                     <div>
                         <h1 class="page-title"><?=h($subject)?></h1>
                         <p class="page-subtitle">
-                            Secure network access with login, status information, and quota lookup in one place.
+                            <?= h(cp_t('subtitle', $lang)) ?>
                         </p>
                     </div>
                 </div>
@@ -5054,20 +5301,22 @@ function renderLoginPortalHtml(array $data = []): string
                 <?php endif; ?>
 
                 <div class="notice notice-warning">
-                    For a stable connection, please disable
-                    <b>&ldquo;Private / Random Wi-Fi Address&rdquo;</b> for this network.
+                    <?= sprintf(
+                        h(cp_t('mac_notice', $lang)),
+                        '<b>&ldquo;Private / Random Wi-Fi Address&rdquo;</b>'
+                    ) ?>
                 </div>
 
                 <form name="login_form" method="post" action="/index.php" autocomplete="on">
                     <div class="field">
-                        <label for="login_user">Username</label>
+                        <label for="login_user"><?= h(cp_t('username', $lang)) ?></label>
                         <div class="input-wrap">
                             <input
                                     class="input"
                                     type="text"
                                     name="auth_user"
                                     id="login_user"
-                                    placeholder="Enter your username"
+                                    placeholder="<?= h(cp_t('ph_username', $lang)) ?>"
                                     autocomplete="username"
                                     autocapitalize="none"
                                     spellcheck="false"
@@ -5077,18 +5326,18 @@ function renderLoginPortalHtml(array $data = []): string
                     </div>
 
                     <div class="field">
-                        <label for="login_pass">Password</label>
+                        <label for="login_pass"><?= h(cp_t('password', $lang)) ?></label>
                         <div class="input-wrap">
                             <input
                                     class="input with-action"
                                     type="password"
                                     name="auth_pass"
                                     id="login_pass"
-                                    placeholder="Enter your password"
+                                    placeholder="<?= h(cp_t('ph_password', $lang)) ?>"
                                     autocomplete="current-password"
                                     required
                             />
-                            <button type="button" class="input-action" id="togglePassword">Show</button>
+                            <button type="button" class="input-action" id="togglePassword"><?= h(cp_t('show', $lang)) ?></button>
                         </div>
                     </div>
 
@@ -5103,8 +5352,10 @@ function renderLoginPortalHtml(array $data = []): string
                                     checked
                             />
                             <span>
-                        I agree with the
-                        <a target="_blank" rel="noopener" href="http://192.168.208.1:8002/example.pdf">terms &amp; licences</a>.
+                        <?= sprintf(
+                            h(cp_t('terms_agree', $lang)),
+                            '<a target="_blank" rel="noopener" href="http://192.168.208.1:8002/example.pdf">' . h(cp_t('terms_link', $lang)) . '</a>'
+                        ) ?>
                     </span>
                         </div>
                     <?php endif; ?>
@@ -5113,21 +5364,21 @@ function renderLoginPortalHtml(array $data = []): string
                                 type="submit"
                                 name="accept"
                                 class="btn btn-primary"
-                                value="Login"
+                                value="<?= h(cp_t('login', $lang)) ?>"
                                 id="loginBtn"
                         >
                     </div>
                     <input name="login" type="hidden" value="true">
                     <div class="helper">
-                        Login errors, session notices, and other messages are displayed in the alert area above.
+                        <?= h(cp_t('login_helper', $lang)) ?>
                     </div>
                 </form>
             </div>
             <div class="card">
                 <div class="card-head">
                     <div>
-                        <h2 class="card-title">Check quota</h2>
-                        <p class="card-subtitle">Check Usage for your reference.</p>
+                        <h2 class="card-title"><?= h(cp_t('quota_title', $lang)) ?></h2>
+                        <p class="card-subtitle"><?= h(cp_t('quota_subtitle', $lang)) ?></p>
                     </div>
                 </div>
 
@@ -5137,14 +5388,14 @@ function renderLoginPortalHtml(array $data = []): string
 
                 <form name="quota_form" method="post" action="/index.php" autocomplete="on">
                     <div class="field">
-                        <label for="quota_user">Username</label>
+                        <label for="quota_user"><?= h(cp_t('username', $lang)) ?></label>
                         <div class="input-wrap">
                             <input
                                     class="input"
                                     type="text"
                                     name="quota_user"
                                     id="quota_user"
-                                    placeholder="Enter username for quota check"
+                                    placeholder="<?= h(cp_t('ph_quota_user', $lang)) ?>"
                                     autocomplete="username"
                                     autocapitalize="none"
                                     spellcheck="false"
@@ -5159,34 +5410,34 @@ function renderLoginPortalHtml(array $data = []): string
                                 type="submit"
                                 name="quota"
                                 class="btn btn-secondary"
-                                value="Check data usage"
+                                value="<?= h(cp_t('check_usage', $lang)) ?>"
                                 id="check_quota"
                             <?= $loginUser === '' ? 'disabled' : '' ?>
                         >
                     </div>
 
                     <div class="helper">
-                        The quota lookup button is enabled after a username is entered.
+                        <?= h(cp_t('quota_helper', $lang)) ?>
                     </div>
                 </form>
 
                 <?php if ($showQuotaResult): ?>
                     <div id="quotaResultBox" class="quota-result">
                         <div class="notice notice-success" style="margin:0 0 12px 0;">
-                            <?= h($quotaResultMsg !== '' ? $quotaResultMsg : 'Quota result loaded.') ?>
+                            <?= h($quotaResultMsg !== '' ? $quotaResultMsg : cp_t('quota_loaded', $lang)) ?>
                         </div>
 
                         <div class="quota-grid">
                             <div class="quota-box">
-                                <span class="label">Total</span>
+                                <span class="label"><?= h(cp_t('total', $lang)) ?></span>
                                 <span class="value"><?= h($quotaAllocated !== '' ? $quotaAllocated : '-') ?></span>
                             </div>
                             <div class="quota-box">
-                                <span class="label">Used</span>
+                                <span class="label"><?= h(cp_t('used', $lang)) ?></span>
                                 <span class="value"><?= h($quotaUsed !== '' ? $quotaUsed : '-') ?></span>
                             </div>
                             <div class="quota-box">
-                                <span class="label">Remain</span>
+                                <span class="label"><?= h(cp_t('remain', $lang)) ?></span>
                                 <span class="value"><?= h($quotaRemain !== '' ? $quotaRemain : '-') ?></span>
                             </div>
                         </div>
