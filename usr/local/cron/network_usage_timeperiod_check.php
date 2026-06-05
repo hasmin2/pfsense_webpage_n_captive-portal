@@ -231,7 +231,26 @@ if ($isModified) {
         $disconnected = cp_disconnect_users_blocked_by_shutdown();
         echo "shutdown disconnect applied: " . $disconnected . " user(s)\n";
     }
-    write_config("Update captiveportal shutdown gateway list");
+
+    // lost-update 방지: 느린 vnstat/curl 은 위에서 끝났고, 이 크론이 $config 에서 실제로
+    // 바꾸는 값은 $config['system']['cp_shutdown_gateways'] 하나뿐이다($gateways 는 line 78
+    // 에서 만든 복사본이라 rootinterface 변경은 config 에 반영되지 않음). 락 안에서 최신본
+    // (parse_config(true)) 재로딩 후 그 키만 재적용 → 동시 PW 변경 등을 덮지 않는다.
+    // (PW writer 와 같은 lock('freeradius_user_config') 공유.)
+    $new_shutdown_list = isset($config['system']['cp_shutdown_gateways'])
+        ? $config['system']['cp_shutdown_gateways']
+        : '';
+    $cnf_lock = lock('freeradius_user_config', LOCK_EX);
+    try {
+        $config = parse_config(true);
+        if (!isset($config['system']) || !is_array($config['system'])) {
+            $config['system'] = array();
+        }
+        $config['system']['cp_shutdown_gateways'] = $new_shutdown_list;
+        write_config("Update captiveportal shutdown gateway list");
+    } finally {
+        unlock($cnf_lock);
+    }
 }
 // Fix#2: crew zone 의 활성 세션 중, 현재 cp_shutdown_gateways 로 차단되는
 // 사용자(antenna_allowed()=false)만 골라 개별 로그아웃한다.
