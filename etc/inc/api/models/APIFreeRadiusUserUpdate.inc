@@ -66,6 +66,10 @@ class APIFreeRADIUSUserUpdate extends APIModel {
                     if (function_exists('captiveportal_reset_user_usage')) {
                         foreach (array_unique($reset_users) as $ru) {
                             if (is_string($ru) && $ru !== '') {
+                                if (function_exists('cp_wireless_log')) {
+                                    $actor = function_exists('cp_admin_actor') ? cp_admin_actor() : 'REMOTE API';
+                                    cp_wireless_log("Reset Datausage: ".$ru." by ".$actor);
+                                }
                                 captiveportal_reset_user_usage($ru);
                             }
                         }

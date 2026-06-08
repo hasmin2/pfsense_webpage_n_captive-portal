@@ -1695,6 +1695,40 @@ if (!function_exists('cp_wireless_log')) {
     }
 }
 
+if (!function_exists('cp_admin_actor')) {
+    /*
+     * 관리 작업(리셋/삭제/PW변경 등)을 수행한 주체를 반환한다.
+     * - GUI 로그인 세션이 있으면 그 관리자 ID($_SESSION['Username']).
+     * - 세션이 없는 호출(원격 API 등)은 "REMOTE API" + 호출자 IP.
+     *   IP는 TCP 피어(REMOTE_ADDR)를 쓰고, 리버스 프록시 뒤일 수 있어
+     *   X-Forwarded-For 선두값이 다르면 보조로 덧붙인다(XFF는 스푸핑 가능 — 참고용).
+     * - $_SERVER 자체가 없는 CLI/cron 호출이면 "REMOTE API".
+     * cp_wireless_log가 줄바꿈/탭을 다시 정리하므로 여기선 값만 정리한다.
+     */
+    function cp_admin_actor(): string
+    {
+        if (!empty($_SESSION['Username'])) {
+            $actor = trim(str_replace(["\r", "\n", "\t"], ' ', (string)$_SESSION['Username']));
+            if ($actor !== '') {
+                return $actor;
+            }
+        }
+
+        // 세션 없음 → 원격 API 호출로 간주, 호출자 IP를 식별한다.
+        $ip = !empty($_SERVER['REMOTE_ADDR']) ? (string)$_SERVER['REMOTE_ADDR'] : '';
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $xff = explode(',', (string)$_SERVER['HTTP_X_FORWARDED_FOR']);
+            $xff_ip = trim($xff[0]);
+            if ($xff_ip !== '' && $xff_ip !== $ip) {
+                $ip = ($ip !== '') ? "{$ip} via {$xff_ip}" : $xff_ip;
+            }
+        }
+        $ip = trim(str_replace(["\r", "\n", "\t"], ' ', $ip));
+
+        return ($ip !== '') ? "REMOTE API ({$ip})" : "REMOTE API";
+    }
+}
+
 
 /* log successful captive portal authentication to syslog */
 /* part of this code from php.net */

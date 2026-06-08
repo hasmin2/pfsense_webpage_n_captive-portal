@@ -919,7 +919,7 @@ function del_wifi_user($userlist){
                 unlink_if_exists("/var/log/radacct/datacounter/monthly/max-octets-$user");
                 unlink_if_exists("/var/log/radacct/datacounter/forever/used-octets-$user*");
                 unlink_if_exists("/var/log/radacct/datacounter/forever/max-octets-$user");
-                cp_wireless_log("Deleted user: ".$user);
+                cp_wireless_log("Deleted user: ".$user." by ".cp_admin_actor());
             }
         }
     }
@@ -973,7 +973,7 @@ function reset_wifi_user($userlist){
                 // 태그는 그대로 유지(차후 로그인 fallback). 실제 리셋은 아래에서 "즉시" 수행.
                 $config['installedpackages']['freeradius']['config'][$item]['varusersresetquota'] = "true";
                 $config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
-                cp_wireless_log("Reset Datausage: ".$userentry['varusersusername']);
+                cp_wireless_log("Reset Datausage: ".$userentry['varusersusername']." by ".cp_admin_actor());
                 $reset_targets[] = $userentry['varusersusername'];
             }
         }
@@ -1000,7 +1000,7 @@ function reset_wifi_user_pw($userlist){
                 if ($user === $userentry['varusersusername']) {
                     $config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword'] = "1111";
                     $changed = true;
-                    cp_wireless_log("Reset initial password: ".$userentry['varusersusername']);
+                    cp_wireless_log("Reset initial password: ".$userentry['varusersusername']." by ".cp_admin_actor());
                 }
             }
         }
@@ -1033,7 +1033,7 @@ function reset_random_wifi_user_pw($userlist){
                     }
                     $config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword'] = implode($pass);
                     $changed = true;
-                    cp_wireless_log("Reset random password: ".$userentry['varusersusername']);
+                    cp_wireless_log("Reset random password: ".$userentry['varusersusername']." by ".cp_admin_actor());
                 }
             }
         }
