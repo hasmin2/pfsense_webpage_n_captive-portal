@@ -484,9 +484,35 @@ function get_datausage_from_db($dataMetric, $timeout = 1) {
 // vnstat 의 "이번 달" 누계를 인터페이스명 => bytes(rx+tx) 맵으로 1회 조회한다.
 // 루프에서 게이트웨이마다 vnstat 를 호출하지 않도록 호출측이 1회만 부르고 재사용.
 // 실패(미설치/오류/파싱불가)면 false 를 반환한다.
+// vnstat --json 을 재시도 포함으로 실행한다.
+// vnstat SQLite DB 가 vnstatd 쓰기와 겹치면 "database is locked"(SQLITE_BUSY) 나
+// "Database version 0 ..." 등으로 일시 실패한다(선상에서 하루 수십 회 관측). lock 은
+// 보통 수십~수백 ms 만 유지되므로 즉시 skip 하지 말고 짧게 대기 후 재시도해 대부분의
+// 일시적 실패를 성공으로 흡수한다. 성공 시 JSON 문자열, 끝까지 실패하면 false.
+// (stderr 는 버리고, 유효한 interfaces JSON 인지로 성공을 판정 → Error/빈/부분출력 모두 재시도.)
+if (!function_exists('cp_vnstat_json_exec')) {
+    function cp_vnstat_json_exec($modeargs = '', $maxtries = 4, $sleep_us = 500000) {
+        $args = trim((string)$modeargs);
+        $cmd  = '/usr/local/bin/vnstat --json' . ($args !== '' ? ' ' . $args : '') . ' 2>/dev/null';
+        for ($i = 0; $i < $maxtries; $i++) {
+            $out = shell_exec($cmd);
+            if (is_string($out) && $out !== '' && strncmp($out, 'Error', 5) !== 0) {
+                $decoded = json_decode($out, true);
+                if (is_array($decoded) && isset($decoded['interfaces'])) {
+                    return $out;
+                }
+            }
+            if ($i < $maxtries - 1) {
+                usleep($sleep_us);
+            }
+        }
+        return false;
+    }
+}
+
 function get_vnstat_month_to_date_map() {
-    $json = shell_exec('/usr/local/bin/vnstat --json m 2>/dev/null');
-    if (!is_string($json) || $json === '' || strncmp($json, "Error", 5) === 0) {
+    $json = cp_vnstat_json_exec('m');
+    if ($json === false) {
         return false;
     }
     $data = json_decode($json, true);

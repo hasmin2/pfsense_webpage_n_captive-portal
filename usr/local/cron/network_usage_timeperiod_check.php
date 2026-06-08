@@ -26,28 +26,35 @@
 require_once("terminal_status.inc");
 require_once("captiveportal.inc");
 require_once("status_traffic_totals.inc");
+// vnstat SQLite DB 가 vnstatd 쓰기와 겹치면 "database is locked"(SQLITE_BUSY) 로
+// 일시 실패한다(선상에서 하루 수십 회). 즉시 skip 하면 그 5분 구간 게이트웨이 사용량
+// 갱신이 통째로 누락되므로 재시도 헬퍼로 일시적 lock 을 흡수한다(#18 graceful skip 유지).
 $json_string = '';
-$fd = popen("/usr/local/bin/vnstat --json f 1", "r");
-$error = "";
-
-$json_string = str_replace("\n", ' ', fgets($fd));
-if(substr($json_string, 0, 5) === "Error") {
-    error_log("[network_usage] vnstat error (skipping): " . trim(substr($json_string, 7)));
-    pclose($fd);
-    exit(0);
-}
-
-while (!feof($fd)) {
-    $json_string .= fgets($fd);
-
-    if(substr($json_string, 0, 5) === "Error") {
-        error_log("[network_usage] vnstat error (skipping): " . trim(str_replace("\n", ' ', substr($json_string, 7))));
+if (function_exists('cp_vnstat_json_exec')) {
+    $json_string = cp_vnstat_json_exec('f 1');
+    if ($json_string === false) {
+        error_log("[network_usage] vnstat unavailable after retries (skipping)");
+        exit(0);
+    }
+} else {
+    // 폴백(구버전 terminal_status.inc): 단발 실행 + graceful skip
+    $fd = popen("/usr/local/bin/vnstat --json f 1", "r");
+    $json_string = str_replace("\n", ' ', fgets($fd));
+    if (substr($json_string, 0, 5) === "Error") {
+        error_log("[network_usage] vnstat error (skipping): " . trim(substr($json_string, 7)));
         pclose($fd);
         exit(0);
     }
+    while (!feof($fd)) {
+        $json_string .= fgets($fd);
+        if (substr($json_string, 0, 5) === "Error") {
+            error_log("[network_usage] vnstat error (skipping): " . trim(str_replace("\n", ' ', substr($json_string, 7))));
+            pclose($fd);
+            exit(0);
+        }
+    }
+    pclose($fd);
 }
-#sleep (10);
-pclose($fd);
 $datastring="traffic ";
 global $config;
 $filepath="/etc/inc/";
