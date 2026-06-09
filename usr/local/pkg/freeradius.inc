@@ -927,9 +927,12 @@ EOD;
 		freeradius_sync_on_changes();
 
 		// 락을 잡은 상태에서 reload까지 수행하면 동시 호출 시 reload 도 직렬화됨.
-		// 전체 파일을 재생성했으므로 HUP(graceful)로 충분하며 accounting(1813)을 끊지 않는다.
+		// [#23 A] HUP 는 이 박스에서 rlm_files(users/authorize)를 재로딩하지 못한다(실측:
+		// 재시작해야만 비번 변경이 반영됨). 따라서 전체 재생성 후 전체 재시작으로 확실히
+		// 반영한다($allow_hup=false). accounting 단절(수초)은 수용 — 근본 해결은 radcheck(SQL)
+		// 권위화(step3). (resync 는 $changed 가드가 있는 경로에서만 호출되어 불필요 재시작 최소화.)
 		if ($via_rpc === false && !platform_booting()) {
-			freeradius_reload_or_restart_radiusd(true);
+			freeradius_reload_or_restart_radiusd(false);
 		}
 
 		return true;
@@ -1537,16 +1540,21 @@ function freeradius_validate_radiusd_config(): bool
 /*
  * radiusd 에 변경을 반영한다.
  *
- * 기본은 kill -HUP(graceful reload) 이다. HUP 는 listener(1812/1813)를 닫지 않으므로
- * accounting(1813) 패킷 유실이 없다. rlm_files 는 HUP 시 재읽기되어 users/authorize
- * 변경(비밀번호 등)이 런타임에 반영된다.
+ * [#23 중요] 이 박스에서 kill -HUP 은 rlm_files(users/authorize)를 재로딩하지 못한다(실측).
+ *   HUP 는 listener(1812/1813)를 닫지 않아 accounting 무중단이지만, 사용자 파일 변경
+ *   (비밀번호/계정)은 HUP 로 런타임 반영되지 않는다. 게다가 kill 이 시그널 전달에만 성공해도
+ *   ($ret==0) success 로 반환되어, 호출측(자가/관리자 PW 변경)은 "성공"으로 오인하지만 live
+ *   데몬은 옛 비번을 유지하는 silent-fail 이 발생한다. → 사용자 파일 변경을 반영하려면 반드시
+ *   $allow_hup=false 로 호출해 전체 재시작할 것.
  *
  * 전체 재시작(service radiusd onerestart)은 재시작 창 동안 1813 listener 가 닫혀
- * Accounting Start/Interim/Stop 이 유실(= RADIUS ACCOUNTING FAILED)될 수 있으므로,
- * HUP 전달이 불가능할 때(데몬 미기동/ PID 없음 등)의 fallback 으로만 사용한다.
+ * Accounting Start/Interim/Stop 이 유실될 수 있으나(수초), NAS 재전송 + 누적카운터 자가복구
+ * (#7)로 대부분 흡수된다. (근본 해결은 인증 소스를 radcheck(SQL)로 옮겨 reload 자체를
+ *  없애는 것 — step3.)
  *
- * @param bool $allow_hup  true(기본) : HUP 우선, 전달 불가 시에만 재시작(accounting-safe)
- *                         false      : 곧바로 전체 재시작(특수 상황 전용)
+ * @param bool $allow_hup  true  : HUP 우선(전달 불가 시에만 재시작). 단 이 박스에서는 HUP 가
+ *                                 rlm_files 를 재로딩하지 않으므로 사용자 파일 변경엔 부적합.
+ *                         false : 곧바로 전체 재시작. 사용자 파일(비번/계정) 변경엔 이 값을 쓸 것.
  */
 function freeradius_reload_or_restart_radiusd(bool $allow_hup = true): bool
 {
@@ -1774,10 +1782,16 @@ function freeradius_update_user(
 
 		fr_debug_log("freeradius_update_user: radius reload/restart start username={$username}");
 
-		// 기본은 HUP(graceful reload) — accounting(1813) 무중단.
+		// [#23 A] rlm_files(users/authorize) 변경은 이 박스에서 HUP 로 런타임 반영되지
+		// 않는다(실측: 비밀번호 변경 후 radiusd 재시작해야만 새 비번이 먹음). HUP 는 시그널
+		// 전달만 성공("ret=0")해도 success 로 처리되어, 사용자에겐 "변경 성공"이 뜨지만 live
+		// 데몬은 옛 비번을 유지하는 silent-fail 이 발생했다. 따라서 변경이 즉시 먹도록 전체
+		// 재시작으로 적용한다($allow_hup=false). 재시작 창에서 accounting(1813) 이 잠깐 닫히나
+		// (수초) NAS 재전송 + 누적카운터 자가복구(#7)로 대부분 흡수된다. 근본 해결은 인증
+		// 소스를 radcheck(SQL) 로 옮겨 reload 자체를 없애는 것(step3).
 		// $reload_radiusd=false 면 호출측이 일괄 리로드하므로 여기서는 건너뛴다(배치용).
 		if ($reload_radiusd) {
-			$radius_result = freeradius_reload_or_restart_radiusd(true);
+			$radius_result = freeradius_reload_or_restart_radiusd(false);
 		} else {
 			$radius_result = true;
 		}

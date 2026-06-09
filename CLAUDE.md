@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `549681f`+ | #1~#22 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단) |
+| `develop` | `549681f`+ | #1~#23 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구) |
 | `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#17 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
@@ -551,8 +551,70 @@
 - **남은 갭(#10 후속, 미적용)**: 형제 admin writer(`reset_wifi_user`/`modify_wifi_user`/`del_wifi_user`) +
   API 단건 생성(`APIFreeRADIUSUserCreate` 비-bulk). 같은 락 패턴으로 확대 예정.
 
+### 23. 비밀번호 변경 무반영의 진범 = HUP 가 rlm_files 를 재로딩 못 함 + radcheck(SQL) 이행 (develop `fd6ced2` + A 패치)
+- **증상(선상 다발)**: 자가/관리자 비밀번호 변경이 **무작위로 안 먹힘**. 사용자 화면엔 "Password
+  Changed Successfully" 가 뜨는데 실제로는 옛 비번만 통과. **radiusd 재시작해야만 새 비번 반영.**
+  (#10/#22 의 lost-update 락을 다 깔았는데도 남아 있던 잔존 케이스의 진짜 원인.)
+- **진단 사슬(이번 세션)**:
+  1. `cp_routing_setup.php` 의 `cp_find_all_wan_gateways() undefined` fatal → **배포 버전 섞임**
+     (captiveportal.inc 구버전 + cron 신버전). 코드 버그 아님, 일괄 재배포로 해소.
+  2. `usr001` 로그인 거부(`[AUTH-UNKNOWN] attrs=` 에 **reply 속성 0개** = MS-CHAP 미실행) →
+     "비번 틀림"이 아니라 **live radiusd 가 그 계정을 메모리에 안 갖고 있음**. `radiusd -X`
+     재시작 후 정상화 → **HUP 가 users 파일 변경을 런타임 반영 못 한다**는 결정적 증거.
+  3. 자가 비번변경 경로도 동일: `commit_change_pw`(captiveportal.inc:2886) →
+     `freeradius_update_user($u, false)` → `freeradius_reload_or_restart_radiusd(true)` = **HUP**.
+     `kill -HUP` 가 `ret==0`(시그널 전달)만으로 success 반환 → **silent-fail**(파일/ config 는
+     새 비번, live 데몬은 옛 비번). 관리자 경로(`freeradius_users_resync`)도 HUP 라 동일.
+- **근본 원인**: 이 박스에서 **`kill -HUP` 은 rlm_files(users/authorize)를 재로딩하지 않는다**(실측).
+  on-disk 파일은 resync 가 정상 갱신(`freeradius_get_target_user_files()` = `/users` + active
+  usersfile 둘 다)하므로 **재시작하면 고쳐짐** = HUP 무효가 유일 차이.
+- **A 응급 패치(이번 커밋, freeradius.inc)** — 사용자 파일 변경 reload 를 HUP→**전체 재시작**:
+  - `freeradius_update_user()` 의 reload: `freeradius_reload_or_restart_radiusd(true)` → **`(false)`**
+    (= onerestart). 자가 비번변경(`commit_change_pw`)이 이 함수를 타므로 captiveportal.inc 무수정.
+  - `freeradius_users_resync()` 의 reload도 동일하게 `(false)`. 관리자 PW/계정 변경 즉시 반영.
+  - 함수 docblock 의 잘못된 설명("HUP 면 rlm_files 재읽기됨") 정정(향후 회귀 방지).
+  - **트레이드오프(수용)**: 재시작 창 ~수초간 accounting(1813) 단절. PW 변경 빈도 낮고 NAS 재전송 +
+    누적카운터 자가복구(#7)로 흡수. resync 는 `$changed` 가드 경로에서만 호출되어 불필요 재시작 최소.
+  - (이력: #10 에서 accounting 보호 위해 HUP 로 갔으나, HUP 가 rlm_files 를 반영 못 하는 게
+    드러나 PW 경로만 재시작으로 환원. 근본 해결은 아래 step3.)
+- **B 근본 해결 = 인증 소스를 radcheck(SQL)로 (단계 이행)**: SQL 은 per-request 조회라 reload/
+  재시작 자체가 불필요 → 즉시 반영 + accounting 무중단. authorize 템플릿은 이미
+  **`files` 먼저 → 없으면 `sql`(radcheck)** 구조(serverdefault_resync, [3287~3296]).
+  - **step1+2 스테이징 도구(`fd6ced2`, 비파괴적)**:
+    - `usr/local/sbin/freeradius_migrate_users_to_radcheck.php` (step2): config.xml 사용자(비번
+      check-item)를 radcheck 로 **멱등 이관**. 기본 DRY-RUN(/tmp 에 SQL 생성), `apply` 시만 DB 반영.
+      비번 (attribute,value) 매핑은 `freeradius_build_single_user_stanza` 와 동일. 접속파라미터는
+      `freeradiussqlconf` 에서 읽고(하드코딩 없음), 비번은 임시 defaults-extra-file 로 전달(argv 노출 방지).
+    - `usr/local/sbin/freeradius_enable_sql_authorize.php` (step1): `varsqlconfenableauthorize=Enable`
+      (+`includeenable=on`) 토글. `lock('freeradius_user_config')`+`parse_config(true)` 동시성 안전.
+      적용 전 `serverdefault_resync`+`radiusd -C` 검증, 실패 시 플래그 롤백(재시작 안 함). 통과 시
+      `freeradius_sqlconf_resync()`(GUI SQL 저장 경로)로 재생성+재시작. dry-run 기본, apply/disable 인자.
+  - **step1+2 의 한계(중요)**: files 가 **먼저** 매칭되므로, files 에도 있는 기존 사용자는 radcheck
+    의 비번 변경이 **즉시 반영 안 됨**(files 우선). 즉 step1+2 단독으론 PW 무반영을 **못 고친다**
+    — radcheck-only 신규 사용자에게만 의미. **step3(컷오버)** 필요: PW writer(`commit_change_pw`/
+    관리자)가 **radcheck 에 UPDATE** + authorize 에서 **sql 우선**(또는 files 쓰기 중단).
+- **시간 한도(`Max-*-Session`) 현황(분석)**: GUI "시간량" 필드는 `Max-{Daily|Weekly|Monthly|Forever}-Session`
+  check-item 생성([build_single_user_stanza:1089]). 이를 강제하는 `rlm_counter`(daily/weekly/...)는
+  SQL accounting 켜짐 시 **삭제**(sqlcounter 와 배타적, [2941]), `sqlcounter`(dailycounter 등)는
+  authorize SQL 꺼짐이라 **호출 안 됨** → **현재 세션시간 사용량 한도는 아무도 강제 안 함(무조건 통과)**.
+  단 `Expiration`(만료일)/`Login-Time`(시간대)는 expiration/logintime 모듈이 authorize 상시 실행 →
+  강제됨. 데이터(용량) 쿼터는 별개(파일기반 datacounter)로 정상. **운영상 시간량 필드 사용 사례
+  없음 확인** → step1(SQL authorize 켜기) 시 sqlcounter 가 매 요청 돌아도 **전원 no-op**(거부 불가) = 안전.
+- **권장 이행 순서**: A(응급, 본 커밋) 배포로 출혈 정지 → step2(radcheck 적재) → step1(SQL authorize) →
+  step3(radcheck 권위화 컷오버)로 reload 의존 제거.
+
 ## 다음 작업 대기 중
 
+- [x] **#23 step1+2 도구**: radcheck 이관 스크립트 + SQL authorize 토글 — develop `fd6ced2`
+- [x] **#23 A(응급)**: PW/계정 변경 reload 를 HUP→재시작 (silent-fail 차단) — develop (본 패치)
+- [ ] #23 A 검증: 자가/관리자 비번변경 → **재시작 없이 즉시 새 비번 로그인** + `[AUTH-UNKNOWN]` 소멸 /
+  `radiusd -X` 로 변경 후 옛 비번 거부 확인 / 재시작 빈도·accounting 영향 모니터링
+- [ ] **#23 step3 (근본, 미착수)**: 인증을 radcheck(SQL) 권위화 — `commit_change_pw`/관리자 PW writer 를
+  **radcheck UPDATE** 로, authorize 에서 **sql 우선**(또는 files 쓰기 중단) → reload 의존 제거(즉시반영+accounting 무중단)
+- [ ] #23 step1+2 적용(선상): `freeradius_migrate_users_to_radcheck.php apply` → `freeradius_enable_sql_authorize.php apply`
+  → `radiusd -X` 로 files 사용자 정상 인증 + `dailycounter ... → noop` 확인 (시간량 미사용이라 안전)
+- [ ] #23 배포 정합성: A 패치는 `freeradius.inc` 만이지만 **버전 섞임 금지** — captiveportal.inc/index.php/
+  cron 등 최신 develop 일괄 배포(첫 질문의 `cp_find_all_wan_gateways` fatal 과 같은 뿌리)
 - [x] **#21**: 끊김 진단(라우팅 버그 아님) + 완화 — 랜덤MAC 안내·i18n 1차·blank 단락
   — develop `7561fe5`·`4e9dc25`·`04d603e`
 - [ ] #21 검증: 배포 후 `Username blank` 빈도 급감 / 로그인 페이지 언어 드롭다운·자동감지 동작 /
