@@ -741,9 +741,23 @@
 - **검증**: php -l 전부 통과 / FBB 이름 매핑 10케이스·satlon 포맷 14케이스·look-angle 5시나리오(반구
   플립 포함) 단위테스트 통과 / 브라우저 하네스(리포 실 CSS)로 4상태·이중니들·로테이션·높이 실측.
 
+### 28 (예시 단계, 통합 대기). 항구 미니맵 — WoW 풍 원형 미니맵 + 최근접 3개 항구 방위/거리 화살표
+- **요구**: GPS 판넬(Position 타일) 아래 원형 미니맵. 오프라인용 경량 지도 사전 저장, 전세계 주요 항구
+  리스트, 현재 위치→최근접 3개 항구를 방위각 화살표+거리로 표시, GPS 갱신(약 1분)마다 재계산.
+- **자산**: `usr/local/www/img/world_minimap.jpg` — NASA Blue Marble 등장방형 2048×1024, 233KB,
+  퍼블릭 도메인. 타일서버/인터넷 불필요(위경도→픽셀 선형 매핑으로 background-position 패닝).
+- **데모**: `minimap_demo.html`(리포 루트 — 배포 트리 밖, 선상 미배포). 항구 82개 내장(JS 배열),
+  하버사인(nm)+대권 초기방위각, 금테 2중 링+4방위 다이아+중앙 본선 마커(선수방위 회전)+림 화살표
+  3개(1~3위 크기·색 차등, 최단경로 트윈)+이름·거리·방위 리스트. 항해 시뮬레이션 버튼 포함.
+  지리 정합 검증: 28.6N/119.8E 에서 대만 우하단, SHANGHAI 28°/KAOHSIUNG 176° ✓.
+- **통합 시(승인 대기)**: index.php Position 타일 gps_info 아래 삽입 + `data_update` JSON 에 수치형
+  lat/lon 추가 필요(현재 GPS 는 표시용 문자열만 내려감). 기존 10초 AJAX 가 갱신 트리거.
+
 ## 다음 작업 대기 중
 
-- [x] **#27**: Main Panel 안테나 트래킹 나침반(VSAT/FBB look-angle) + 1080 세로압축 — develop (본 커밋)
+- [x] **#27**: Main Panel 안테나 트래킹 나침반(VSAT/FBB look-angle) + 1080 세로압축 — develop `00f1bb1`
+- [x] **#28 예시**: 항구 미니맵 데모 + 오프라인 월드맵 자산 — develop (본 커밋)
+- [ ] #28 통합: 디자인(줌 18°/크기 220px/색감)·항구 목록 확정 후 index.php Position 타일에 삽입
 - [ ] #27 검증(선상): 나침반 Az/R.Az/El 이 ACU 자체 UI 와 일치(1척 실측 완료: 101/6/45≈ACU 100/6/45) /
   FBB 파랑 니들·5초 메트릭 로테이션 동작 / 1080 모니터 무스크롤 / `FBB : info unavailable` 인 선박은
   influx fbbstatus 유무 확인 / 미매핑 FBB 이름 관측 시 `cp_fbb_satlon_from_name` map 에 한 줄 추가

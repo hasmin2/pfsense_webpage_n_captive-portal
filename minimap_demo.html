@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>port minimap demo</title>
+<style>
+    body {background:#F1F3F5; font-family:-apple-system,'Segoe UI',sans-serif; margin:0; padding:30px;}
+    .tile-area {background:#fff; padding:22px 24px; width:300px; margin:0 auto;}
+    .tile-area dt p {text-align:center; font-size:18px; font-weight:600; margin:10px 0 0;}
+    .tile-area dd {margin:18px 0 0; border-top:1px solid #CED4DA; padding-top:18px;}
+    .tile-area dd .text {font-size:14px; line-height:1.5; font-weight:500; text-align:center; margin-top:0;}
+    .controls {text-align:center; margin-bottom:14px;}
+    .controls button {padding:6px 12px; border:1px solid #CED4DA; background:#fff; cursor:pointer;}
+
+    /* ===== WoW 스타일 항구 미니맵 ===== */
+    .port-mm {width:220px; margin:16px auto 0; position:relative;}
+    .port-mm-disc {width:220px; height:220px; border-radius:50%; position:relative; overflow:hidden;
+        box-shadow: inset 0 0 26px rgba(0,0,0,.55), inset 0 0 4px rgba(0,0,0,.6);}
+    .port-mm-map {position:absolute; inset:0; background-repeat:no-repeat;
+        background-image:url('/usr/local/www/img/world_minimap.jpg');
+        filter:saturate(1.15) brightness(1.04);}
+    .port-mm-svg {position:absolute; left:-14px; top:-14px; width:248px; height:248px; pointer-events:none;}
+    .port-mm-list {margin-top:10px;}
+    .port-mm-list li {list-style:none; display:flex; align-items:center; gap:6px;
+        font-size:12px; font-weight:600; color:#495057; line-height:1.7; justify-content:center;}
+    .port-mm-list li .pm-tri {display:inline-block; transition:transform 1.2s cubic-bezier(.35,.1,.25,1);}
+    .port-mm-list li .pm-dist {color:#212529; font-weight:700;}
+    .port-mm-list li .pm-brg {color:#868E96; font-weight:500;}
+</style>
+</head>
+<body>
+<div class="controls">
+    <button onclick="demoRun=!demoRun">▶/⏸ 항해 시뮬레이션</button>
+    <span id="simpos" style="font-size:12px;color:#868E96;"></span>
+</div>
+<dl class="tile-area">
+    <dt><p>Position</p></dt>
+    <dd>
+        <p class="text" id="gps_info">--</p>
+        <!-- GPS 판넬 아래 원형 미니맵 -->
+        <div class="port-mm" id="port_mm">
+            <div class="port-mm-disc">
+                <div class="port-mm-map" id="port_mm_map"></div>
+            </div>
+            <svg class="port-mm-svg" viewBox="-124 -124 248 248" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <radialGradient id="mmGlow" cx="50%" cy="50%" r="50%">
+                        <stop offset="78%" stop-color="rgba(0,0,0,0)"/>
+                        <stop offset="100%" stop-color="rgba(20,14,2,0.35)"/>
+                    </radialGradient>
+                </defs>
+                <circle r="110" fill="url(#mmGlow)"/>
+                <!-- 금테 (WoW 링) -->
+                <circle r="110" fill="none" stroke="#6B5516" stroke-width="7"/>
+                <circle r="110" fill="none" stroke="#D4AF37" stroke-width="4"/>
+                <circle r="113.5" fill="none" stroke="#8A6D1F" stroke-width="1.6"/>
+                <circle r="106.5" fill="none" stroke="#8A6D1F" stroke-width="1.2"/>
+                <!-- 4방위 다이아 장식 -->
+                <g id="mm_diamonds"></g>
+                <text x="0" y="-116" text-anchor="middle" font-size="11" font-weight="700" fill="#8A6D1F">N</text>
+                <!-- 최근접 항구 화살표 3개 (rim) -->
+                <g id="mm_arrow_0"><path class="mm-arr" d="M0,-103 L7,-90 L-7,-90 Z" fill="#FFD75E" stroke="#5C4708" stroke-width="1.4"/></g>
+                <g id="mm_arrow_1"><path class="mm-arr" d="M0,-103 L6.2,-91 L-6.2,-91 Z" fill="#E3B341" stroke="#5C4708" stroke-width="1.3"/></g>
+                <g id="mm_arrow_2"><path class="mm-arr" d="M0,-103 L5.4,-92 L-5.4,-92 Z" fill="#B98E2F" stroke="#5C4708" stroke-width="1.2"/></g>
+                <!-- 중앙 본선 마커 (선수방위로 회전) -->
+                <g id="mm_ship">
+                    <path d="M0,-9 L6,7 L0,3.4 L-6,7 Z" fill="#FFE08A" stroke="#3A2D05" stroke-width="1.5"/>
+                </g>
+            </svg>
+            <ul class="port-mm-list" id="port_mm_list"></ul>
+        </div>
+    </dd>
+</dl>
+
+<script>
+    // ================= 전세계 주요 항구 리스트 =================
+    var PORTS = [
+        ['BUSAN',35.10,129.04],['ULSAN',35.50,129.38],['INCHEON',37.46,126.62],['GWANGYANG',34.90,127.70],
+        ['SHANGHAI',31.23,121.49],['NINGBO',29.87,121.84],['QINGDAO',36.07,120.32],['TIANJIN',38.98,117.79],
+        ['DALIAN',38.92,121.65],['HONG KONG',22.30,114.17],['SHENZHEN',22.55,114.05],['KAOHSIUNG',22.61,120.28],
+        ['TOKYO',35.61,139.79],['YOKOHAMA',35.45,139.65],['NAGOYA',35.05,136.85],['KOBE',34.65,135.20],
+        ['SINGAPORE',1.26,103.84],['PORT KLANG',3.00,101.40],['TG.PELEPAS',1.36,103.55],['JAKARTA',-6.10,106.88],
+        ['SURABAYA',-7.20,112.73],['MANILA',14.58,120.97],['HO CHI MINH',10.77,106.70],['HAIPHONG',20.86,106.68],
+        ['LAEM CHABANG',13.08,100.88],['COLOMBO',6.95,79.85],['CHENNAI',13.10,80.30],['NHAVA SHEVA',18.95,72.95],
+        ['MUNDRA',22.74,69.70],['KARACHI',24.80,66.97],
+        ['JEBEL ALI',25.01,55.06],['ABU DHABI',24.53,54.38],['DAMMAM',26.50,50.20],['JEDDAH',21.48,39.17],
+        ['SALALAH',16.94,54.00],['BANDAR ABBAS',27.15,56.21],
+        ['ROTTERDAM',51.95,4.14],['ANTWERP',51.28,4.34],['HAMBURG',53.54,9.97],['BREMERHAVEN',53.55,8.58],
+        ['FELIXSTOWE',51.95,1.31],['LE HAVRE',49.48,0.12],['ALGECIRAS',36.13,-5.43],['VALENCIA',39.45,-0.32],
+        ['BARCELONA',41.35,2.16],['MARSEILLE',43.33,5.33],['GENOA',44.40,8.92],['GIOIA TAURO',38.45,15.90],
+        ['PIRAEUS',37.94,23.62],['AMBARLI',40.97,28.69],['GDANSK',54.40,18.66],['ST.PETERSBURG',59.88,30.20],
+        ['LOS ANGELES',33.74,-118.26],['LONG BEACH',33.75,-118.20],['OAKLAND',37.80,-122.32],['SEATTLE',47.60,-122.34],
+        ['VANCOUVER',49.29,-123.11],['MANZANILLO',19.05,-104.31],['BALBOA',8.95,-79.57],['COLON',9.36,-79.90],
+        ['CARTAGENA',10.40,-75.51],['CALLAO',-12.05,-77.14],['VALPARAISO',-33.03,-71.62],['SANTOS',-23.98,-46.30],
+        ['BUENOS AIRES',-34.58,-58.37],['NEW YORK',40.67,-74.05],['SAVANNAH',32.08,-81.09],['HOUSTON',29.73,-95.27],
+        ['MIAMI',25.77,-80.17],['CHARLESTON',32.78,-79.92],['NORFOLK',36.92,-76.33],
+        ['DURBAN',-29.87,31.03],['CAPE TOWN',-33.91,18.44],['LAGOS',6.44,3.36],['TANGER MED',35.88,-5.50],
+        ['PORT SAID',31.25,32.31],['SUEZ',29.93,32.55],['MOMBASA',-4.06,39.65],
+        ['SYDNEY',-33.96,151.20],['MELBOURNE',-37.83,144.93],['BRISBANE',-27.38,153.17],['AUCKLAND',-36.84,174.78],
+        ['FREMANTLE',-32.05,115.74]
+    ];
+
+    // ================= 항법 계산 =================
+    function distNm(lat1, lon1, lat2, lon2) {
+        var R = 3440.065;
+        var p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180;
+        var dp = (lat2 - lat1) * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180;
+        var a = Math.sin(dp / 2) * Math.sin(dp / 2) +
+                Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+        return 2 * R * Math.asin(Math.sqrt(a));
+    }
+    function bearingDeg(lat1, lon1, lat2, lon2) {
+        var p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180;
+        var dl = (lon2 - lon1) * Math.PI / 180;
+        var y = Math.sin(dl) * Math.cos(p2);
+        var x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+        return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }
+
+    // ================= 회전 트윈 (최단경로) =================
+    var mmTween = {};
+    function mmRotateTo(id, deg) {
+        var node = document.getElementById(id);
+        if (!node || deg === null || isNaN(deg)) { return; }
+        var st = mmTween[id];
+        if (!st) { mmTween[id] = {cur: deg, raf: null}; node.setAttribute('transform', 'rotate(' + deg + ')'); return; }
+        var from = st.cur, delta = (((deg - from) % 360) + 540) % 360 - 180, to = from + delta;
+        if (st.raf) { cancelAnimationFrame(st.raf); st.raf = null; }
+        if (Math.abs(delta) < 0.25) { st.cur = to; node.setAttribute('transform', 'rotate(' + to + ')'); return; }
+        var t0 = null, dur = 1200;
+        function step(ts) {
+            if (t0 === null) { t0 = ts; }
+            var p = Math.min(1, (ts - t0) / dur);
+            var e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+            node.setAttribute('transform', 'rotate(' + (from + delta * e) + ')');
+            st.cur = from + delta * e;
+            if (p < 1) { st.raf = requestAnimationFrame(step); } else { st.raf = null; st.cur = to; }
+        }
+        st.raf = requestAnimationFrame(step);
+    }
+
+    // ================= 미니맵 =================
+    var MM_D = 220;            // 표시 지름(px)
+    var MM_SPAN_V = 18;        // 세로 표시 범위(도) — 줌 레벨
+    var ARROW_COLORS = ['#FFD75E', '#E3B341', '#B98E2F'];
+
+    (function buildDiamonds() {
+        var g = document.getElementById('mm_diamonds');
+        var ns = 'http://www.w3.org/2000/svg';
+        for (var a = 45; a < 360; a += 90) {
+            var d = document.createElementNS(ns, 'path');
+            d.setAttribute('d', 'M0,-118 L5,-110 L0,-102 L-5,-110 Z');
+            d.setAttribute('fill', '#D4AF37');
+            d.setAttribute('stroke', '#6B5516');
+            d.setAttribute('stroke-width', '1.2');
+            d.setAttribute('transform', 'rotate(' + a + ')');
+            g.appendChild(d);
+        }
+    })();
+
+    function updateMinimap(lat, lon, heading) {
+        // 1) 지도 패닝 (등장방형: 경도/위도 -> 픽셀 선형 매핑)
+        var bgH = MM_D * 180 / MM_SPAN_V;
+        var bgW = bgH * 2;
+        var px = (lon + 180) / 360 * bgW;
+        var py = (90 - lat) / 180 * bgH;
+        var mapEl = document.getElementById('port_mm_map');
+        mapEl.style.backgroundSize = bgW + 'px ' + bgH + 'px';
+        mapEl.style.backgroundPosition = (MM_D / 2 - px) + 'px ' + (MM_D / 2 - py) + 'px';
+
+        // 2) 본선 마커 (선수방위)
+        if (heading !== null && !isNaN(heading)) { mmRotateTo('mm_ship', heading); }
+
+        // 3) 최근접 항구 3개 -> rim 화살표 + 리스트
+        var ranked = PORTS.map(function (p) {
+            return {name: p[0], d: distNm(lat, lon, p[1], p[2]), b: bearingDeg(lat, lon, p[1], p[2])};
+        }).sort(function (a, b) { return a.d - b.d; }).slice(0, 3);
+
+        var list = document.getElementById('port_mm_list');
+        var html = '';
+        for (var i = 0; i < 3; i++) {
+            var r = ranked[i];
+            mmRotateTo('mm_arrow_' + i, r.b);
+            html += '<li><span class="pm-tri" style="color:' + ARROW_COLORS[i] + ';text-shadow:0 0 1px #5C4708;transform:rotate(' + r.b + 'deg)">&#9650;</span>'
+                 + '<span>' + r.name + '</span>'
+                 + '<span class="pm-dist">' + (r.d < 100 ? r.d.toFixed(1) : Math.round(r.d)) + ' nm</span>'
+                 + '<span class="pm-brg">' + Math.round(r.b) + '&#176;</span></li>';
+        }
+        list.innerHTML = html;
+    }
+
+    // ================= 데모: 부산 출항 -> 동중국해 항해 시뮬레이션 =================
+    // (실제 페이지에선 10초 AJAX 의 GPS 값으로 updateMinimap() 호출 — GPS 는 약 1분 주기 갱신)
+    var simLat = 34.95, simLon = 128.95, prevLat = simLat, prevLon = simLon;
+    var demoRun = true;
+    function tick() {
+        if (demoRun) {
+            prevLat = simLat; prevLon = simLon;
+            simLat -= 0.45; simLon -= 0.65;                  // 남서진 (데모용 과속)
+            if (simLat < 27) { simLat = 34.95; simLon = 128.95; } // 루프
+        }
+        var hdg = bearingDeg(prevLat, prevLon, simLat, simLon);
+        document.getElementById('gps_info').innerHTML =
+            Math.abs(simLat).toFixed(3) + '&#176;' + (simLat >= 0 ? 'N' : 'S') + '<br>' +
+            Math.abs(simLon).toFixed(3) + '&#176;' + (simLon >= 0 ? 'E' : 'W') + '<br>' +
+            Math.round(hdg) + 'deg. 14.2kts';
+        document.getElementById('simpos').textContent = ' lat ' + simLat.toFixed(2) + ' / lon ' + simLon.toFixed(2);
+        updateMinimap(simLat, simLon, hdg);
+    }
+    tick();
+    setInterval(tick, 2500);
+</script>
+</body>
+</html>
