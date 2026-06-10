@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `549681f`+ | #1~#26 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`, step3-B 보류); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축) |
+| `develop` | `303bb05` | #1~#28 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`, step3-B 보류); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리) |
 | `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#17 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
@@ -683,7 +683,7 @@
 - **후속(미적용)**: OS probe 를 `session_start()` 전에 단락해 세션 생성 자체 회피 + 세션 GC 크론(연결성
   체크 폭주 환경의 `sess_*` 누적 완화). 크론 I/O 타임아웃 보강(hang 자체 제거).
 
-### 27. Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축 (develop 본 커밋)
+### 27. Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축 (develop `00f1bb1`)
 - **요구**: Intellian ACU 레퍼런스 UI(나침반+선체+지향선+앙각게이지+HEADING/AZIMUTH/R.AZIMUTH/ELEVATION)
   분위기의 **동적 그림**을 Main Panel(`usr/local/www/index.php`) Satellite 타일의 ACU SIGNAL 위에 추가.
   (주의: 사용자가 "main_panel.php"로 지칭하는 파일 = 사이드바 "Main Panel" = `usr/local/www/index.php`.)
@@ -750,7 +750,7 @@
   하버사인(nm)+대권 초기방위각, 금테 2중 링+4방위 다이아+중앙 본선 마커(선수방위 회전)+림 화살표
   3개(1~3위 크기·색 차등, 최단경로 트윈)+이름·거리·방위 리스트. 항해 시뮬레이션 버튼 포함.
   지리 정합 검증: 28.6N/119.8E 에서 대만 우하단, SHANGHAI 28°/KAOHSIUNG 176° ✓.
-- **통합 (develop 본 커밋)**: index.php Position 타일 gps_info 아래 삽입 완료.
+- **통합 (develop `303bb05`)**: index.php Position 타일 gps_info 아래 삽입 완료.
   - 백엔드: `get_acu_pointing_info`/`get_fbb_pointing_info` 가 수치형 `lat`/`lon`(소수 5자리) 추가
     반환 — (0,0)=GPS 미수신 기본값은 null 처리. 추가 influx 쿼리 0(기존 조회 재사용).
   - 프런트: `updatePortMinimap()` 이 acuLastVsat(VSAT GPS 우선)→acuLastFbb(폴백) 순으로 위치를
@@ -770,22 +770,15 @@
 
 - [x] **#27**: Main Panel 안테나 트래킹 나침반(VSAT/FBB look-angle) + 1080 세로압축 — develop `00f1bb1`
 - [x] **#28 예시**: 항구 미니맵 데모 + 오프라인 월드맵 자산 — develop `6b5d7c5`
-- [x] **#28 통합**: index.php Position 타일에 미니맵 삽입 + acu/fbb_view 에 수치형 lat/lon — develop (본 커밋)
-- [x] #28 보강: 해역 표시(운하/해협→항구 30nm→해역 박스→대양 폴백, 예: EASTERN PACIFIC OCEAN /
-  NEARBY PANAMA CANAL — 15케이스 단위테스트 통과) + 메트릭 라벨(R.AZIMUTH 등) 박스 넘침 수정
-  (8px/자간0/nowrap) — develop (본 커밋)
-- [x] #28 데이터 전면화(A안): 항구 = **NGA World Port Index(퍼블릭 도메인) Harbor Size L/M 필터
-  544개** → `usr/local/www/js/cp_ports.js`(16KB) / 해역 = **Natural Earth 10m marine polys(퍼블릭
-  도메인) bbox 자동추출 292개, 면적 오름차순(구체적 우선)** → `usr/local/www/js/cp_searegions.js`(13KB).
-  생성기는 `tools/generate_cp_ports.js`·`tools/generate_cp_searegions.js`(다운로드 URL 주석 포함,
-  node 로 재생성). index.php 는 `typeof CP_PORTS/CP_SEAREGIONS` 가드로 로드 — **js 미배포(버전 섞임)
-  시 내장 82항구/25해역으로 자동 폴백**(fatal 없음). 12지점 회귀(부산 6.1nm·파나마·싱가포르
-  터미널명·EUROPOORT·수에즈·호르무즈 등) 통과. **배포 묶음에 js 2개 추가** — develop (본 커밋)
-- [x] #28 WoW UI 3종: ① 상단 존 플레이트(금테 다크 바, 해역/위치 영문 — 기존 하단 region 줄 대체)
-  ② 우상단 시계 배지(선박 설정 `time_offset` 기준 로컬타임 HH:MM + "GMT±n", GPS 무관 상시 동작,
-  10초 갱신) ③ 우하단 +/− 줌 버튼(표시범위 36/26/18/12/8° 5단계, localStorage `cp_mm_zoom` 보존,
-  no-gps 시 숨김). 검증: 플레이트/시계(GMT-6→06:19)/줌(bgSize 4400→6600) 기능 + 도안 스크린샷
-  — develop (본 커밋)
+- [x] **#28 통합 + 보강 + 데이터 전면화 + WoW UI**: 항구 미니맵 전면 완성 — develop `303bb05`
+  - **Position 타일 원형 미니맵**: GPS 우선(VSAT→FBB 폴백), 최근접 3개 항구 방위·거리 화살표, rAF 최단경로 트윈
+  - **데이터**: 항구 `cp_ports.js`(NGA WPI L/M 544개) / 해역 `cp_searegions.js`(Natural Earth 292bbox 면적오름차순)
+  - **해역 계층**: 운하/해협(30nm 이내) → NEARBY PORT → 해역 bbox → 대양 폴백 (15케이스 통과)
+  - **WoW UI 3종**: 존 플레이트(금테 다크 바·해역명) / 시계 배지(time_offset 기준 로컬타임, GPS무관) / 줌 버튼(5단계, localStorage 보존)
+  - **GPS 없는 상태**: 회색 디스크 + "NO GPS" (layout jump 없음, 마커·화살표 숨김)
+  - **버전 섞임 안전**: `typeof CP_PORTS/CP_SEAREGIONS` 가드 → js 미배포 시 내장 82항구/25해역 폴백
+  - **server_module.inc**: `get_acu_pointing_info`/`get_fbb_pointing_info` 에 수치형 `lat`/`lon` 추가(0,0 null 처리)
+  - **배포 묶음에 추가**: `img/world_minimap.jpg` + `js/cp_ports.js` + `js/cp_searegions.js`
 - [ ] #28 검증(선상): 미니맵 위치/항구 화살표가 실제와 일치 / GPS 1분 갱신 추종 / `world_minimap.jpg`
   포함 배포 확인(**선상 흰 디스크 = 이 이미지 미배포가 원인** — MORNING LILY 실측, PHP 만 복사하고
   이미지 누락 시 발생; 최신 코드는 회색 디스크로 강등) / 1080 무스크롤 유지 / 해역명 체감 확인 /
@@ -799,7 +792,7 @@
   FBB 매핑 테이블 슬롯 재검증(위성 재배치·I-6 편입 시)
 - [x] **#25 (진원)**: 캡티브포털 무한 self-redirect 루프 차단 — GET 진입 직접 렌더 — develop `fce66ca`
 - [x] **#24 (증폭)**: 무제한 `/tmp/cp_portal_error.log` 차단(프로덕션 off + 디버그 5MB 상한) — develop `f2f64aa`
-- [x] **#26 (안전망)**: per-minute 크론 7종 단일 인스턴스 flock 가드(누적→OOM 차단) — develop (본 패치)
+- [x] **#26 (안전망)**: per-minute 크론 7종 단일 인스턴스 flock 가드(누적→OOM 차단) — develop `67befdf`
 - [ ] #24~26 검증: 배포 후 `df -h /tmp` 평탄 / `grep -c 'REDIRECT(to self)'`(디버그) 급증 없음 /
   미인증 단말이 로그인 페이지 즉시 표시 / `ls /tmp/sess_*|wc -l` 비폭증 / OOM·502 소멸 /
   `ls /tmp/cron_*.lock` 존재 + 크론 중복 인스턴스 없음(`ps ax|grep cron`)
@@ -807,7 +800,7 @@
   per-minute 크론 I/O 타임아웃 보강(hang 자체 제거)
 - [ ] #24~26 배포 정합성: **버전 섞임 금지** — `index.php` + cron 7종을 최신 develop 일괄 배포
 - [x] **#23 step1+2 도구**: radcheck 이관 스크립트 + SQL authorize 토글 — develop `fd6ced2`
-- [x] **#23 A(응급)**: PW/계정 변경 reload 를 HUP→재시작 (silent-fail 차단) — develop (본 패치)
+- [x] **#23 A(응급)**: PW/계정 변경 reload 를 HUP→재시작 (silent-fail 차단) — develop `85bdf6c`
 - [ ] #23 A 검증: 자가/관리자 비번변경 → **재시작 없이 즉시 새 비번 로그인** + `[AUTH-UNKNOWN]` 소멸 /
   `radiusd -X` 로 변경 후 옛 비번 거부 확인 / 재시작 빈도·accounting 영향 모니터링
 - [x] **#23 step3-A (구현 완료)**: PW writer 5곳이 radcheck 도 dual-write (동작변경 0, 컷오버 토대) — develop `b121dda`
