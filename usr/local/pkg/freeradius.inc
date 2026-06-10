@@ -1830,6 +1830,164 @@ function freeradius_update_user(
 	}
 }
 
+/**
+ * ── #23 step3-A: radcheck(SQL) dual-write 헬퍼 ────────────────────────────────
+ * PW writer 가 config.xml/files 와 함께 radcheck 도 갱신하게 해, 인증 권위를
+ * radcheck 로 옮기는 컷오버(3b: authorize 에서 sql override)의 토대를 만든다.
+ * 이 단계만으론 동작 변화 없음(files 가 여전히 권위) — radcheck 를 항상 최신으로 유지할 뿐.
+ *
+ * - 접속 파라미터는 freeradiussqlconf 에서 읽음(하드코딩 없음).
+ * - mysql CLI + 임시 defaults-extra-file(비번 argv 노출 방지) + --connect-timeout 로 bounded.
+ * - 실패해도 throw 하지 않고 false 반환(기존 PW 흐름을 깨지 않음 — degrade).
+ * - 배치(sync_users/delete_users)는 단일 SQL 트랜잭션으로 한 번에 실행(락 밖 호출 권장).
+ */
+function freeradius_radcheck_conn_params() {
+	global $config;
+	if (!is_array($config['installedpackages']['freeradiussqlconf']['config'][0] ?? null)) {
+		return null;
+	}
+	$s = $config['installedpackages']['freeradiussqlconf']['config'][0];
+	return array(
+		'server' => ($s['varsqlconfserver']        ?? '') ?: 'localhost',
+		'port'   => ($s['varsqlconfport']          ?? '') ?: '3306',
+		'login'  => ($s['varsqlconflogin']         ?? '') ?: 'radius',
+		'pass'   => ($s['varsqlconfpassword']      ?? '') ?: 'radpass',
+		'db'     => ($s['varsqlconfradiusdb']      ?? '') ?: 'radius',
+		'table'  => ($s['varsqlconfauthchecktable'] ?? '') ?: 'radcheck',
+	);
+}
+
+/* 암호화 방식 → radcheck (attribute, value). build_single_user_stanza 의 switch 와 동일. */
+function freeradius_radcheck_password_item($encryption, $rawpassword) {
+	$enc = ($encryption !== '' && $encryption !== null) ? $encryption : 'Cleartext-Password';
+	switch ($enc) {
+		case 'MD5-Password':        return array('MD5-Password', md5((string)$rawpassword));
+		case 'MD5-Password-hashed': return array('MD5-Password', (string)$rawpassword);
+		case 'NT-Password-hashed':  return array('NT-Password', (string)$rawpassword);
+		default:                    return array($enc, (string)$rawpassword);
+	}
+}
+
+function freeradius_radcheck_sql_str($s) {
+	return str_replace(array('\\', "'"), array('\\\\', "\\'"), (string)$s);
+}
+
+function freeradius_radcheck_mysql_bin() {
+	foreach (array('mysql', 'mariadb') as $name) {
+		$out = array(); $ret = 1;
+		@exec('command -v ' . escapeshellarg($name) . ' 2>/dev/null', $out, $ret);
+		if ($ret === 0 && !empty($out[0]) && is_executable(trim($out[0]))) {
+			return trim($out[0]);
+		}
+	}
+	foreach (array('/usr/local/bin/mysql', '/usr/local/bin/mariadb') as $p) {
+		if (is_executable($p)) { return $p; }
+	}
+	return '';
+}
+
+function freeradius_radcheck_exec_sql($sql) {
+	$c = freeradius_radcheck_conn_params();
+	if ($c === null) { return false; }
+	$mysql = freeradius_radcheck_mysql_bin();
+	if ($mysql === '') {
+		log_error('freeradius_radcheck_exec_sql: mysql client not found');
+		return false;
+	}
+	$cnf = @tempnam('/tmp', 'frrc');
+	$sqlfile = @tempnam('/tmp', 'frrcsql');
+	if ($cnf === false || $sqlfile === false) {
+		if ($cnf !== false) { @unlink($cnf); }
+		if ($sqlfile !== false) { @unlink($sqlfile); }
+		return false;
+	}
+	@file_put_contents($cnf,
+		"[client]\nhost={$c['server']}\nport={$c['port']}\nuser={$c['login']}\n"
+		. 'password="' . str_replace('"', '\\"', $c['pass']) . "\"\n");
+	@chmod($cnf, 0600);
+	@file_put_contents($sqlfile, $sql);
+	@chmod($sqlfile, 0600);
+
+	$cmd = escapeshellarg($mysql)
+		. ' --defaults-extra-file=' . escapeshellarg($cnf)
+		. ' --connect-timeout=4 '
+		. escapeshellarg($c['db'])
+		. ' < ' . escapeshellarg($sqlfile) . ' 2>&1';
+	$out = array(); $ret = 1;
+	@exec($cmd, $out, $ret);
+	@unlink($cnf);
+	@unlink($sqlfile);
+	if ($ret !== 0) {
+		log_error('freeradius_radcheck_exec_sql failed: ' . implode(' | ', $out));
+		return false;
+	}
+	return true;
+}
+
+/* 사용자 1명의 비번 check-item 을 radcheck 에 멱등 갱신(DELETE 후 INSERT). */
+function freeradius_radcheck_sync_password($username, $rawpassword, $encryption = 'Cleartext-Password') {
+	$username = trim((string)$username);
+	if ($username === '') { return false; }
+	$c = freeradius_radcheck_conn_params();
+	if ($c === null) { return false; }
+	list($attr, $val) = freeradius_radcheck_password_item($encryption, $rawpassword);
+	if ($val === '' || $attr === '') { return false; }
+	$t = $c['table'];
+	$u = freeradius_radcheck_sql_str($username);
+	$a = freeradius_radcheck_sql_str($attr);
+	$v = freeradius_radcheck_sql_str($val);
+	$sql = "START TRANSACTION;\n"
+		. "DELETE FROM `{$t}` WHERE username='{$u}' AND attribute IN ('Cleartext-Password','NT-Password','MD5-Password');\n"
+		. "INSERT INTO `{$t}` (username, attribute, op, value) VALUES ('{$u}', '{$a}', ':=', '{$v}');\n"
+		. "COMMIT;\n";
+	return freeradius_radcheck_exec_sql($sql);
+}
+
+/* 여러 사용자 비번을 단일 SQL 트랜잭션으로 일괄 동기화. $entries[] = ['user'=>,'pass'=>,'enc'=>]. */
+function freeradius_radcheck_sync_users(array $entries) {
+	if (empty($entries)) { return true; }
+	$c = freeradius_radcheck_conn_params();
+	if ($c === null) { return false; }
+	$t = $c['table'];
+	$sql = "START TRANSACTION;\n";
+	$n = 0;
+	foreach ($entries as $e) {
+		$username = trim((string)($e['user'] ?? ''));
+		if ($username === '') { continue; }
+		list($attr, $val) = freeradius_radcheck_password_item($e['enc'] ?? 'Cleartext-Password', $e['pass'] ?? '');
+		if ($val === '' || $attr === '') { continue; }
+		$u = freeradius_radcheck_sql_str($username);
+		$a = freeradius_radcheck_sql_str($attr);
+		$v = freeradius_radcheck_sql_str($val);
+		$sql .= "DELETE FROM `{$t}` WHERE username='{$u}' AND attribute IN ('Cleartext-Password','NT-Password','MD5-Password');\n";
+		$sql .= "INSERT INTO `{$t}` (username, attribute, op, value) VALUES ('{$u}', '{$a}', ':=', '{$v}');\n";
+		$n++;
+	}
+	$sql .= "COMMIT;\n";
+	if ($n === 0) { return true; }
+	return freeradius_radcheck_exec_sql($sql);
+}
+
+/* 여러 사용자의 radcheck 행을 일괄 삭제(계정 삭제 시). */
+function freeradius_radcheck_delete_users(array $usernames) {
+	$names = array();
+	foreach ($usernames as $nm) {
+		$nm = trim((string)$nm);
+		if ($nm !== '') { $names[] = $nm; }
+	}
+	if (empty($names)) { return true; }
+	$c = freeradius_radcheck_conn_params();
+	if ($c === null) { return false; }
+	$t = $c['table'];
+	$sql = "START TRANSACTION;\n";
+	foreach ($names as $nm) {
+		$u = freeradius_radcheck_sql_str($nm);
+		$sql .= "DELETE FROM `{$t}` WHERE username='{$u}';\n";
+	}
+	$sql .= "COMMIT;\n";
+	return freeradius_radcheck_exec_sql($sql);
+}
+
 function freeradius_authorizedmacs_resync($restart_svc = true, $via_rpc = false) {
 	global $config;
 	$conf = '';

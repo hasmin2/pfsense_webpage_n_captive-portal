@@ -2889,9 +2889,11 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         $cnf_lock = lock('freeradius_user_config', LOCK_EX);
         try {
             $config = parse_config(true);
+            $__pw_enc = 'Cleartext-Password';
             foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
                 if($username===$value['varusersusername']){
                     $config['installedpackages']['freeradius']['config'][$item]['varuserspassword']=$password;
+                    $__pw_enc = $value['varuserspasswordencryption'] ?? 'Cleartext-Password';
                 }
             }
             write_config("{$username} change password applied");
@@ -2909,6 +2911,10 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         else{
             $title="Problem occurred while changing password.";
             $result='Password has not been changed, You may login old password.';
+        }
+        // #23 step3-A: radcheck 동기화(락 밖, 단일). files 가 아직 권위라 동작변경 없음 — radcheck 최신 유지.
+        if (function_exists('freeradius_radcheck_sync_password')) {
+            freeradius_radcheck_sync_password($username, $password, $__pw_enc);
         }
         $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
                 'logo'     => $logo,
