@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `de4daf7` | #1~#28 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리) |
+| `develop` | `1775f85` | #1~#28 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`)) |
 | `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#17 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
@@ -786,6 +786,14 @@
     16.7nm) / 양측 소실 시 재숨김 전부 통과. php -l 통과.
   - 1080 영향: Position 타일 +약 296px → 최장 타일이 Satellite(461)→Position(~510)으로 바뀜.
     전체 콘텐츠 ~871px — 1080 뷰포트 내 유지.
+- **on-map 항구 점 표시 (`1775f85`)**: 지도 표시 범위 내 항구는 림 화살표 대신 **지도 위 실제 위치에 점(●)+이름** 렌더.
+  - **판정**: 줌 스케일(`MM_D/MM_SPANS[zoom]` = px/°)로 svgX/svgY 계산 → 원점(본선)으로부터 반경 102px(= 디스크 110 − 마진 8) 이내면 on-map. 경도 wrap-around(antimeridian) 처리.
+  - **on-map 렌더**: SVG `mm_port_dots` 그룹에 글로우 원(opacity 0.22) + 솔리드 점(r=3.5) + paint-order stroke 이름 레이블(좌/우 text-anchor 자동). 림 화살표는 `display:none`.
+  - **off-map**: 기존 림 화살표+`acuRotateTo` 그대로.
+  - **리스트**: on-map = ●+거리+"on map" / off-map = ▲+거리+방위.
+  - **GPS 소실 시**: 인라인 `display` 오버라이드 해제 → CSS `.no-gps` 규칙 정상 적용.
+  - **줌 레벨별 가시 반경**: 8°≈220nm / 12°≈340nm / 18°≈510nm / 26°≈740nm / 36°≈1020nm.
+  - 좌표 계산 8케이스(wrap 포함) 하네스 검증 전부 통과.
 
 ## 다음 작업 대기 중
 
@@ -800,7 +808,9 @@
   - **버전 섞임 안전**: `typeof CP_PORTS/CP_SEAREGIONS` 가드 → js 미배포 시 내장 82항구/25해역 폴백
   - **server_module.inc**: `get_acu_pointing_info`/`get_fbb_pointing_info` 에 수치형 `lat`/`lon` 추가(0,0 null 처리)
   - **배포 묶음에 추가**: `img/world_minimap.jpg` + `js/cp_ports.js` + `js/cp_searegions.js`
-- [ ] #28 검증(선상): 미니맵 위치/항구 화살표가 실제와 일치 / GPS 1분 갱신 추종 / `world_minimap.jpg`
+- [x] **#28 on-map 점 표시**: 지도 범위 내 항구 → 림 화살표 대신 지도 위 실제 위치에 점+이름 렌더 — develop `1775f85`
+- [ ] #28 검증(선상): 미니맵 위치/항구 화살표가 실제와 일치 / **지도 범위 내 항구가 점으로 표시되는지** /
+  GPS 1분 갱신 추종 / `world_minimap.jpg`
   포함 배포 확인(**선상 흰 디스크 = 이 이미지 미배포가 원인** — MORNING LILY 실측, PHP 만 복사하고
   이미지 누락 시 발생; 최신 코드는 회색 디스크로 강등) / 1080 무스크롤 유지 / 해역명 체감 확인 /
   자주 가는 항구 누락 시 PORTS 배열에 추가
