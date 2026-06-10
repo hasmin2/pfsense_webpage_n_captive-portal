@@ -3272,6 +3272,69 @@ EOD;
 EOD;
 	}
 
+	// ── #23 step3-B: radcheck(SQL) 비번 권위화 (플래그 게이트, 기본 off) ─────────────
+	// 켜지면 files 가 사용자를 찾아도 sql1(radcheck)을 항상 실행해, radcheck 의 ':=' 비번
+	// check-item 이 files 비번을 덮어쓴다 → 비번 변경이 radiusd reload/재시작 없이 즉시 반영
+	// (재시작으로 인한 accounting(1813) 단절도 소멸). 전제: step1(SQL authorize=Enable) +
+	// step2/3-A(radcheck 적재·dual-write) 선행.
+	// 플래그가 꺼져 있으면 else 가 기존과 바이트 동일한 블록을 생성 → 코드 배포만으론 동작 무변경.
+	// 토글: /usr/local/sbin/freeradius_enable_radcheck_override.php (radiusd -C 검증 + 자동 롤백).
+	// 플래그를 freeradiussqlconf 가 아닌 $config['system'] 에 두는 이유: GUI 패키지 페이지 저장이
+	// XML 미정의 키를 떨굴 수 있어서(#8/#15 와 같은 원칙 — 전역 플래그는 system). 떨궈져도
+	// 안전한 방향(기존 files 권위로 복귀)으로만 강등된다(3-A dual-write 가 files 를 최신 유지).
+	$radcheck_override_on = ((($config['system']['freeradius_radcheck_override'] ?? '') === 'on')
+		&& ($sqlconf['varsqlconfincludeenable'] == 'on')
+		&& ($sqlconf['varsqlconfenableauthorize'] == 'Enable'));
+	if ($radcheck_override_on) {
+		// 상태별 동작: files O/radcheck O/DB up → radcheck 비번(즉시 반영, 목적) |
+		// files O/radcheck X → files 비번(안전 강등) | files O/DB down → files 비번(graceful
+		// fallback) | files X/radcheck O → radcheck 비번 | files X/radcheck X → reject(기존 동일).
+		// 'sql1 { fail = 1 }' : fail(DB 불통)의 기본 액션(return=섹션 중단)을 우선순위 1 로 바꿔
+		// 다음 줄로 계속 진행하게 한다. 바로 뒤 'if (fail) { ok }' 가 rcode 를 ok 로 회복시켜
+		// files 비번으로 인증이 이어진다(DB 불통이 전면 거부로 번지는 것을 차단).
+		$varauthorizeuserlookup = <<<EOD
+	files
+	if (ok || updated) {
+		# mark "user exists in files" (used by the final reject decision below)
+		update control {
+			&Tmp-Integer-0 := 1
+		}
+	}
+	if ("%{%{Control:Auth-Type}:-No-Accept}" != "Accept") {
+		# radcheck(SQL) is the password authority: its ':=' check-items override
+		# the files password. No radcheck row -> notfound (files password kept).
+		sql1 {
+			fail = 1
+		}
+		if (fail) {
+			# MySQL unreachable -> keep files password (graceful fallback)
+			ok
+		}
+		elsif ((notfound || noop) && ("%{%{control:Tmp-Integer-0}:-0}" != "1")) {
+			# user in neither files nor radcheck -> same as before: ldap fallback, then reject
+			{$varmodulesldapenableauthorize}
+			if (notfound || noop) {
+				reject
+			}
+		}
+	}
+EOD;
+	} else {
+		// 기존 경로(기본): files 우선, 못 찾은 경우에만 sql/ldap 폴백.
+		// (step3-B 도입 전 출력과 바이트 동일해야 한다 — 들여쓰기 포함 수정 금지)
+		$varauthorizeuserlookup = <<<EOD
+	files
+	if ((notfound || noop) && ("%{%{Control:Auth-Type}:-No-Accept}" != "Accept")) {
+		{$varsqlconfauthorize}
+			{$varmodulesldapenableauthorize}
+			if (notfound || noop) {
+				reject
+			}
+		}
+	}
+EOD;
+	}
+
 	// accounting section DATABASE 1
 	if (($sqlconf['varsqlconfincludeenable'] == 'on') && ($sqlconf['varsqlconfenableaccounting'] == 'Enable')) {
 		$varsqlconfaccounting = <<<EOD
@@ -3456,15 +3519,7 @@ authorize {
 #		updated = return
 	}
 #	unix
-	files
-	if ((notfound || noop) && ("%{%{Control:Auth-Type}:-No-Accept}" != "Accept")) {
-		{$varsqlconfauthorize}
-			{$varmodulesldapenableauthorize}
-			if (notfound || noop) {
-				reject
-			}
-		}
-	}
+{$varauthorizeuserlookup}
 	{$varsqlconfauthcounters}
 	# Formerly checkval
 	if (&request:Calling-Station-Id == &control:Calling-Station-Id) {

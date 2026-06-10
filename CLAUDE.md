@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `303bb05` | #1~#28 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`, step3-B 보류); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리) |
+| `develop` | `303bb05` | #1~#28 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(플래그 게이트 기본 off + 토글도구, 미커밋); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리) |
 | `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#17 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
@@ -615,7 +615,7 @@
   일괄, return 을 finally 뒤로 이동해 락 밖 동기화) / `del_wifi_user`(radcheck 행 삭제).
   **files 가 여전히 권위 → auth 동작 변화 없음** — radcheck 를 항상 최신 유지(컷오버 토대).
   **3a 단독으론 즉시반영 효과 없음**(3b 가 있어야 효과).
-- **step3-B (보류): authorize 에서 sql 이 files 비번을 `:=` override → radcheck 권위화**:
+- **step3-B 위험분석 (구현은 다음 항목 — 적용 판단 기준으로 유지)**: authorize 에서 sql 이 files 비번을 `:=` override → radcheck 권위화:
   계획 unlang(플래그 게이트, 기본 off): `files` → `if(ok||updated){update control{&Tmp-Integer-0:=1}}`
   (files 찾음 표시) → `sql1`(radcheck 비번으로 `:=` override, 없으면 no-op) →
   `if((notfound||noop) && Tmp-Integer-0!=1 && Auth-Type!=Accept){reject}`(files·sql 둘 다 못 찾을 때만).
@@ -638,6 +638,27 @@
     효과 대비 **core auth 복잡화 + SQL 의존** 비용이 커서 **보류**.
   - **재개 전제**: ① 플래그 off 기본 ② 한 척 `radiusd -X` + **DB-down 로그인 테스트** ③ **MySQL
     로컬/원격 확인**(원격이면 보류 유지) ④ 통과 후 플래그 ON → 며칠 관찰 → fleet 확대.
+- **step3-B (구현 완료, 기본 off — 적용은 위 재개 전제 통과 후): radcheck 권위화 코드 + 토글 도구**:
+  - `freeradius.inc serverdefault_resync`: `$config['system']['freeradius_radcheck_override']==='on'`
+    && includeenable=on && enableauthorize=Enable 일 때**만** authorize 의 files/sql 블록을 교체 —
+    `files` → `if(ok||updated){control Tmp-Integer-0:=1}`(files 매칭 표식) → `sql1{fail=1}`(radcheck
+    `:=` override; **fail 의 기본액션 return 을 우선순위 1 로 바꿔** DB 불통에도 섹션 중단 안 함) →
+    `if(fail){ok}`(**DB-down graceful fallback — files 비번으로 인증 계속**, 위험③ 코드 완화) →
+    `elsif((notfound||noop)&&표식없음){ldap 폴백→reject}`(둘 다 없을 때만 기존대로 거부).
+    radcheck 행은 step2/3-A 가 `op=':='` 로 적재하므로 files 비번을 덮어씀 = **비번 변경 즉시
+    반영(재시작/accounting 단절 0)**. radcheck 미적재 사용자는 sql notfound → files 비번(안전 강등).
+  - 플래그를 freeradiussqlconf 가 아닌 **system** 에 둔 이유: GUI 패키지 페이지 저장이 XML 미정의
+    키를 떨굴 수 있어(#8/#15 원칙) — 떨궈져도 files 권위 복귀라는 **안전한 방향으로만 강등**.
+  - **off 시 출력 바이트 동일 검증**: 실제 `serverdefault_resync` 를 pfSense 스텁 하네스로 구동해
+    HEAD vs 수정본 생성물 diff 0 (sql-off / sql-on / 플래그만-on 3조합, CRLF 정규화) + flag-on
+    생성물 구조 8항목·중괄호 균형 검사 전부 통과. → 코드 배포만으론 동작 무변경 보장.
+  - 토글 도구 `usr/local/sbin/freeradius_enable_radcheck_override.php`: dry-run 기본 / `apply`
+    (사전점검: step1 적용여부 + radcheck 커버리지(미적재 사용자 경고·보충 안내) + DB 도달성 +
+    **버전섞임 감지**(재생성된 default 에 `Tmp-Integer-0` 마커 존재 확인) → `radiusd -C` → 실패 시
+    플래그 자동 롤백·재시작 안 함) / `disable`(files 권위 즉시 복귀 — 3-A dual-write 가 files 를
+    최신 유지하므로 **항상 안전한 롤백**). 락 `freeradius_user_config`+`parse_config(true)` (#10/#22).
+  - **코드로 못 없앤 잔여 위험**: ①(unlang 로직 실기동 미검증 — `radiusd -C` 는 문법만)·③(MySQL
+    이 auth 임계경로 — 위치 미확인) → **켜기 전 재개 전제(위) 그대로 수행할 것**.
 
 ### 24~26. 캡티브포털 무한 self-redirect 루프 → 25GB 로그 → ZFS 풀 full → 전면장애(502/OOM) (develop `f2f64aa`·`fce66ca` + 크론가드)
 - **증상(선상 1척, 동일 환경 타척은 정상)**: 부팅 후 수시간 지나면 502 폭주 + webConfigurator/
@@ -804,10 +825,15 @@
 - [ ] #23 A 검증: 자가/관리자 비번변경 → **재시작 없이 즉시 새 비번 로그인** + `[AUTH-UNKNOWN]` 소멸 /
   `radiusd -X` 로 변경 후 옛 비번 거부 확인 / 재시작 빈도·accounting 영향 모니터링
 - [x] **#23 step3-A (구현 완료)**: PW writer 5곳이 radcheck 도 dual-write (동작변경 0, 컷오버 토대) — develop `b121dda`
-- [ ] **#23 step3-B (보류)**: authorize 에서 sql 이 files 비번 `:=` override → radcheck 권위화. **보류 사유**:
-  core auth 경로라 최악 시 전면 outage(치명) + SQL 이 auth 임계경로(MySQL 위치 의존). **#23 A(재시작)로
-  이미 PW 반영은 해결**돼 3B 는 무중단 최적화(필수 아님). 재개 전제: 플래그 off 기본 + 한 척 `radiusd -X`
-  + **DB-down 로그인 테스트** + **MySQL 로컬/원격 확인**(원격이면 보류 유지). 상세 위험분석은 위 #23 step3-B 항목.
+- [x] **#23 step3-B (구현 완료, 기본 off)**: authorize 에서 radcheck(SQL) 비번 `:=` override — 플래그
+  게이트(`system/freeradius_radcheck_override`), off 시 생성물 바이트 동일(하네스 검증). DB-down 시
+  files 비번 graceful fallback 내장. 토글 도구 `freeradius_enable_radcheck_override.php`
+  (dry-run 기본 / apply 사전점검·radiusd -C·자동 롤백 / disable 즉시 복귀)
+- [ ] #23 step3-B 적용(선상, 신중 — **켜기 전 전제 필수**): ① step1+2 적용 완료 ② **MySQL 로컬/원격
+  확인**(위성 너머 원격이면 켜지 말 것) ③ 한 척 `radiusd -X` 로 기존 사용자 정상 인증 + 비번 변경
+  즉시 반영 + 옛 비번 거부 ④ **DB-down 로그인 테스트**(MySQL 차단 후 files 비번으로 로그인 = fallback
+  동작) → 통과 시 플래그 ON → 며칠 관찰 → fleet 확대. 문제 시 `disable` 로 즉시 복귀(항상 안전).
+  ON 이후 #23 A 의 재시작은 dual-write 경로상 여전히 발생 — 안정 확인 후 reload 경로 완화는 별도 후속.
 - [ ] #23 step1+2 적용(선상): `freeradius_migrate_users_to_radcheck.php apply` → `freeradius_enable_sql_authorize.php apply`
   → `radiusd -X` 로 files 사용자 정상 인증 + `dailycounter ... → noop` 확인 (시간량 미사용이라 안전)
 - [ ] #23 배포 정합성: A 패치는 `freeradius.inc` 만이지만 **버전 섞임 금지** — captiveportal.inc/index.php/
