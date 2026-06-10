@@ -243,6 +243,15 @@
             "wday": "*",
             "who": "root",
             "command": "/usr/local/bin/php /usr/local/cron/cp_routing_table_resync.php > /dev/null"
+        },
+        {
+            "minute": "7",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/cp_tz_offset_update.php > /dev/null"
         }
 
     ]

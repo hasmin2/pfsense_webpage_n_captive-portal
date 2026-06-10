@@ -52,6 +52,8 @@
 | `usr/local/www/index.php` | 관리 GUI Main Panel (사이드바 "Main Panel"; #27 안테나 트래킹 나침반) |
 | `etc/inc/server_module.inc` | influx 조회 + GEO look-angle 계산 (#27 `get_acu_pointing_info`/`get_fbb_pointing_info`) |
 | `etc/inc/terminal_status.inc` | Main Panel 상태 문자열 빌더 (return_terminal_state 등) |
+| `etc/inc/cp_geo_tz.inc` | 위경도→타임존 오프셋 오프라인 판정 (#29; 격자=`cp_tz_grid.inc`, 생성기=`tools/generate_cp_tz_grid.js`) |
+| `usr/local/cron/cp_tz_offset_update.php` | 매시 7분 GPS 기반 time_offset 자동 갱신 크론 (#29) |
 
 > **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` /
 > `freeradius_datacounter_auth_resync()` 함수가 `datacounter_acct.sh` /
@@ -795,8 +797,49 @@
   - **줌 레벨별 가시 반경**: 8°≈220nm / 12°≈340nm / 18°≈510nm / 26°≈740nm / 36°≈1020nm.
   - 좌표 계산 8케이스(wrap 포함) 하네스 검증 전부 통과.
 
+### 29. time_offset 외부 API 의존 제거 — GPS 기반 오프라인 타임존 자동판정 (develop 반영)
+- **배경**: GMT 로컬타임 오프셋(`$config['time_offset_enabled']['time_offset']`)을 기존엔 **외부
+  시스템이 REST API(`APIStatusSetTimeOffset`)로 푸시**했으나 효용 저하 → 박스 내장 판정으로 전환.
+  **표시부(사이드바 "GMT n"/head.inc/CP 로컬시간/미니맵 시계)는 같은 config 키를 읽으므로 전부 무수정.**
+- **시차 테이블(오프라인)**: 생성 시점에 인터넷에서 최신판을 받아 리포에 박제 — 런타임 위성통신 사용 0.
+  - 소스: `@photostructure/tz-lookup` v11.5.0 (IANA timezone-boundary-builder; **해상은 nautical
+    Etc/GMT±N**, 도서국 EEZ 부근은 해당국 zone — 예: 키리바시 수역 Pacific/Tarawa).
+  - 생성기 `tools/generate_cp_tz_grid.js` (#28 cp_ports 생성기 패턴): **0.5° 격자**(셀 ~30nm,
+    360행×720열) → 행별 RLE(base36 "zoneIdx:run") → `etc/inc/cp_tz_grid.inc` (PHP return array,
+    66KB, zones 419개). 갱신 = npm 재설치 후 생성기 재실행.
+- **런타임 `etc/inc/cp_geo_tz.inc`**: `cp_tz_zone_for_position`(격자 룩업, 경도 wrap 정규화) →
+  `cp_tz_zone_offset_hours`(PHP `DateTimeZone` = OS/PHP tzdata 로 현재 오프셋, **DST 자동**) →
+  실패 시 `cp_tz_nautical_offset_hours`(경도/15 반올림) **폴백 — 항상 성공, fatal 없음**.
+  - **구 tzdata 별칭**: pfSense 2.5.2(PHP 7.4, ~2021 tzdata)가 모르는 개명 zone 재시도 매핑
+    (Europe/Kyiv→Kiev, Pacific/Kanton→Enderbury, America/Ciudad_Juarez→Ojinaga, Nuuk→Godthab,
+    Qostanay→Almaty). 그래도 실패 → nautical 폴백.
+  - `cp_tz_format_offset`: 정수는 "9"/"-3"(기존 수동/API 값과 동일 표기), 반시간대만 "5.5"/"5.75".
+- **크론 `usr/local/cron/cp_tz_offset_update.php`** (firewall_cronlist **매시 7분**):
+  - #26 flock 단일 인스턴스 가드. cp_geo_tz.inc 미배포(버전 섞임) 시 조용히 종료.
+  - **`gmtcheck`='1'(Manual Timezone Enable) 이면 절대 안 덮음** (기존 API 와 동일 규약; 락 안 재확인).
+  - 위치: influx(선내 LAN, timeout 2s) `vesselposition`(VSAT) → `fbbstatus.satstatus`(FBB, 부호
+    복원) 폴백 — 미니맵과 동일 정책. self-contained(서버모듈 비의존 — openvpn.inc 연쇄 회피).
+    GPS 없으면 마지막 오프셋 유지(no-op).
+  - **변경 시에만** write: `lock('freeradius_user_config')`+`parse_config(true)`+delta(키 1개)만
+    재적용 (#10/#22 lost-update 패턴). exit-in-finally 함정 회피(플래그 방식). `TZ AUTO:` 로그.
+- **검증**: Node 원본 vs PHP 격자 디코드 **2000 랜덤 좌표 교차검증 100% 일치** + 기지점 15케이스
+  (부산 +9/뭄바이 +5.5/카트만두 +5.75/LA DST −7/런던 BST +1/난틱컬 해역/안티메리디안/경도 wrap)
+  + 포맷 6/별칭/미지zone/비수치 입력 전부 통과. php -l/cronlist JSON 검증 통과.
+- **한계(수용)**: 박스 PHP tzdata 가 ~2021 고정 → 이후 DST 규칙 변경국(이란/멕시코 2022, 이집트
+  2023, 카자흐스탄 2024 등)은 해당 해역에서 1시간 오차 가능(주요 항로 EU/미주/아시아는 2007년
+  이후 규칙 불변이라 무영향). CP 로컬시간 계산은 기존부터 정수 시간만 지원(+5.5 해역에선 30분
+  절사 — 기존 동작 유지). **외부 푸시 API 는 잔존**(수동/원격 보정용) — 중앙서버 푸시는 중지
+  권장(이중 writer 방지; 크론은 변경시에만 쓰므로 충돌해도 lost-update 는 없음).
+
 ## 다음 작업 대기 중
 
+- [x] **#29**: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자(0.5°, tz-lookup v11.5.0 박제)
+  →DateTimeZone(DST 자동)→nautical 폴백, 매시 7분 크론, gmtcheck 수동모드 존중, 표시부 무수정
+- [ ] #29 검증(선상): 배포 후 1시간 내 사이드바 "GMT n" 이 현재 해역과 일치 / `clog /var/log/system.log |
+  grep "TZ AUTO"` 로 갱신 로그 확인 / Manual Timezone Enable 체크 시 자동 갱신 정지 / 항해로 경계
+  통과 시 다음 정시+7분에 오프셋 전환 / 중앙서버의 SetTimeOffset 푸시 중지(이중 writer 정리)
+- [ ] #29 배포 정합성: `cp_geo_tz.inc` + `cp_tz_grid.inc` + `cp_tz_offset_update.php` +
+  `firewall_cronlist` 4파일 일괄 배포 (라이브러리/격자 누락 시 크론이 조용히 no-op — fatal 없음)
 - [x] **#27**: Main Panel 안테나 트래킹 나침반(VSAT/FBB look-angle) + 1080 세로압축 — develop `00f1bb1`
 - [x] **#28 예시**: 항구 미니맵 데모 + 오프라인 월드맵 자산 — develop `6b5d7c5`
 - [x] **#28 통합 + 보강 + 데이터 전면화 + WoW UI**: 항구 미니맵 전면 완성 — develop `303bb05`
