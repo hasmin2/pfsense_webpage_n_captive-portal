@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `549681f`+ | #1~#23 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구) |
+| `develop` | `549681f`+ | #1~#26 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구; #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드) |
 | `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#17 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
@@ -603,8 +603,61 @@
 - **권장 이행 순서**: A(응급, 본 커밋) 배포로 출혈 정지 → step2(radcheck 적재) → step1(SQL authorize) →
   step3(radcheck 권위화 컷오버)로 reload 의존 제거.
 
+### 24~26. 캡티브포털 무한 self-redirect 루프 → 25GB 로그 → ZFS 풀 full → 전면장애(502/OOM) (develop `f2f64aa`·`fce66ca` + 크론가드)
+- **증상(선상 1척, 동일 환경 타척은 정상)**: 부팅 후 수시간 지나면 502 폭주 + webConfigurator/
+  captiveportal/SSH 콘솔 메뉴까지 응답 불가. 재부팅하면 또 몇 시간 정상. `out of swap space` OOM
+  로 php-fpm·radiusd 반복 사살. vnstat `readonly database(8)`, `failed to write temp file /var/...`.
+- **진단 사슬(오래 헤맨 기록 — 교훈)**: 처음엔 vnstat readonly 만 보고 **디스크 배드섹터**로 오판 →
+  `out of swap` 보고 **메모리(OOM)** 로 정정 → `top` 은 평상시 정상(스파이크가 너무 빨라 못 잡음) →
+  `df -h` 에서 **ZFS 풀 full(/tmp 3.9G, 모든 데이터셋 Avail 20M)** 확인 → `ls -laS /tmp` 에서
+  **`/tmp/cp_portal_error.log` ≈ 25GB**(ZFS 압축으로 디스크 3.9G) + `sess_*` 수천 개 발견 →
+  로그 표본이 **같은 초에 sid 가 매번 다른 `REDIRECT(to self) url=/index.php?zone=crew&_ts=...` 수십 줄**
+  = **무한 self-redirect 루프** 확정.
+  - **교훈**: "한 척만 / 재부팅하면 몇 시간 / 208.x 차단 무효 / OOM / vnstat readonly" 가 전부 **단일
+    진원(루프)** 의 갈래 증상이었다. 증상이 여러 서브시스템에 흩어져 보여도 **`df`(풀)·`ls -laS /tmp`·
+    실제 로그 표본** 으로 내려가면 단일 원인에 수렴. 동일 코드 fleet 에서 **한 노드만** 터지면 그
+    노드의 **부하/환경**(여기선 트래픽 최다 → 루프 회전수 최다)이 임계를 먼저 넘은 것.
+- **#25 진원 = self-redirect 루프 (`index.php`, `fce66ca`)**: 미인증 GET(index.php:660)·연결 클라이언트
+  GET(index.php:681)이 화면을 직접 안 그리고 **flash 저장 후 `cp_redirect_self()`** 로 자기 자신에 302 →
+  "다음 요청에서 세션 flash 를 읽어" 렌더하는 구조. 이 PRG-via-session 패턴은 **세션쿠키(PHPSESSID)
+  지속에 의존**. OS 캡티브탐지기/무쿠키 클라이언트는 쿠키를 안 돌려보내 **매 요청 새 세션(sid 매번 다름)
+  → flash 못 읽음 → 또 self-redirect → 무한 루프**. 루프 1회전마다 ① 새 PHP 세션(`sess_*` 수천)
+  ② `cp_log` 1줄 ③ php-fpm 부하(listen queue overflow).
+  - **수정**: GET 진입은 `cp_render_from_flash([...])` 로 **직접 렌더**(login/connected). self-redirect 는
+    **POST 의 PRG(재제출 방지)** 에만 남김. → GET 에서 리다이렉트가 사라져 쿠키 의존/루프 원천 소멸.
+    POST flash 가 쿠키 미지속으로 유실돼도 후속 GET 이 이제 직접 렌더(graceful, 메시지만 생략).
+- **#24 증폭 = 무제한 로깅 (`index.php`, `f2f64aa`)**: 상단이 `ini_set('error_log','/tmp/cp_portal_error.log')`
+  + `cp_log()`(error_log 사용)라, **요청마다 모든 PHP warning + cp_log 를 /tmp 파일에 무제한 append**.
+  루프와 만나 **25GB 폭발 → 풀 full → 모든 write 실패**(PHP세션/포털DB/vnstat/datacounter/로그) → 502 +
+  ZFS dirty/스왑 무력화로 OOM.
+  - **수정**: 프로덕션 기본 = **/tmp 리다이렉트 안 함**(시스템 관리 로그) + **fatal 계열만**(요청당 warning
+    무적재). 디버그는 `touch /tmp/cp_portal_debug.on` 시에만, 그조차 **5MB 상한 초과 시 요청 시작에
+    truncate**(하드 가드 — 디버그 중에도 디스크 못 채움). `cp_log()` 도 `CP_DEBUG` 게이트(프로덕션 no-op).
+  - **방어 심층화**: #25 가 루프(원인)를, #24 가 무제한 로깅(증폭)을 각각 차단. 한쪽이 뚫려도 디스크
+    폭주는 불가.
+- **#26 안전망 = 크론 단일 인스턴스 가드 (per-minute 크론 7종)**: 풀 full 동안 크론들이 write 블로킹으로
+  1주기 내 못 끝나 **매분 새 인스턴스가 떠 수십 개 누적 → RAM 고갈에 가세**(crew_usage·manual_routing·
+  gps_update 각 ×2 등 관측). 의존성 없는 self-contained **flock(LOCK_EX|LOCK_NB)** 가드를 상단에 삽입 →
+  이전 실행 미완료면 `exit(0)`. 대상: `crew_usage`/`manual_routing`/`gps_update`/`openvpn_restart`/
+  `cp_routing_table_resync`(매분) + `vlan_state`/`network_usage`(5분). 락파일 `/tmp/cron_<name>.lock`(0바이트).
+  - **효과**: 어떤 미지의 원인으로 디스크/부하가 다시 와도 크론이 누적→OOM 으로 **번지지 않음**(단일
+    결함의 전면장애 전파 차단). 단 hang 한 1개는 남으므로 근본은 각 크론 I/O 타임아웃(별도).
+- **선상 즉시 복구**: `: > /tmp/cp_portal_error.log`(열려있어도 truncate 라 회수) +
+  `find /tmp -name 'sess_*' -mmin +60 -delete` → 풀 회수 → 본 패치 일괄 배포(버전 섞임 금지).
+- **후속(미적용)**: OS probe 를 `session_start()` 전에 단락해 세션 생성 자체 회피 + 세션 GC 크론(연결성
+  체크 폭주 환경의 `sess_*` 누적 완화). 크론 I/O 타임아웃 보강(hang 자체 제거).
+
 ## 다음 작업 대기 중
 
+- [x] **#25 (진원)**: 캡티브포털 무한 self-redirect 루프 차단 — GET 진입 직접 렌더 — develop `fce66ca`
+- [x] **#24 (증폭)**: 무제한 `/tmp/cp_portal_error.log` 차단(프로덕션 off + 디버그 5MB 상한) — develop `f2f64aa`
+- [x] **#26 (안전망)**: per-minute 크론 7종 단일 인스턴스 flock 가드(누적→OOM 차단) — develop (본 패치)
+- [ ] #24~26 검증: 배포 후 `df -h /tmp` 평탄 / `grep -c 'REDIRECT(to self)'`(디버그) 급증 없음 /
+  미인증 단말이 로그인 페이지 즉시 표시 / `ls /tmp/sess_*|wc -l` 비폭증 / OOM·502 소멸 /
+  `ls /tmp/cron_*.lock` 존재 + 크론 중복 인스턴스 없음(`ps ax|grep cron`)
+- [ ] #24~26 후속(미적용): OS probe 를 `session_start()` 전 단락(세션 생성 회피) + 세션 GC 크론 /
+  per-minute 크론 I/O 타임아웃 보강(hang 자체 제거)
+- [ ] #24~26 배포 정합성: **버전 섞임 금지** — `index.php` + cron 7종을 최신 develop 일괄 배포
 - [x] **#23 step1+2 도구**: radcheck 이관 스크립트 + SQL authorize 토글 — develop `fd6ced2`
 - [x] **#23 A(응급)**: PW/계정 변경 reload 를 HUP→재시작 (silent-fail 차단) — develop (본 패치)
 - [ ] #23 A 검증: 자가/관리자 비번변경 → **재시작 없이 즉시 새 비번 로그인** + `[AUTH-UNKNOWN]` 소멸 /

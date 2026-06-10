@@ -1,6 +1,13 @@
 <?
 //require_once("api/framework/APIModel.inc");
 //require_once("api/framework/APIResponse.inc");
+// ── 단일 인스턴스 가드 (#26) ──────────────────────────────────────────────────
+// 이전 실행이 1주기 안에 안 끝났으면(디스크풀/느린 I/O 등) 즉시 종료 → 프로세스 누적/OOM 방지.
+// 의존성 없는 self-contained(버전 섞임 안전). 락 fd 는 프로세스 종료 시 자동 해제.
+$__cron_singleton_fp = @fopen('/tmp/cron_' . basename(__FILE__, '.php') . '.lock', 'c');
+if ($__cron_singleton_fp === false || !@flock($__cron_singleton_fp, LOCK_EX | LOCK_NB)) {
+    exit(0);
+}
 require_once("openvpn.inc");
 global $config;
 
