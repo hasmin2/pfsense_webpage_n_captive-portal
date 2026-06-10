@@ -45,11 +45,21 @@ function return_terminal_state(){
     } else if($fbb_status[0] =="-2"){
         $fbbstring = "FBB info not available";
     } else {
-        $fbb_signal_string="";
-        if ($vsat_status[1]==0 || $vsat_status==""){$fbb_signal_string="No Signal";}
-        else{$fbb_signal_string= "Signal: ".$fbb_status[1];}
-        if($fbb_drawing_color!==""){$fbbstring = "<span style=\"color: ".$fbb_drawing_color."; \">Tracking: ".$fbb_status[0]."<br>".$fbb_signal_string."</span>";}
-        else{$fbbstring = "Tracking: ".$fbb_status[0]."<br>".$fbb_signal_string;}
+        // 표시 규약: "FBB : 143.5E (Signal : 61)" — 위성 이름은 매핑된 궤도경도로
+        // 표시(미매핑 시 단말 보고 이름 그대로), 신호는 정수 반올림.
+        $fbb_label = $fbb_status[0];
+        if (function_exists('cp_fbb_satlon_from_name') && function_exists('cp_format_satlon')) {
+            $mapped = cp_fbb_satlon_from_name($fbb_status[0]);
+            if ($mapped !== null) {
+                $fbb_label = cp_format_satlon($mapped);
+            }
+        }
+        // (버그 교정: 기존엔 No Signal 판정이 $vsat_status[1] 를 보고 있었음)
+        if ($fbb_status[1]==0 || $fbb_status[1]==""){$fbb_signal_string="No Signal";}
+        else{$fbb_signal_string= "Signal : ".$fbb_status[1];}
+        $fbb_core = "FBB : ".$fbb_label." (".$fbb_signal_string.")";
+        if($fbb_drawing_color!==""){$fbbstring = "<span style=\"color: ".$fbb_drawing_color."; \">".$fbb_core."</span>";}
+        else{$fbbstring = $fbb_core;}
     }
     return array($vsatstring, $vsatgpsstring, $fbbstring);
 }

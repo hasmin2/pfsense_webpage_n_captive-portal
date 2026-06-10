@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `549681f`+ | #1~#26 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`, step3-B 보류); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드) |
+| `develop` | `549681f`+ | #1~#26 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`, step3-B 보류); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축) |
 | `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#17 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
@@ -49,6 +49,9 @@
 | `usr/local/sbin/cp_gateway_alarm.sh` | dpinger 알람 래퍼: 표준 핸들러 후 테이블 즉시 재적재 (#20, 0755) |
 | `etc/inc/gwlb.inc` | 게이트웨이 모니터링(dpinger). `start_dpinger` 알람명령을 위 래퍼로 교체(#20) |
 | `etc/inc/vlanstate.sh` | VLAN 상태 telnet 조회 셸 (vlan_state_timeperiod_check.php가 호출) |
+| `usr/local/www/index.php` | 관리 GUI Main Panel (사이드바 "Main Panel"; #27 안테나 트래킹 나침반) |
+| `etc/inc/server_module.inc` | influx 조회 + GEO look-angle 계산 (#27 `get_acu_pointing_info`/`get_fbb_pointing_info`) |
+| `etc/inc/terminal_status.inc` | Main Panel 상태 문자열 빌더 (return_terminal_state 등) |
 
 > **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` /
 > `freeradius_datacounter_auth_resync()` 함수가 `datacounter_acct.sh` /
@@ -680,8 +683,74 @@
 - **후속(미적용)**: OS probe 를 `session_start()` 전에 단락해 세션 생성 자체 회피 + 세션 GC 크론(연결성
   체크 폭주 환경의 `sess_*` 누적 완화). 크론 I/O 타임아웃 보강(hang 자체 제거).
 
+### 27. Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축 (develop 본 커밋)
+- **요구**: Intellian ACU 레퍼런스 UI(나침반+선체+지향선+앙각게이지+HEADING/AZIMUTH/R.AZIMUTH/ELEVATION)
+  분위기의 **동적 그림**을 Main Panel(`usr/local/www/index.php`) Satellite 타일의 ACU SIGNAL 위에 추가.
+  (주의: 사용자가 "main_panel.php"로 지칭하는 파일 = 사이드바 "Main Panel" = `usr/local/www/index.php`.)
+- **데이터 소스**: influx `acustatus`(vesselposition: Heading/Latitude/Longitude; satstatus: Longitude=위성
+  궤도경도·"AGC/Signal"·TX_Mode) + `fbbstatus`(satstatus: Satellite 이름·Signal·GPS+방향컬럼).
+  ACU 는 az/el 을 직접 보고하지 않으므로 **정지궤도 look-angle 공식으로 계산**:
+  - 중심각: `cos β = cos φ · cos Δλ` (Δλ = 본선경도 − 위성경도)
+  - 앙각: `tan el = (cos β − k) / sin β`, `k = Re/Rgeo = 6378/42164 ≈ 0.1513` (가시한계 β≈81.3°, el<0=수평선 아래=물리 불능)
+  - 방위각: `Az = (180° + atan2(tan Δλ, sin φ)) mod 360` — atan2 형태라 남/북반구·적도 공용
+  - 상대방위각: `R.Az = (Az − HDG + 360) mod 360` (스크린샷 검증: 94+6=100 ✓, 311+286=597→237 ✓)
+- **신규 함수 (`server_module.inc`)**: `acu_influx_latest`(최신 1행 컬럼맵) / `cp_geo_look_angle` /
+  `cp_format_satlon` / `get_acu_pointing_info` / `cp_fbb_satlon_from_name` / `get_fbb_pointing_info`.
+  index.php 는 `function_exists` 가드(버전섞임 fatal 방지) + 기존 10초 `data_update` AJAX 에
+  `acu_view`/`fbb_view` 필드 추가.
+- **(a) 위성 궤도경도 W(서경) 부호 소실 — 실측으로 잡은 버그**: 선상에서 Az 256°/el **−61°** 오표시
+  (el<0 이 결정적 단서). 본선 위치 역산(≈9°N 93°W) 결과 **위성 +55 입력 시 위젯 오표시값**, **−55(=55°W,
+  Inmarsat I-5 F2) 입력 시 ACU 자체 화면(Az 100/El 45/R.Az 6)과 일치** → 공식이 아니라 입력 부호 문제로 확정.
+  원인 = acureader(IntellianACUReader.java) satellite 파싱이 " W" 접미사를 부호 반영 없이 잘라냄.
+  **원천 수정 완료(사용자, acureader 가 부호 보존 출력)** + pfSense 측 안전망: 계산 el<0 이면 반대
+  반구(−satlon) 후보 채택(둘 다 −5° 미만이면 az/el 미표시=오표시 방지). **규약 확정: 음수=W, 양수=E,
+  소수 1자리 고정 표시("55.0W")** — `cp_format_satlon` 한 곳에서 관리, 위젯(manage_server_module)·
+  타일 문구 모두 적용. 부수효과: 1°W/2°W 위성이 에러 센티널("-1"/"-2" 비교)과 충돌하던 잠재 문제 제거.
+  잔여: 함대 acureader 전체 갱신 후엔 W-플립 안전망 분기 제거 가능(주석 명시).
+- **(b) FBB 나침반 표시**: FBB 단말은 궤도경도를 숫자로 보고하지 않고 **위성/해역 이름만** 보고하며
+  표기가 단말기마다 다름(Sailor 웹스크랩 td/JRC dsb_inf_sat/FURUNO AT_ISATCUR+ISATINFO). 해석 3단:
+  ① 이름 안 명시 경도 파싱("EMEA 25.0E"/"98W"/"25 deg E") → ② 해역명 키워드 매핑(부분일치):
+  MEAS/MIDDLE=63.9E(I-4 F2), APAC/ASIA=143.5E(F1), AMER=−98(F3), EMEA/ALPHASAT=24.9E(Alphasat) —
+  **순서 중요: MEAS/MIDDLE 을 ASIA 보다 먼저**("Middle East & Asia"가 ASIA 에 걸려 143.5 오매핑되던 것
+  테스트로 잡음) → ③ 미매칭("None"/"IOR"/"I-6 F1" 등)이면 니들 미표시로 우아한 강등(새 표기는 map 한 줄 추가).
+  FBB GPS 는 **부호 없는 값 + 방향컬럼**(lat-direction/lat_direction 혼재 → 둘 다 검사)이라 부호 복원,
+  (0,0)=Sailor 리더 파싱실패 기본값 제외. 매핑 슬롯은 2026-06 기준 — 위성 재배치/I-6 편입 시 갱신 필요.
+- **(c) terminal_status.inc 잠복 버그 교정**: FBB "No Signal" 판정이 `$vsat_status[1]`(VSAT 신호!)를
+  보고 있었음 → `$fbb_status[1]` 로 교정(문구 재작성 중 발견).
+- **UI 최종 사양 (반복 피드백 반영)**:
+  - 상태줄 2개(같은 디자인): `VSAT : 55.0W (Signal : 142)`(민트, 추적 시 점 펄스) /
+    `FBB : 98.0W (Signal : 61.2)`(파랑). 신호는 **반올림 없이 소수 그대로**. 기존 vsat_info/fbb_info
+    텍스트 단락은 제거(백엔드 계산·JSON 필드는 구버전 캐시 페이지 호환 위해 유지).
+  - 나침반: N/E/S/W 고정 + 눈금은 외륜 바깥, **내측 숫자(45~315)는 선수 기준 상대방위 다이얼로 선체와
+    함께 회전**(접선 배치, 아래쪽 숫자 뒤집힘 = 레퍼런스 ACU UI 동일. CTM 검증: HDG94 에서 270→절대4°).
+  - 니들: **선수선=검정 / VSAT=녹색 실선+도트 / FBB=파랑 실선**(점선·dash flow·펄스링 제거 — FBB 와
+    동일 스타일로 통일). 앙각 게이지도 녹/파 두 바늘.
+  - 메트릭 4박스: HEADING 은 공용(검정 고정), **AZIMUTH/R.AZIMUTH/ELEVATION 은 5초 로테이션**으로
+    VSAT(녹색)↔FBB(파랑) 교대(한쪽만 있으면 고정, 1초 간격 12샘플로 토글 검증).
+  - 회전 애니메이션: rAF 트윈 1.6s ease + **최단경로(wrap-around: 237→10 이 +133° 로)**, rotate 속성
+    직접 갱신이라 SVG transform-origin 비의존. 탐색 스윕/선체 ±1.6° sway 는 SMIL(JS 부하 0).
+  - 상태: tracking(민트)/searching(노랑 스윕)/blocked(빨강 니들)/nodata(흐림 — 단 FBB 가 살아있으면
+    흐림 제외 `:not(.has-fbb)`)
+- **FULL HD(1080) 세로압축**: index.php **인라인 CSS 페이지 한정 오버라이드**(전역 style.css 무수정 —
+  다른 페이지 영향 0): 타일 padding 40→22, dd 여백 40+40→18+18, 아이콘 48→40, 나침반 300→260px,
+  Server Status 위 여백 40→14/20→8. **utility.css 의 .mt40/.mt20 은 `!important` 라 덮을 때도
+  `!important` 필요**(처음 안 먹던 원인). 실측(리포 CSS 6종 로드 하네스, 1920×1080): 콘텐츠 954→**822px**
+  (최장 Satellite 타일 578→461px) → 1080 에서 무스크롤. 상태 배너 폰트는 축소했다가 **원복(30px)**.
+- **수정 파일(=배포 묶음, 동일 리비전 필수)**: `usr/local/www/index.php` + `etc/inc/server_module.inc` +
+  `etc/inc/terminal_status.inc` + `usr/local/www/widgets/widgets/manage_server_module.widget.php`
+- **검증**: php -l 전부 통과 / FBB 이름 매핑 10케이스·satlon 포맷 14케이스·look-angle 5시나리오(반구
+  플립 포함) 단위테스트 통과 / 브라우저 하네스(리포 실 CSS)로 4상태·이중니들·로테이션·높이 실측.
+
 ## 다음 작업 대기 중
 
+- [x] **#27**: Main Panel 안테나 트래킹 나침반(VSAT/FBB look-angle) + 1080 세로압축 — develop (본 커밋)
+- [ ] #27 검증(선상): 나침반 Az/R.Az/El 이 ACU 자체 UI 와 일치(1척 실측 완료: 101/6/45≈ACU 100/6/45) /
+  FBB 파랑 니들·5초 메트릭 로테이션 동작 / 1080 모니터 무스크롤 / `FBB : info unavailable` 인 선박은
+  influx fbbstatus 유무 확인 / 미매핑 FBB 이름 관측 시 `cp_fbb_satlon_from_name` map 에 한 줄 추가
+- [ ] #27 배포 정합성: index.php + server_module.inc + terminal_status.inc + manage_server_module.widget.php
+  **4파일 일괄 배포**(버전 섞임 금지; 가드는 있어 fatal 은 없으나 표시 강등됨)
+- [ ] #27 후속(선택): 함대 acureader(부호 보존판) 전체 배포 완료 후 W-플립 안전망 분기 제거 /
+  FBB 매핑 테이블 슬롯 재검증(위성 재배치·I-6 편입 시)
 - [x] **#25 (진원)**: 캡티브포털 무한 self-redirect 루프 차단 — GET 진입 직접 렌더 — develop `fce66ca`
 - [x] **#24 (증폭)**: 무제한 `/tmp/cp_portal_error.log` 차단(프로덕션 off + 디버그 5MB 상한) — develop `f2f64aa`
 - [x] **#26 (안전망)**: per-minute 크론 7종 단일 인스턴스 flock 가드(누적→OOM 차단) — develop (본 패치)
