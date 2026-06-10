@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `303bb05` | #1~#28 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(플래그 게이트 기본 off + 토글도구, 미커밋); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리) |
+| `develop` | `de4daf7` | #1~#28 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리) |
 | `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#17 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
@@ -828,7 +828,7 @@
 - [x] **#23 step3-B (구현 완료, 기본 off)**: authorize 에서 radcheck(SQL) 비번 `:=` override — 플래그
   게이트(`system/freeradius_radcheck_override`), off 시 생성물 바이트 동일(하네스 검증). DB-down 시
   files 비번 graceful fallback 내장. 토글 도구 `freeradius_enable_radcheck_override.php`
-  (dry-run 기본 / apply 사전점검·radiusd -C·자동 롤백 / disable 즉시 복귀)
+  (dry-run 기본 / apply 사전점검·radiusd -C·자동 롤백 / disable 즉시 복귀) — develop `de4daf7`
 - [ ] #23 step3-B 적용(선상, 신중 — **켜기 전 전제 필수**): ① step1+2 적용 완료 ② **MySQL 로컬/원격
   확인**(위성 너머 원격이면 켜지 말 것) ③ 한 척 `radiusd -X` 로 기존 사용자 정상 인증 + 비번 변경
   즉시 반영 + 옛 비번 거부 ④ **DB-down 로그인 테스트**(MySQL 차단 후 files 비번으로 로그인 = fallback
