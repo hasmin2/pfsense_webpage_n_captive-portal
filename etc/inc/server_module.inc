@@ -331,7 +331,9 @@ function get_acu_pointing_info() {
         'heading'     => null,
         'azimuth'     => null,
         'rel_azimuth' => null,
-        'elevation'   => null
+        'elevation'   => null,
+        'lat'         => null,       // #28 항구 미니맵용 수치형 본선 위치
+        'lon'         => null
     );
 
     $vp = acu_influx_latest('vesselposition');
@@ -376,6 +378,11 @@ function get_acu_pointing_info() {
 
     $out['heading'] = ($heading !== null) ? round($heading, 1) : null;
     $out['signal']  = $signal;
+    // (0,0) 은 GPS 미수신/파싱실패 기본값으로 간주해 미니맵에 노출하지 않음
+    if ($lat !== null && $lon !== null && !($lat == 0 && $lon == 0)) {
+        $out['lat'] = round($lat, 5);
+        $out['lon'] = round($lon, 5);
+    }
 
     $tracked = ($satlon !== null && $satlon != 0);
     if ($tracked) {
@@ -486,7 +493,9 @@ function get_fbb_pointing_info($heading = null) {
         'signal'      => null,
         'azimuth'     => null,
         'rel_azimuth' => null,
-        'elevation'   => null
+        'elevation'   => null,
+        'lat'         => null,       // #28 항구 미니맵 폴백 위치(FBB 단독 선박)
+        'lon'         => null
     );
 
     $ss = acu_influx_latest('satstatus', 'fbbstatus');
@@ -527,6 +536,8 @@ function get_fbb_pointing_info($heading = null) {
     if ($lat === null || $lon === null || ($lat == 0 && $lon == 0)) {
         return $out;
     }
+    $out['lat'] = round($lat, 5);
+    $out['lon'] = round($lon, 5);
 
     $look = cp_geo_look_angle($lat, $lon, $satlon);
     // 매핑 슬롯이 틀렸거나 GPS 이상이면 수평선 아래로 나옴 → 표시 억제(-5° 톨러런스)

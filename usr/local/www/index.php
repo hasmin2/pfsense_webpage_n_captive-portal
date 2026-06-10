@@ -236,6 +236,47 @@ if($_POST['data_update']){
                                 </dt>
                                 <dd>
                                     <p class="text" id="gps_info"><?= $drawing_gps_info;?></p>
+                                    <!-- #28 항구 미니맵: 최근접 3개 항구 방위/거리 (GPS 갱신 시 자동 재계산, 오프라인 지도)
+                                         GPS 미수신 시 no-gps 클래스 → 회색 디스크 + "NO GPS" (레이아웃 점프 없음) -->
+                                    <div class="port-mm no-gps" id="port_mm">
+                                        <!-- 상단 존 플레이트: 현재 해역/위치 영문 표시 (WoW 존 이름판) -->
+                                        <div class="pm-plate"><span id="port_mm_region">--</span></div>
+                                        <div class="pm-stage">
+                                        <div class="port-mm-disc">
+                                            <div class="port-mm-map" id="port_mm_map"></div>
+                                            <p class="pm-nogps">NO GPS</p>
+                                        </div>
+                                        <svg class="port-mm-svg" viewBox="-124 -124 248 248" xmlns="http://www.w3.org/2000/svg">
+                                            <defs>
+                                                <radialGradient id="mmGlow" cx="50%" cy="50%" r="50%">
+                                                    <stop offset="78%" stop-color="rgba(0,0,0,0)"/>
+                                                    <stop offset="100%" stop-color="rgba(20,14,2,0.35)"/>
+                                                </radialGradient>
+                                            </defs>
+                                            <circle r="110" fill="url(#mmGlow)"/>
+                                            <circle r="110" fill="none" stroke="#6B5516" stroke-width="7"/>
+                                            <circle r="110" fill="none" stroke="#D4AF37" stroke-width="4"/>
+                                            <circle r="113.5" fill="none" stroke="#8A6D1F" stroke-width="1.6"/>
+                                            <circle r="106.5" fill="none" stroke="#8A6D1F" stroke-width="1.2"/>
+                                            <g id="mm_diamonds"></g>
+                                            <text x="0" y="-116" text-anchor="middle" font-size="11" font-weight="700" fill="#8A6D1F">N</text>
+                                            <g id="mm_arrow_0"><path d="M0,-103 L7,-90 L-7,-90 Z" fill="#FFD75E" stroke="#5C4708" stroke-width="1.4"/></g>
+                                            <g id="mm_arrow_1"><path d="M0,-103 L6.2,-91 L-6.2,-91 Z" fill="#E3B341" stroke="#5C4708" stroke-width="1.3"/></g>
+                                            <g id="mm_arrow_2"><path d="M0,-103 L5.4,-92 L-5.4,-92 Z" fill="#B98E2F" stroke="#5C4708" stroke-width="1.2"/></g>
+                                            <g id="mm_ship">
+                                                <path d="M0,-9 L6,7 L0,3.4 L-6,7 Z" fill="#FFE08A" stroke="#3A2D05" stroke-width="1.5"/>
+                                            </g>
+                                        </svg>
+                                        <!-- 우상단 시계 배지: 선박 설정 GMT 오프셋 기준 로컬타임 -->
+                                        <div class="pm-clock"><strong id="pm_clock_time">--:--</strong><span id="pm_clock_gmt"></span></div>
+                                        <!-- 우하단 줌 버튼 -->
+                                        <div class="pm-zoom">
+                                            <button type="button" class="pm-zoom-btn" id="pm_zoom_in" title="Zoom in">+</button>
+                                            <button type="button" class="pm-zoom-btn" id="pm_zoom_out" title="Zoom out">&#8722;</button>
+                                        </div>
+                                        </div>
+                                        <ul class="port-mm-list" id="port_mm_list"></ul>
+                                    </div>
                                 </dd>
                             </dl>
                             <dl class="tile-area">
@@ -395,7 +436,7 @@ if($_POST['data_update']){
     .acu-trk.has-fbb #acu_fbb_el_rot {opacity:1;}
     .acu-trk-metrics {display:flex; gap:6px; margin-top:10px;}
     .acu-trk-metrics li {flex:1 1 0; min-width:0; border:1px solid #DEE2E6; padding:6px 2px 5px; text-align:center; list-style:none;}
-    .acu-trk-metrics li span {display:block; font-size:9px; font-weight:600; letter-spacing:.4px; color:#868E96;}
+    .acu-trk-metrics li span {display:block; font-size:8px; font-weight:600; letter-spacing:0; color:#868E96; white-space:nowrap; overflow:hidden;}
     .acu-trk-metrics li strong {display:block; font-size:14px; font-weight:700; color:#212529; margin-top:2px; transition: color .4s;}
     .acu-trk-metrics li strong.src-vsat {color:#12B886;}
     .acu-trk-metrics li strong.src-fbb {color:#4C6EF5;}
@@ -404,6 +445,49 @@ if($_POST['data_update']){
         70% {box-shadow:0 0 0 7px rgba(18,184,134,0);}
         100% {box-shadow:0 0 0 0 rgba(18,184,134,0);}
     }
+
+    /* === #28 항구 미니맵 (Position 타일) === */
+    .port-mm {width:220px; margin:16px auto 0; position:relative;}
+    .port-mm-disc {width:220px; height:220px; border-radius:50%; position:relative; overflow:hidden;
+        background:#454C54;
+        box-shadow: inset 0 0 26px rgba(0,0,0,.55), inset 0 0 4px rgba(0,0,0,.6);}
+    .port-mm-map {position:absolute; left:0; top:0; right:0; bottom:0; background-repeat:no-repeat;
+        background-image:url('../img/world_minimap.jpg');
+        filter:saturate(1.15) brightness(1.04); transition:opacity .6s;}
+    .port-mm .pm-nogps {display:none; position:absolute; left:0; top:0; right:0; bottom:0;
+        align-items:center; justify-content:center; font-size:13px; font-weight:700;
+        letter-spacing:2px; color:#ADB5BD; margin:0;}
+    .port-mm.no-gps .port-mm-map {opacity:0;}
+    .port-mm.no-gps .pm-nogps {display:flex;}
+    .port-mm.no-gps #mm_ship,
+    .port-mm.no-gps #mm_arrow_0,
+    .port-mm.no-gps #mm_arrow_1,
+    .port-mm.no-gps #mm_arrow_2 {opacity:0;}
+    .pm-stage {position:relative; width:220px; height:220px; margin:0 auto;}
+    .port-mm-svg {position:absolute; left:-14px; top:-14px; width:248px; height:248px; pointer-events:none;}
+    /* 상단 존 플레이트 (WoW 존 이름판) */
+    .pm-plate {width:208px; margin:0 auto 10px; background:#343A40; border:1.5px solid #D4AF37;
+        border-radius:11px; padding:3px 12px; text-align:center;}
+    .pm-plate span {display:block; font-size:11px; font-weight:700; letter-spacing:1px; color:#FFD75E;
+        line-height:1.5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    /* 우상단 시계 배지 (로컬타임 + GMT 오프셋) */
+    .pm-clock {position:absolute; top:-8px; right:-12px; z-index:3; background:#343A40;
+        border:1.5px solid #D4AF37; border-radius:8px; padding:2px 7px 3px; text-align:center; line-height:1.1;}
+    .pm-clock strong {display:block; font-size:12px; font-weight:700; color:#FFD75E;}
+    .pm-clock span {display:block; font-size:8px; font-weight:600; color:#E3B341; margin-top:1px;}
+    /* 우하단 줌 버튼 */
+    .pm-zoom {position:absolute; right:-12px; bottom:-4px; z-index:3;}
+    .pm-zoom-btn {display:block; width:24px; height:24px; margin-top:6px; padding:0; border-radius:50%;
+        background:#343A40; border:1.5px solid #D4AF37; color:#FFD75E; font-size:15px; font-weight:700;
+        line-height:1; cursor:pointer;}
+    .pm-zoom-btn:hover {background:#495057;}
+    .port-mm.no-gps .pm-zoom {display:none;}
+    .port-mm-list {margin-top:8px; min-height:62px;}
+    .port-mm-list li {list-style:none; display:flex; align-items:center; gap:6px;
+        font-size:12px; font-weight:600; color:#495057; line-height:1.7; justify-content:center;}
+    .port-mm-list li .pm-tri {display:inline-block; transition:transform 1.2s cubic-bezier(.35,.1,.25,1);}
+    .port-mm-list li .pm-dist {color:#212529; font-weight:700;}
+    .port-mm-list li .pm-brg {color:#868E96; font-weight:500;}
 
     /* === FULL HD(1080) 세로 맞춤 — Main Panel 한정 압축 오버라이드 ===
        전역 style.css 는 그대로 두고 이 페이지에서만 여백/크기를 줄인다.
@@ -420,6 +504,9 @@ if($_POST['data_update']){
 </style>
 </body>
 </html>
+<!-- #28 데이터: 주요 항구(WPI L/M) + 해역 박스(Natural Earth) — tools/ 생성기로 갱신 -->
+<script src="js/cp_ports.js"></script>
+<script src="js/cp_searegions.js"></script>
 <script>
     function ipAddressCheck(ipAddress){
         var regEx = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
@@ -619,6 +706,7 @@ if($_POST['data_update']){
             elv = Math.max(0, Math.min(90, elv));
             acuRotateTo('acu_el_rot', -elv);
         }
+        updatePortMinimap();
     }
 
     // FBB 보조 표시: VSAT 아래 상태줄(같은 디자인, 파랑) + 파란 보조 니들.
@@ -631,6 +719,7 @@ if($_POST['data_update']){
         if (wrap.classList) { wrap.classList.toggle('has-fbb', hasAz); }
         acuLastFbb = d;
         renderAcuMetrics();
+        updatePortMinimap();
 
         var line = document.getElementById('acu_fbb_status');
         var lbl = document.getElementById('acu_fbb_label');
@@ -658,6 +747,230 @@ if($_POST['data_update']){
             acuRotateTo('acu_fbb_el_rot', -Math.max(0, Math.min(90, elv)));
         }
     }
+
+    // ===================== #28 항구 미니맵 =====================
+    // 전세계 주요 항구 리스트 [이름, 위도, 경도]
+    var PORTS = [
+        ['BUSAN',35.10,129.04],['ULSAN',35.50,129.38],['INCHEON',37.46,126.62],['GWANGYANG',34.90,127.70],
+        ['SHANGHAI',31.23,121.49],['NINGBO',29.87,121.84],['QINGDAO',36.07,120.32],['TIANJIN',38.98,117.79],
+        ['DALIAN',38.92,121.65],['HONG KONG',22.30,114.17],['SHENZHEN',22.55,114.05],['KAOHSIUNG',22.61,120.28],
+        ['TOKYO',35.61,139.79],['YOKOHAMA',35.45,139.65],['NAGOYA',35.05,136.85],['KOBE',34.65,135.20],
+        ['SINGAPORE',1.26,103.84],['PORT KLANG',3.00,101.40],['TG.PELEPAS',1.36,103.55],['JAKARTA',-6.10,106.88],
+        ['SURABAYA',-7.20,112.73],['MANILA',14.58,120.97],['HO CHI MINH',10.77,106.70],['HAIPHONG',20.86,106.68],
+        ['LAEM CHABANG',13.08,100.88],['COLOMBO',6.95,79.85],['CHENNAI',13.10,80.30],['NHAVA SHEVA',18.95,72.95],
+        ['MUNDRA',22.74,69.70],['KARACHI',24.80,66.97],
+        ['JEBEL ALI',25.01,55.06],['ABU DHABI',24.53,54.38],['DAMMAM',26.50,50.20],['JEDDAH',21.48,39.17],
+        ['SALALAH',16.94,54.00],['BANDAR ABBAS',27.15,56.21],
+        ['ROTTERDAM',51.95,4.14],['ANTWERP',51.28,4.34],['HAMBURG',53.54,9.97],['BREMERHAVEN',53.55,8.58],
+        ['FELIXSTOWE',51.95,1.31],['LE HAVRE',49.48,0.12],['ALGECIRAS',36.13,-5.43],['VALENCIA',39.45,-0.32],
+        ['BARCELONA',41.35,2.16],['MARSEILLE',43.33,5.33],['GENOA',44.40,8.92],['GIOIA TAURO',38.45,15.90],
+        ['PIRAEUS',37.94,23.62],['AMBARLI',40.97,28.69],['GDANSK',54.40,18.66],['ST.PETERSBURG',59.88,30.20],
+        ['LOS ANGELES',33.74,-118.26],['LONG BEACH',33.75,-118.20],['OAKLAND',37.80,-122.32],['SEATTLE',47.60,-122.34],
+        ['VANCOUVER',49.29,-123.11],['MANZANILLO',19.05,-104.31],['BALBOA',8.95,-79.57],['COLON',9.36,-79.90],
+        ['CARTAGENA',10.40,-75.51],['CALLAO',-12.05,-77.14],['VALPARAISO',-33.03,-71.62],['SANTOS',-23.98,-46.30],
+        ['BUENOS AIRES',-34.58,-58.37],['NEW YORK',40.67,-74.05],['SAVANNAH',32.08,-81.09],['HOUSTON',29.73,-95.27],
+        ['MIAMI',25.77,-80.17],['CHARLESTON',32.78,-79.92],['NORFOLK',36.92,-76.33],
+        ['DURBAN',-29.87,31.03],['CAPE TOWN',-33.91,18.44],['LAGOS',6.44,3.36],['TANGER MED',35.88,-5.50],
+        ['PORT SAID',31.25,32.31],['SUEZ',29.93,32.55],['MOMBASA',-4.06,39.65],
+        ['SYDNEY',-33.96,151.20],['MELBOURNE',-37.83,144.93],['BRISBANE',-27.38,153.17],['AUCKLAND',-36.84,174.78],
+        ['FREMANTLE',-32.05,115.74]
+    ];
+    // js/cp_ports.js(WPI Large/Medium 주요 항구 544개) 가 로드되면 그걸 사용.
+    // 미배포(버전 섞임) 시 위 내장 82개로 폴백 — fatal 없음.
+    if (typeof CP_PORTS !== 'undefined' && CP_PORTS.length) { PORTS = CP_PORTS; }
+    var MM_D = 220;            // 미니맵 표시 지름(px)
+    // 줌 레벨 = 세로 표시 범위(도). 값이 작을수록 확대. +/- 버튼으로 전환, 선택은 localStorage 보존.
+    var MM_SPANS = [36, 26, 18, 12, 8];
+    var mmZoomIdx = 2;
+    try {
+        var mmZs = parseInt(localStorage.getItem('cp_mm_zoom'), 10);
+        if (mmZs >= 0 && mmZs < MM_SPANS.length) { mmZoomIdx = mmZs; }
+    } catch (e) {}
+    function mmSaveZoom() {
+        try { localStorage.setItem('cp_mm_zoom', String(mmZoomIdx)); } catch (e) {}
+    }
+    var MM_ARROW_COLORS = ['#FFD75E', '#E3B341', '#B98E2F'];
+
+    // 우상단 시계: 선박 설정 GMT 오프셋 기준 로컬타임 (GPS 와 무관하게 항상 동작)
+    var MM_GMT_OFFSET = <?php echo json_encode((float)(isset($config['time_offset_enabled']['time_offset']) ? $config['time_offset_enabled']['time_offset'] : 0)); ?>;
+    function mmUpdateClock() {
+        var tEl = document.getElementById('pm_clock_time');
+        if (!tEl) { return; }
+        var d = new Date(Date.now() + MM_GMT_OFFSET * 3600000);
+        tEl.textContent = ('0' + d.getUTCHours()).slice(-2) + ':' + ('0' + d.getUTCMinutes()).slice(-2);
+        var gEl = document.getElementById('pm_clock_gmt');
+        if (gEl) { gEl.textContent = 'GMT' + (MM_GMT_OFFSET >= 0 ? '+' : '') + MM_GMT_OFFSET; }
+    }
+    mmUpdateClock();
+    setInterval(mmUpdateClock, 10000);
+
+    function mmDistNm(lat1, lon1, lat2, lon2) {
+        var R = 3440.065;
+        var p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180;
+        var dp = (lat2 - lat1) * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180;
+        var a = Math.sin(dp / 2) * Math.sin(dp / 2) +
+                Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+        return 2 * R * Math.asin(Math.sqrt(a));
+    }
+    function mmBearingDeg(lat1, lon1, lat2, lon2) {
+        var p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180;
+        var dl = (lon2 - lon1) * Math.PI / 180;
+        var y = Math.sin(dl) * Math.cos(p2);
+        var x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+        return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }
+
+    // 대략적 해역명 박스 (위도min, 위도max, 경도min, 경도max — 위에서부터 첫 매칭).
+    // ① 운하/해협(접근 표시) ② 항구 30nm 이내 ③ 해역 박스 ④ 대양 폴백 순.
+    var MM_STRAITS = [
+        ['NEARBY PANAMA CANAL', 8.4, 9.8, -80.3, -79.0],
+        ['NEARBY SUEZ CANAL', 29.5, 31.6, 32.0, 32.9],
+        ['NEARBY SINGAPORE STRAIT', 0.9, 1.6, 103.3, 104.4],
+        ['MALACCA STRAIT', 1.6, 6.5, 98.0, 103.3],
+        ['NEARBY GIBRALTAR', 35.6, 36.3, -6.2, -4.9],
+        ['NEARBY HORMUZ STRAIT', 25.5, 27.2, 55.5, 57.5],
+        ['NEARBY BAB-EL-MANDEB', 12.0, 13.5, 42.5, 44.2],
+        ['KOREA STRAIT', 33.8, 34.9, 128.3, 130.3],
+        ['TAIWAN STRAIT', 22.5, 25.5, 117.5, 121.0],
+        ['NEARBY DOVER STRAIT', 50.7, 51.3, 0.9, 1.9],
+        ['NEARBY BOSPORUS', 40.8, 41.5, 28.7, 29.5]
+    ];
+    var MM_SEAS = [
+        ['YELLOW SEA', 33, 41, 119, 127],
+        ['EAST CHINA SEA', 25, 33, 120, 130],
+        ['SEA OF JAPAN', 35, 48, 128, 142],
+        ['SOUTH CHINA SEA', 0, 23, 105, 120],
+        ['PHILIPPINE SEA', 5, 25, 120, 140],
+        ['JAVA SEA', -8, -3, 105, 117],
+        ['ANDAMAN SEA', 6, 14, 92, 98.5],
+        ['GULF OF THAILAND', 6, 13.5, 99, 105],
+        ['BAY OF BENGAL', 5, 22, 80, 95],
+        ['ARABIAN SEA', 5, 25, 55, 75],
+        ['PERSIAN GULF', 23.5, 30, 47, 56.5],
+        ['GULF OF ADEN', 10, 15, 44, 52],
+        ['RED SEA', 13, 28, 32, 44],
+        ['BLACK SEA', 41, 47, 27, 42],
+        ['MEDITERRANEAN SEA', 30, 46, -6, 36],
+        ['ENGLISH CHANNEL', 48.5, 51, -5.5, 1.5],
+        ['NORTH SEA', 51, 61, -4, 9],
+        ['BALTIC SEA', 53, 66, 9, 30],
+        ['CARIBBEAN SEA', 9, 22, -89, -60],
+        ['GULF OF MEXICO', 18, 30, -98, -81],
+        ['SEA OF OKHOTSK', 44, 60, 135, 157],
+        ['BERING SEA', 52, 66, 162, 180],
+        ['BERING SEA', 52, 66, -180, -157],
+        ['CORAL SEA', -30, -10, 145, 165],
+        ['TASMAN SEA', -45, -30, 150, 170]
+    ];
+    function mmZoneHit(zones, lat, lon) {
+        for (var i = 0; i < zones.length; i++) {
+            var z = zones[i];
+            if (lat >= z[1] && lat <= z[2] && lon >= z[3] && lon <= z[4]) { return z[0]; }
+        }
+        return null;
+    }
+    function mmSeaRegion(lat, lon, nearest) {
+        var hit = mmZoneHit(MM_STRAITS, lat, lon);
+        if (hit) { return hit; }
+        if (nearest && nearest.d < 30) { return 'NEARBY ' + nearest.name; }
+        // js/cp_searegions.js(Natural Earth 292개 박스, 면적 오름차순=구체적 우선)
+        // 로드 시 그걸 사용 — 미배포면 내장 MM_SEAS(25개)로 폴백.
+        hit = mmZoneHit((typeof CP_SEAREGIONS !== 'undefined' && CP_SEAREGIONS.length) ? CP_SEAREGIONS : MM_SEAS, lat, lon);
+        if (hit) { return hit; }
+        if (lat <= -60) { return 'SOUTHERN OCEAN'; }
+        if (lat >= 66.5) { return 'ARCTIC OCEAN'; }
+        if (lon >= -70 && lon < 20) { return (lat >= 0 ? 'NORTH' : 'SOUTH') + ' ATLANTIC OCEAN'; }
+        if (lon >= 20 && lon < 100) { return 'INDIAN OCEAN'; }
+        if (lon >= 100) { return 'WESTERN PACIFIC OCEAN'; }
+        return 'EASTERN PACIFIC OCEAN';
+    }
+
+    (function buildMmDiamonds() {
+        var g = document.getElementById('mm_diamonds');
+        if (!g) { return; }
+        var ns = 'http://www.w3.org/2000/svg';
+        for (var a = 45; a < 360; a += 90) {
+            var d = document.createElementNS(ns, 'path');
+            d.setAttribute('d', 'M0,-118 L5,-110 L0,-102 L-5,-110 Z');
+            d.setAttribute('fill', '#D4AF37');
+            d.setAttribute('stroke', '#6B5516');
+            d.setAttribute('stroke-width', '1.2');
+            d.setAttribute('transform', 'rotate(' + a + ')');
+            g.appendChild(d);
+        }
+    })();
+
+    // acuLastVsat/acuLastFbb 저장값에서 위치를 골라(VSAT GPS 우선, FBB 폴백) 미니맵 갱신.
+    // updateAcuCompass/updateFbbCompass 끝에서 호출되므로 10초 AJAX 마다 재계산된다.
+    function updatePortMinimap() {
+        var box = document.getElementById('port_mm');
+        if (!box) { return; }
+        function hasPos(d) {
+            return !!(d && d.lat !== null && d.lat !== undefined && d.lon !== null && d.lon !== undefined &&
+                      !isNaN(d.lat) && !isNaN(d.lon) && !(d.lat === 0 && d.lon === 0));
+        }
+        var src = hasPos(acuLastVsat) ? acuLastVsat : (hasPos(acuLastFbb) ? acuLastFbb : null);
+        // GPS 미수신: 숨기지 않고 회색 디스크 + "NO GPS" (타일 높이 유지 → 레이아웃 점프 없음)
+        if (box.classList) { box.classList.toggle('no-gps', !src); }
+        if (!src) {
+            var emptyList = document.getElementById('port_mm_list');
+            if (emptyList) { emptyList.innerHTML = ''; }
+            var emptyRegion = document.getElementById('port_mm_region');
+            if (emptyRegion) { emptyRegion.textContent = '--'; }
+            return;
+        }
+        var lat = src.lat, lon = src.lon;
+
+        // 지도 패닝 (등장방형: 위경도 -> 픽셀 선형 매핑, north-up)
+        var bgH = MM_D * 180 / MM_SPANS[mmZoomIdx];
+        var bgW = bgH * 2;
+        var px = (lon + 180) / 360 * bgW;
+        var py = (90 - lat) / 180 * bgH;
+        var mapEl = document.getElementById('port_mm_map');
+        if (mapEl) {
+            mapEl.style.backgroundSize = bgW + 'px ' + bgH + 'px';
+            mapEl.style.backgroundPosition = (MM_D / 2 - px) + 'px ' + (MM_D / 2 - py) + 'px';
+        }
+
+        // 중앙 본선 마커 (선수방위)
+        var hdg = (acuLastVsat && acuLastVsat.heading !== null && acuLastVsat.heading !== undefined &&
+                   !isNaN(acuLastVsat.heading)) ? acuLastVsat.heading : null;
+        if (hdg !== null) { acuRotateTo('mm_ship', hdg); }
+
+        // 최근접 항구 3개 -> rim 화살표(방위각) + 리스트(이름/거리/방위)
+        var ranked = PORTS.map(function (p) {
+            return {name: p[0], d: mmDistNm(lat, lon, p[1], p[2]), b: mmBearingDeg(lat, lon, p[1], p[2])};
+        }).sort(function (a, b) { return a.d - b.d; }).slice(0, 3);
+
+        var html = '';
+        for (var i = 0; i < 3; i++) {
+            var r = ranked[i];
+            acuRotateTo('mm_arrow_' + i, r.b);
+            html += '<li><span class="pm-tri" style="color:' + MM_ARROW_COLORS[i] + ';text-shadow:0 0 1px #5C4708;transform:rotate(' + r.b + 'deg)">&#9650;</span>'
+                 + '<span>' + r.name + '</span>'
+                 + '<span class="pm-dist">' + (r.d < 100 ? r.d.toFixed(1) : Math.round(r.d)) + ' nm</span>'
+                 + '<span class="pm-brg">' + Math.round(r.b) + '&#176;</span></li>';
+        }
+        var list = document.getElementById('port_mm_list');
+        if (list) { list.innerHTML = html; }
+
+        // 대략적 해역명 -> 상단 존 플레이트 (예: EASTERN PACIFIC OCEAN / NEARBY PANAMA CANAL)
+        var regionEl = document.getElementById('port_mm_region');
+        if (regionEl) { regionEl.textContent = mmSeaRegion(lat, lon, ranked[0]); }
+    }
+
+    // 줌 버튼: + 확대(표시범위 축소) / - 축소
+    (function initMmZoomButtons() {
+        var zi = document.getElementById('pm_zoom_in');
+        var zo = document.getElementById('pm_zoom_out');
+        if (zi) { zi.onclick = function () {
+            if (mmZoomIdx < MM_SPANS.length - 1) { mmZoomIdx++; mmSaveZoom(); updatePortMinimap(); }
+        }; }
+        if (zo) { zo.onclick = function () {
+            if (mmZoomIdx > 0) { mmZoomIdx--; mmSaveZoom(); updatePortMinimap(); }
+        }; }
+    })();
+    // ===========================================================
 
     // 초기 1회 렌더 (이후엔 refreshValue 의 10초 AJAX 가 갱신)
     updateAcuCompass(<?php echo json_encode($acu_view); ?>);

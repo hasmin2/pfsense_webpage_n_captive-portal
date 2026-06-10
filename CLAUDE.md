@@ -741,7 +741,7 @@
 - **검증**: php -l 전부 통과 / FBB 이름 매핑 10케이스·satlon 포맷 14케이스·look-angle 5시나리오(반구
   플립 포함) 단위테스트 통과 / 브라우저 하네스(리포 실 CSS)로 4상태·이중니들·로테이션·높이 실측.
 
-### 28 (예시 단계, 통합 대기). 항구 미니맵 — WoW 풍 원형 미니맵 + 최근접 3개 항구 방위/거리 화살표
+### 28. 항구 미니맵 — WoW 풍 원형 미니맵 + 최근접 3개 항구 방위/거리 화살표 (통합 완료)
 - **요구**: GPS 판넬(Position 타일) 아래 원형 미니맵. 오프라인용 경량 지도 사전 저장, 전세계 주요 항구
   리스트, 현재 위치→최근접 3개 항구를 방위각 화살표+거리로 표시, GPS 갱신(약 1분)마다 재계산.
 - **자산**: `usr/local/www/img/world_minimap.jpg` — NASA Blue Marble 등장방형 2048×1024, 233KB,
@@ -750,14 +750,46 @@
   하버사인(nm)+대권 초기방위각, 금테 2중 링+4방위 다이아+중앙 본선 마커(선수방위 회전)+림 화살표
   3개(1~3위 크기·색 차등, 최단경로 트윈)+이름·거리·방위 리스트. 항해 시뮬레이션 버튼 포함.
   지리 정합 검증: 28.6N/119.8E 에서 대만 우하단, SHANGHAI 28°/KAOHSIUNG 176° ✓.
-- **통합 시(승인 대기)**: index.php Position 타일 gps_info 아래 삽입 + `data_update` JSON 에 수치형
-  lat/lon 추가 필요(현재 GPS 는 표시용 문자열만 내려감). 기존 10초 AJAX 가 갱신 트리거.
+- **통합 (develop 본 커밋)**: index.php Position 타일 gps_info 아래 삽입 완료.
+  - 백엔드: `get_acu_pointing_info`/`get_fbb_pointing_info` 가 수치형 `lat`/`lon`(소수 5자리) 추가
+    반환 — (0,0)=GPS 미수신 기본값은 null 처리. 추가 influx 쿼리 0(기존 조회 재사용).
+  - 프런트: `updatePortMinimap()` 이 acuLastVsat(VSAT GPS 우선)→acuLastFbb(폴백) 순으로 위치를
+    골라 지도 패닝+본선 마커(선수방위)+최근접 3개 림 화살표+리스트 갱신. updateAcuCompass/
+    updateFbbCompass 끝에서 호출 → 기존 10초 data_update AJAX 가 자동 트리거(GPS 는 약 1분 주기).
+    위치 없으면 **회색 처리**(`no-gps` 클래스): 금테 링 유지 + 지도 대신 어두운 회색 디스크 +
+    중앙 "NO GPS" + 화살표/마커 숨김 + 리스트 영역 min-height 62px 예약 → 0,0 대서양 오표시 방지
+    겸 GPS 단속(부팅 직후 등)에도 타일 높이 불변(레이아웃 점프 없음). 회전은 나침반과 같은
+    acuRotateTo 트윈(최단경로) 재사용.
+  - 검증: 배포 JS 를 그대로 추출(node --check + DOM 스텁 하네스)해 E2E 스모크 — 초기 숨김 /
+    VSAT 위치(동중국해→NINGBO·SHANGHAI·KAOHSIUNG) / FBB 폴백(파나마→BALBOA 16.3nm·COLON
+    16.7nm) / 양측 소실 시 재숨김 전부 통과. php -l 통과.
+  - 1080 영향: Position 타일 +약 296px → 최장 타일이 Satellite(461)→Position(~510)으로 바뀜.
+    전체 콘텐츠 ~871px — 1080 뷰포트 내 유지.
 
 ## 다음 작업 대기 중
 
 - [x] **#27**: Main Panel 안테나 트래킹 나침반(VSAT/FBB look-angle) + 1080 세로압축 — develop `00f1bb1`
-- [x] **#28 예시**: 항구 미니맵 데모 + 오프라인 월드맵 자산 — develop (본 커밋)
-- [ ] #28 통합: 디자인(줌 18°/크기 220px/색감)·항구 목록 확정 후 index.php Position 타일에 삽입
+- [x] **#28 예시**: 항구 미니맵 데모 + 오프라인 월드맵 자산 — develop `6b5d7c5`
+- [x] **#28 통합**: index.php Position 타일에 미니맵 삽입 + acu/fbb_view 에 수치형 lat/lon — develop (본 커밋)
+- [x] #28 보강: 해역 표시(운하/해협→항구 30nm→해역 박스→대양 폴백, 예: EASTERN PACIFIC OCEAN /
+  NEARBY PANAMA CANAL — 15케이스 단위테스트 통과) + 메트릭 라벨(R.AZIMUTH 등) 박스 넘침 수정
+  (8px/자간0/nowrap) — develop (본 커밋)
+- [x] #28 데이터 전면화(A안): 항구 = **NGA World Port Index(퍼블릭 도메인) Harbor Size L/M 필터
+  544개** → `usr/local/www/js/cp_ports.js`(16KB) / 해역 = **Natural Earth 10m marine polys(퍼블릭
+  도메인) bbox 자동추출 292개, 면적 오름차순(구체적 우선)** → `usr/local/www/js/cp_searegions.js`(13KB).
+  생성기는 `tools/generate_cp_ports.js`·`tools/generate_cp_searegions.js`(다운로드 URL 주석 포함,
+  node 로 재생성). index.php 는 `typeof CP_PORTS/CP_SEAREGIONS` 가드로 로드 — **js 미배포(버전 섞임)
+  시 내장 82항구/25해역으로 자동 폴백**(fatal 없음). 12지점 회귀(부산 6.1nm·파나마·싱가포르
+  터미널명·EUROPOORT·수에즈·호르무즈 등) 통과. **배포 묶음에 js 2개 추가** — develop (본 커밋)
+- [x] #28 WoW UI 3종: ① 상단 존 플레이트(금테 다크 바, 해역/위치 영문 — 기존 하단 region 줄 대체)
+  ② 우상단 시계 배지(선박 설정 `time_offset` 기준 로컬타임 HH:MM + "GMT±n", GPS 무관 상시 동작,
+  10초 갱신) ③ 우하단 +/− 줌 버튼(표시범위 36/26/18/12/8° 5단계, localStorage `cp_mm_zoom` 보존,
+  no-gps 시 숨김). 검증: 플레이트/시계(GMT-6→06:19)/줌(bgSize 4400→6600) 기능 + 도안 스크린샷
+  — develop (본 커밋)
+- [ ] #28 검증(선상): 미니맵 위치/항구 화살표가 실제와 일치 / GPS 1분 갱신 추종 / `world_minimap.jpg`
+  포함 배포 확인(**선상 흰 디스크 = 이 이미지 미배포가 원인** — MORNING LILY 실측, PHP 만 복사하고
+  이미지 누락 시 발생; 최신 코드는 회색 디스크로 강등) / 1080 무스크롤 유지 / 해역명 체감 확인 /
+  자주 가는 항구 누락 시 PORTS 배열에 추가
 - [ ] #27 검증(선상): 나침반 Az/R.Az/El 이 ACU 자체 UI 와 일치(1척 실측 완료: 101/6/45≈ACU 100/6/45) /
   FBB 파랑 니들·5초 메트릭 로테이션 동작 / 1080 모니터 무스크롤 / `FBB : info unavailable` 인 선박은
   influx fbbstatus 유무 확인 / 미매핑 FBB 이름 관측 시 `cp_fbb_satlon_from_name` map 에 한 줄 추가
