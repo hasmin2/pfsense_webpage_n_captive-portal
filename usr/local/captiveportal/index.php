@@ -1,8 +1,28 @@
 <?php
+// ── 캡티브포털 에러/디버그 로깅 (#24) ────────────────────────────────────────
+// 과거: 요청마다 모든 PHP warning 을 /tmp/cp_portal_error.log 에 "무제한" append →
+//       요청 폭주 시 25GB 까지 폭발 → ZFS 풀 포화 → 502/OOM/vnstat readonly 등 전면장애.
+// 변경:
+//   - 프로덕션 기본: /tmp 무제한 파일로 리다이렉트하지 않음(시스템 관리 로그로). 요청당
+//     warning 은 적재하지 않고 fatal 계열만 → 무제한 증가 자체가 불가.
+//   - 디버그가 필요하면:  touch /tmp/cp_portal_debug.on  (이후 요청부터 활성)
+//     이 경우에도 5MB 상한을 넘으면 요청 시작 시 truncate 하여 디스크를 절대 못 채움.
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
-ini_set('error_log', '/tmp/cp_portal_error.log');
-error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED & ~E_STRICT);
+
+define('CP_DEBUG', @file_exists('/tmp/cp_portal_debug.on'));
+if (CP_DEBUG) {
+	$cp_errlog = '/tmp/cp_portal_error.log';
+	// 누적 폭발(디스크 풀) 원천 차단: 상한 초과 시 비우고 다시 시작
+	if (@filesize($cp_errlog) > 5 * 1024 * 1024) { // 5MB 상한
+		@file_put_contents($cp_errlog, '');
+	}
+	ini_set('error_log', $cp_errlog);
+	error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED & ~E_STRICT);
+} else {
+	// 프로덕션: error_log 미설정(시스템 관리 로그) + fatal 계열만 → /tmp 무제한 적재 없음.
+	error_reporting(E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR | E_RECOVERABLE_ERROR);
+}
 
 
 function cp_safe_redirect_url(string $url): string
@@ -196,6 +216,10 @@ HTML;
 
 
 function cp_log(string $msg): void {
+	// #24: 디버그 모드에서만 기록(프로덕션에선 no-op) → 핫패스 무제한 로깅 차단
+	if (!CP_DEBUG) {
+		return;
+	}
 	$t = sprintf('%.6f', microtime(true));
 	$sid = session_id();
 	error_log("[CP] t={$t} sid={$sid} {$msg}");
