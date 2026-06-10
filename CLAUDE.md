@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `660727e` | #1~#29 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`)) |
+| `develop` | `e229a70` | #1~#29 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`)) |
 | `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#17 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
@@ -61,6 +61,27 @@
 > 두 셸 스크립트를 수정하면 반드시 `freeradius.inc` 내 **임베디드 사본도 함께** 수정할 것.
 > (검증법: freeradius.inc에서 nowdoc 블록 추출 후 standalone과 diff → 내용 동일해야 함.
 > CRLF/말미개행 차이는 Windows 체크아웃 아티팩트이며 git이 LF로 정규화하므로 무시.)
+
+## 아키텍처 — cron 배포 메커니즘
+
+`usr/local/cron/firewall_cronlist` (JSON) 은 선상 박스에서 **직접 읽히지 않는다.**
+배포 스크립트(Jenkins/update.sh)가 이 파일을 **`APIServiceCronWrite` REST API로 POST** →
+pfSense가 `$config['cron']['item']`에 기록 + `cron_sync_package()` 호출 →
+FreeBSD `/var/cron/tabs/root` 재생성 → `/usr/sbin/cron` 데몬이 실행.
+
+```
+firewall_cronlist (JSON)
+    ↓  배포 시 POST /api/v1/service/cron
+$config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_package()
+    ↓
+/var/cron/tabs/root  (FreeBSD 시스템 crontab)
+    ↓
+/usr/sbin/cron
+```
+
+- **선상 등록 확인**: `crontab -l | grep <스크립트명>`
+- **미등록 증상**: `firewall_cronlist`만 배포하고 API 호출 누락 시 → 파일은 있어도 cron 미발화
+- `etc/inc/api/models/APIServiceCronRead.inc` / `APIServiceCronWrite.inc` 참고
 
 ## 아키텍처 — 방화벽 서브시스템
 
@@ -835,7 +856,7 @@
 
 - [x] **#29**: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자(0.5°, tz-lookup v11.5.0 박제)
   →DateTimeZone(DST 자동)→nautical 폴백, 매시 7분 크론, gmtcheck 수동모드 존중, 표시부 무수정
-  — develop `660727e`
+  — develop `660727e` (tip: `e229a70`)
 - [ ] #29 검증(선상): 배포 후 1시간 내 사이드바 "GMT n" 이 현재 해역과 일치 / `clog /var/log/system.log |
   grep "TZ AUTO"` 로 갱신 로그 확인 / Manual Timezone Enable 체크 시 자동 갱신 정지 / 항해로 경계
   통과 시 다음 정시+7분에 오프셋 전환 / 중앙서버의 SetTimeOffset 푸시 중지(이중 writer 정리)
