@@ -263,6 +263,8 @@ if($_POST['data_update']){
                                             <g id="mm_arrow_0"><path d="M0,-103 L7,-90 L-7,-90 Z" fill="#FFD75E" stroke="#5C4708" stroke-width="1.4"/></g>
                                             <g id="mm_arrow_1"><path d="M0,-103 L6.2,-91 L-6.2,-91 Z" fill="#E3B341" stroke="#5C4708" stroke-width="1.3"/></g>
                                             <g id="mm_arrow_2"><path d="M0,-103 L5.4,-92 L-5.4,-92 Z" fill="#B98E2F" stroke="#5C4708" stroke-width="1.2"/></g>
+                                            <!-- #28 지도 위 항구 점 (on-map 시 JS가 동적 생성) -->
+                                            <g id="mm_port_dots"></g>
                                             <g id="mm_ship">
                                                 <path d="M0,-9 L6,7 L0,3.4 L-6,7 Z" fill="#FFE08A" stroke="#3A2D05" stroke-width="1.5"/>
                                             </g>
@@ -463,6 +465,7 @@ if($_POST['data_update']){
     .port-mm.no-gps #mm_arrow_0,
     .port-mm.no-gps #mm_arrow_1,
     .port-mm.no-gps #mm_arrow_2 {opacity:0;}
+    .port-mm.no-gps #mm_port_dots {display:none;}
     .pm-stage {position:relative; width:220px; height:220px; margin:0 auto;}
     .port-mm-svg {position:absolute; left:-14px; top:-14px; width:248px; height:248px; pointer-events:none;}
     /* 상단 존 플레이트 (WoW 존 이름판) */
@@ -486,8 +489,10 @@ if($_POST['data_update']){
     .port-mm-list li {list-style:none; display:flex; align-items:center; gap:6px;
         font-size:12px; font-weight:600; color:#495057; line-height:1.7; justify-content:center;}
     .port-mm-list li .pm-tri {display:inline-block; transition:transform 1.2s cubic-bezier(.35,.1,.25,1);}
+    .port-mm-list li .pm-dot {display:inline-block; line-height:1; font-size:10px;}
     .port-mm-list li .pm-dist {color:#212529; font-weight:700;}
     .port-mm-list li .pm-brg {color:#868E96; font-weight:500;}
+    .port-mm-list li .pm-onmap {color:#868E96; font-weight:500; font-size:10px; font-style:italic;}
 
     /* === FULL HD(1080) 세로 맞춤 — Main Panel 한정 압축 오버라이드 ===
        전역 style.css 는 그대로 두고 이 페이지에서만 여백/크기를 줄인다.
@@ -913,6 +918,13 @@ if($_POST['data_update']){
         // GPS 미수신: 숨기지 않고 회색 디스크 + "NO GPS" (타일 높이 유지 → 레이아웃 점프 없음)
         if (box.classList) { box.classList.toggle('no-gps', !src); }
         if (!src) {
+            // 인라인 display 오버라이드 해제 → CSS .no-gps 규칙이 화살표를 숨길 수 있도록
+            for (var ai = 0; ai < 3; ai++) {
+                var ae = document.getElementById('mm_arrow_' + ai);
+                if (ae) { ae.style.display = ''; }
+            }
+            var emptyDots = document.getElementById('mm_port_dots');
+            if (emptyDots) { emptyDots.innerHTML = ''; }
             var emptyList = document.getElementById('port_mm_list');
             if (emptyList) { emptyList.innerHTML = ''; }
             var emptyRegion = document.getElementById('port_mm_region');
@@ -937,19 +949,89 @@ if($_POST['data_update']){
                    !isNaN(acuLastVsat.heading)) ? acuLastVsat.heading : null;
         if (hdg !== null) { acuRotateTo('mm_ship', hdg); }
 
-        // 최근접 항구 3개 -> rim 화살표(방위각) + 리스트(이름/거리/방위)
+        // 최근접 항구 3개 계산 — plat/plon 포함(on-map 판정에 필요)
         var ranked = PORTS.map(function (p) {
-            return {name: p[0], d: mmDistNm(lat, lon, p[1], p[2]), b: mmBearingDeg(lat, lon, p[1], p[2])};
+            return {name: p[0], plat: p[1], plon: p[2],
+                    d: mmDistNm(lat, lon, p[1], p[2]),
+                    b: mmBearingDeg(lat, lon, p[1], p[2])};
         }).sort(function (a, b) { return a.d - b.d; }).slice(0, 3);
+
+        // 줌 스케일: 배경 픽셀/도 = SVG 유닛/도 (등장방형 1:1)
+        // SVG 디스크 반경 110에서 8px 마진 → 점이 링 안에 완전히 들어오도록
+        var scale = MM_D / MM_SPANS[mmZoomIdx];
+        var R_VIS = MM_D / 2 - 8;   // = 102
+
+        // on-map 항구 점 초기화
+        var ns = 'http://www.w3.org/2000/svg';
+        var dotsG = document.getElementById('mm_port_dots');
+        if (dotsG) { dotsG.innerHTML = ''; }
 
         var html = '';
         for (var i = 0; i < 3; i++) {
             var r = ranked[i];
-            acuRotateTo('mm_arrow_' + i, r.b);
-            html += '<li><span class="pm-tri" style="color:' + MM_ARROW_COLORS[i] + ';text-shadow:0 0 1px #5C4708;transform:rotate(' + r.b + 'deg)">&#9650;</span>'
-                 + '<span>' + r.name + '</span>'
-                 + '<span class="pm-dist">' + (r.d < 100 ? r.d.toFixed(1) : Math.round(r.d)) + ' nm</span>'
-                 + '<span class="pm-brg">' + Math.round(r.b) + '&#176;</span></li>';
+            var arrowEl = document.getElementById('mm_arrow_' + i);
+
+            // 항구의 SVG 좌표 (ship = 원점, 경도 wrap 처리)
+            var dlon = r.plon - lon;
+            if (dlon > 180) { dlon -= 360; }
+            if (dlon < -180) { dlon += 360; }
+            var svgX = dlon * scale;
+            var svgY = -(r.plat - lat) * scale;
+            var onMap = (svgX * svgX + svgY * svgY) <= R_VIS * R_VIS;
+
+            if (onMap) {
+                // 림 화살표 숨기고 지도 위 점 표시
+                if (arrowEl) { arrowEl.style.display = 'none'; }
+                if (dotsG) {
+                    var gEl = document.createElementNS(ns, 'g');
+                    // 외곽 글로우 (인지성 향상)
+                    var glow = document.createElementNS(ns, 'circle');
+                    glow.setAttribute('cx', svgX.toFixed(1));
+                    glow.setAttribute('cy', svgY.toFixed(1));
+                    glow.setAttribute('r', '7');
+                    glow.setAttribute('fill', MM_ARROW_COLORS[i]);
+                    glow.setAttribute('opacity', '0.22');
+                    gEl.appendChild(glow);
+                    // 항구 점
+                    var dot = document.createElementNS(ns, 'circle');
+                    dot.setAttribute('cx', svgX.toFixed(1));
+                    dot.setAttribute('cy', svgY.toFixed(1));
+                    dot.setAttribute('r', '3.5');
+                    dot.setAttribute('fill', MM_ARROW_COLORS[i]);
+                    dot.setAttribute('stroke', '#2A1F00');
+                    dot.setAttribute('stroke-width', '1');
+                    gEl.appendChild(dot);
+                    // 이름 레이블 — 점 왼쪽/오른쪽 자동 선택
+                    var lx = svgX + (svgX >= 0 ? -6 : 6);
+                    var anchor = svgX >= 0 ? 'end' : 'start';
+                    var lbl = document.createElementNS(ns, 'text');
+                    lbl.setAttribute('x', lx.toFixed(1));
+                    lbl.setAttribute('y', (svgY - 5).toFixed(1));
+                    lbl.setAttribute('font-size', '8');
+                    lbl.setAttribute('fill', MM_ARROW_COLORS[i]);
+                    lbl.setAttribute('font-weight', '700');
+                    lbl.setAttribute('text-anchor', anchor);
+                    lbl.setAttribute('stroke', '#1A1000');
+                    lbl.setAttribute('stroke-width', '2.5');
+                    lbl.setAttribute('paint-order', 'stroke');
+                    lbl.textContent = r.name;
+                    gEl.appendChild(lbl);
+                    dotsG.appendChild(gEl);
+                }
+                // 리스트: 점 아이콘으로 표시 (on-map 강조)
+                html += '<li><span class="pm-dot" style="color:' + MM_ARROW_COLORS[i] + '">&#9679;</span>'
+                     + '<span>' + r.name + '</span>'
+                     + '<span class="pm-dist">' + (r.d < 100 ? r.d.toFixed(1) : Math.round(r.d)) + ' nm</span>'
+                     + '<span class="pm-onmap">on map</span></li>';
+            } else {
+                // 림 화살표 표시 (기존 동작)
+                if (arrowEl) { arrowEl.style.display = ''; }
+                acuRotateTo('mm_arrow_' + i, r.b);
+                html += '<li><span class="pm-tri" style="color:' + MM_ARROW_COLORS[i] + ';text-shadow:0 0 1px #5C4708;transform:rotate(' + r.b + 'deg)">&#9650;</span>'
+                     + '<span>' + r.name + '</span>'
+                     + '<span class="pm-dist">' + (r.d < 100 ? r.d.toFixed(1) : Math.round(r.d)) + ' nm</span>'
+                     + '<span class="pm-brg">' + Math.round(r.b) + '&#176;</span></li>';
+            }
         }
         var list = document.getElementById('port_mm_list');
         if (list) { list.innerHTML = html; }
