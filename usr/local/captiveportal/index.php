@@ -657,17 +657,19 @@ if ($connectedSession==='') {
 		header("Location: {$loginurl}", true, 302);
 		exit;
 	}
-	cp_flash_set([
+	// #25: 미인증 GET 은 로그인 페이지를 "직접" 렌더한다.
+	// (과거: flash 저장 후 cp_redirect_self → 세션쿠키 지속에 의존. OS 캡티브탐지/무쿠키
+	//  클라이언트는 쿠키를 안 돌려보내 매 요청 새 세션 → flash 못 읽음 → 무한 self-redirect
+	//  루프 → 세션파일/로그(cp_log) 폭주 → 디스크풀/OOM(#24). self-redirect 는 POST 의
+	//  PRG[재제출 방지]에만 쓴다.)
+	cp_render_from_flash([
 		'redirurl' => $redirurl,
-		'type' => $data['type'] ?? 'login',
-		'msg' => $data['msg'] ?? 'Welcome!',
-		'mac' => $clientmac,
-		'ip' => $clientip,
+		'type'     => 'login',
+		'msg'      => 'Welcome!',
+		'mac'      => $clientmac,
+		'ip'       => $clientip,
 	]);
-	cp_redirect_self(['zone' => $cpzone]);
-	ob_flush();
-	exit;
-
+	// cp_render_from_flash() 가 렌더 후 exit 한다.
 }
 
 
@@ -678,16 +680,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 	$speedProfile = trim((string)($_POST['speed_profile'] ?? ''));
 }
 
-cp_flash_set([
+// #25: 연결된 클라이언트의 GET 은 connected 페이지를 "직접" 렌더한다(self-redirect 루프 방지).
+cp_render_from_flash([
 	'redirurl' => $redirurl,
-	'type' => 'connected',
-	'msg' => '',
-	'mac' => $clientmac,
-	'ip' => $clientip,
+	'type'     => 'connected',
+	'msg'      => '',
+	'mac'      => $clientmac,
+	'ip'       => $clientip,
 	'username' => $connectedUser,
 ]);
-cp_redirect_self(['zone' => $cpzone]);
-ob_flush();
-exit;
 ?>
 
