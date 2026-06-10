@@ -108,7 +108,13 @@
       "mcp__visualize__read_me",
       "PowerShell($j = Get-Content \"C:\\\\Users\\\\Roudy.Ha\\\\.claude\\\\projects\\\\D--git-pfsense-webpage-n-captive-portal\\\\3fa2e726-12f3-42d0-8302-49db7c069aca\\\\tool-results\\\\toolu_01Ew3knaB6172vk4a8uydEf1.json\" -Raw | ConvertFrom-Json; $t = $j[0].text; $i = $t.IndexOf\\('SVG'\\); $t.Substring\\(0, 12000\\))",
       "mcp__visualize__show_widget",
-      "PowerShell($url = \"https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Whole_world_-_land_and_oceans.jpg/2880px-Whole_world_-_land_and_oceans.jpg\"; $out = \"D:\\\\git\\\\pfsense_webpage_n_captive-portal\\\\usr\\\\local\\\\www\\\\img\\\\world_minimap.jpg\"; try { Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing -TimeoutSec 60; \\(Get-Item $out\\).Length } catch { \"DOWNLOAD FAILED: \" + $_.Exception.Message })"
+      "PowerShell($url = \"https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Whole_world_-_land_and_oceans.jpg/2880px-Whole_world_-_land_and_oceans.jpg\"; $out = \"D:\\\\git\\\\pfsense_webpage_n_captive-portal\\\\usr\\\\local\\\\www\\\\img\\\\world_minimap.jpg\"; try { Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing -TimeoutSec 60; \\(Get-Item $out\\).Length } catch { \"DOWNLOAD FAILED: \" + $_.Exception.Message })",
+      "PowerShell($l = \\(Get-Content \"usr\\\\local\\\\pkg\\\\freeradius.inc\" -TotalCount 3465\\)[3458..3464]; $l | ForEach-Object { \\($_ -replace \"`t\",\"[TAB]\"\\) })",
+      "PowerShell(php -l usr\\\\local\\\\pkg\\\\freeradius.inc; php -l usr\\\\local\\\\sbin\\\\freeradius_enable_radcheck_override.php; Write-Output \"TEMP=$env:TEMP\")",
+      "PowerShell(cmd /c \"git show HEAD:usr/local/pkg/freeradius.inc > %TEMP%\\\\fr3b\\\\head.inc\"; \\(Get-Item \"$env:TEMP\\\\fr3b\\\\head.inc\"\\).Length)",
+      "Bash(php -l \"D:/git/pfsense_webpage_n_captive-portal/usr/local/www/index.php\")",
+      "Bash(npm --version)",
+      "Bash(php --version)"
     ]
   }
 }
