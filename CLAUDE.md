@@ -852,10 +852,14 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   절사 — 기존 동작 유지). **외부 푸시 API 는 잔존**(수동/원격 보정용) — 중앙서버 푸시는 중지
   권장(이중 writer 방지; 크론은 변경시에만 쓰므로 충돌해도 lost-update 는 없음).
 
-### 31. CNA(OS 캡티브 미니브라우저) 로그인 창 — 최종 채택안 = 로그인 폼 + "Copy address" (커밋 대기)
-- **✅ 최종 채택안 (기본 사용, 영문 고정)**: CNA 가 로그인 후 창을 닫는 OS 동작은 못 바꾸고,
-  자동닫힘 스푸핑은 삼성에서 불가(아래 제거 경위) → **CNA 에 로그인 폼을 그대로 두고(원래 동작),
-  로그인 폼에 "Copy address" 버튼을 기본 노출**해 3경로 커버:
+### 31. CNA(OS 캡티브 미니브라우저) 로그인 창 — 로그인 폼 + "Copy address"(현재 기본 OFF)
+- **⚙️ 현재 상태(중요)**: "Copy address" 블록은 `renderLoginPortalHtml` 안 `$cpShowCopyAddr` 플래그로
+  **기본 `false`(미표시) = 이 스레드 이전 로그인 폼 모습으로 복구**. 코드는 `if ($cpShowCopyAddr)`
+  안에 **그대로 보존** → `true` 한 줄이면 재노출. (사용자 지시로 raw 포털 주소 노출을 끔. 자동닫힘
+  기계장치는 그 전에 index.php 에서 이미 완전 삭제 — 아래 🗑️ 항목.)
+- **✅ 설계 의도 (재노출 시 = `$cpShowCopyAddr=true`, 영문 고정)**: CNA 가 로그인 후 창을 닫는 OS
+  동작은 못 바꾸고, 자동닫힘 스푸핑은 삼성에서 불가(아래 제거 경위) → **CNA 에 로그인 폼을 그대로
+  두고(원래 동작), 로그인 폼에 "Copy address" 버튼을 노출**해 3경로 커버:
   - **경로 1(기존)**: CNA 폼에 ID/PW → 로그인 → 창 자동 닫힘(성공 감지) = 온라인. 가장 빠름.
   - **경로 2**: 폼 입력 싫음 → "Copy address" 탭 → CNA 닫고 → 크롬 등에 붙여넣기 → 거기서 로그인.
   - **경로 3(S20 등 자동 안 닫힘)**: "Copy address" → 상단 "이 네트워크를 그대로 사용" 수동 닫기
@@ -941,14 +945,14 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 
 ## 다음 작업 대기 중
 
-- [x] **#31 (채택안)**: CNA 로그인 창 — 로그인 폼 유지 + 로그인 폼에 **"Copy address" 버튼 기본
-  노출(영문 고정)** → 3경로(폼로그인 / 복사→타브라우저 / S20 수동닫기→타브라우저) 커버.
-  `captiveportal.inc` `renderLoginPortalHtml` 단일 추가. **자동닫힘 기계장치(guide/ack/probe/
-  done/게이트)는 index.php 에서 전부 삭제** — 남은 건 로그인 폼 + Copy address 버튼뿐. develop 커밋 대기.
-- [ ] #31 검증(선상): CNA 에 로그인 폼 + "Copy address" 버튼 노출 / 폼에 ID/PW → 로그인 → 온라인 /
-  "Copy address" 탭 → "Copied!" → 크롬에 붙여넣기 → 포털 로그인 / 일반 브라우저에서도 버튼 정상 /
-  무JS 기종은 주소 텍스트 수동 입력 가능 / "자동으로 닫힙니다" 류 문구 소멸(자동닫힘 페이지 제거됨) /
-  필요 시 선내 공지(영문 안내) 병행
+- [x] **#31**: CNA 로그인 창 — 로그인 폼 유지(원래 동작). **자동닫힘 기계장치(guide/ack/probe/
+  done/게이트)는 index.php 에서 전부 삭제**. 로그인 폼의 "Copy address" 블록은 `captiveportal.inc`
+  `renderLoginPortalHtml` 에 코드 보존하되 `$cpShowCopyAddr=false` 로 **기본 미표시(이 스레드 이전
+  로그인 폼 모습)** — `true` 로 재노출 가능. develop 반영.
+- [ ] #31 검증(선상): 로그인 페이지에 "Copy address" 블록/raw 포털 주소 **미표시**(이 스레드 이전 모습) /
+  로그인 폼에 ID/PW → 로그인 → 온라인 정상 / "자동으로 닫힙니다" 류 문구 소멸 / **배포 정합성: index.php
+  + captiveportal.inc 같은 리비전 일괄 배포**(섞이면 `cp_wireless_auth`/`captiveportal_try_migrate_session_by_mac`
+  등 undefined fatal — 실제 관측됨). 재노출 원하면 `$cpShowCopyAddr=true`.
 - [x] **#29**: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자(0.5°, tz-lookup v11.5.0 박제)
   →DateTimeZone(DST 자동)→nautical 폴백, 매시 7분 크론, gmtcheck 수동모드 존중, 표시부 무수정
   — develop `660727e` (tip: `e229a70`)

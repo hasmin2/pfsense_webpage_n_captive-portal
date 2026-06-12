@@ -5428,8 +5428,15 @@ function renderLoginPortalHtml(array $data = []): string
                     </div>
                 </form>
 
-                <?php /* #31: 다른 브라우저에서 로그인하려는 사용자를 위한 포털 주소 복사.
-                         문구는 다국적 선원 공통 이해를 위해 "영문 고정"(i18n 미적용). 기본 노출.
+                <?php
+                // #31: 로그인 폼의 "Copy address(포털 주소)" 블록 표시 토글.
+                //   false = 이 스레드 이전 모습(블록 미표시) — 현재 기본. 아래 코드는 그대로 보존.
+                //   true  로 바꾸면 로그인 폼 아래에 "Copy address" 블록 재노출.
+                $cpShowCopyAddr = false;
+                ?>
+                <?php if ($cpShowCopyAddr): ?>
+                <?php /* 다른 브라우저에서 로그인하려는 사용자를 위한 포털 주소 복사.
+                         문구는 다국적 선원 공통 이해를 위해 "영문 고정"(i18n 미적용).
                          복사 실패해도 주소가 그대로 보이므로 수동 입력 가능. */ ?>
                 <?php $cpAddr = (empty($_SERVER['HTTPS']) ? 'http://' : 'https://') . ($_SERVER['HTTP_HOST'] ?? ''); ?>
                 <div class="cp-copyaddr" style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(127,127,127,.25);">
@@ -5467,6 +5474,7 @@ function renderLoginPortalHtml(array $data = []): string
                   btn.addEventListener('click',function(){if(doCopy()){ok();}});
                 })();
                 </script>
+                <?php endif; ?>
             </div>
             <div class="card">
                 <div class="card-head">
