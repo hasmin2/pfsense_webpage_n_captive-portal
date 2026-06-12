@@ -5427,6 +5427,46 @@ function renderLoginPortalHtml(array $data = []): string
                         <?= h(cp_t('login_helper', $lang)) ?>
                     </div>
                 </form>
+
+                <?php /* #31: 다른 브라우저에서 로그인하려는 사용자를 위한 포털 주소 복사.
+                         문구는 다국적 선원 공통 이해를 위해 "영문 고정"(i18n 미적용). 기본 노출.
+                         복사 실패해도 주소가 그대로 보이므로 수동 입력 가능. */ ?>
+                <?php $cpAddr = (empty($_SERVER['HTTPS']) ? 'http://' : 'https://') . ($_SERVER['HTTP_HOST'] ?? ''); ?>
+                <div class="cp-copyaddr" style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(127,127,127,.25);">
+                    <div style="font-size:13px;opacity:.85;line-height:1.45;margin-bottom:8px;">
+                        Prefer to use a full web browser? Copy this address, then paste it into Chrome, Safari, or any browser to log in there.
+                    </div>
+                    <div id="cpPortalAddr" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:700;text-align:center;background:rgba(127,127,127,.12);border:1px dashed rgba(127,127,127,.5);border-radius:8px;padding:10px 8px;margin-bottom:8px;word-break:break-all;-webkit-user-select:all;user-select:all;"><?= h($cpAddr) ?></div>
+                    <button type="button" class="btn btn-secondary" id="cpCopyAddrBtn" style="width:100%;">Copy address</button>
+                </div>
+                <script>
+                (function(){
+                  var addrEl=document.getElementById('cpPortalAddr');
+                  var btn=document.getElementById('cpCopyAddrBtn');
+                  if(!addrEl||!btn){return;}
+                  // location 이 권위 — 실제 페이지가 서비스되는 주소(302 후 포털 호스트)를 복사한다.
+                  var url=location.protocol+'//'+location.host;
+                  addrEl.textContent=url;
+                  var orig=btn.textContent;
+                  function ok(){btn.textContent='Copied!';setTimeout(function(){btn.textContent=orig;},2000);}
+                  // HTTP(비보안)라 navigator.clipboard 보통 부재 → execCommand(동기)가 주경로.
+                  function doCopy(){
+                    var done=false;
+                    try{
+                      var ta=document.createElement('textarea');
+                      ta.value=url;ta.setAttribute('readonly','');
+                      ta.style.position='fixed';ta.style.left='-9999px';ta.style.fontSize='16px';
+                      document.body.appendChild(ta);ta.focus();ta.select();
+                      try{ta.setSelectionRange(0,url.length);}catch(e){}
+                      done=document.execCommand('copy');
+                      document.body.removeChild(ta);
+                    }catch(e){}
+                    if(!done&&navigator.clipboard&&navigator.clipboard.writeText){try{navigator.clipboard.writeText(url);done=true;}catch(e){}}
+                    return done;
+                  }
+                  btn.addEventListener('click',function(){if(doCopy()){ok();}});
+                })();
+                </script>
             </div>
             <div class="card">
                 <div class="card-head">

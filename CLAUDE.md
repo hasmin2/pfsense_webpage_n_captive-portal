@@ -852,7 +852,40 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   절사 — 기존 동작 유지). **외부 푸시 API 는 잔존**(수동/원격 보정용) — 중앙서버 푸시는 중지
   권장(이중 writer 방지; 크론은 변경시에만 쓰므로 충돌해도 lost-update 는 없음).
 
-### 30. CNA(OS 캡티브 미니브라우저) 로그인 즉시 닫힘 → 안내 페이지로 전환 (develop 반영, 커밋 대기)
+### 31. CNA(OS 캡티브 미니브라우저) 로그인 창 — 최종 채택안 = 로그인 폼 + "Copy address" (커밋 대기)
+- **✅ 최종 채택안 (기본 사용, 영문 고정)**: CNA 가 로그인 후 창을 닫는 OS 동작은 못 바꾸고,
+  자동닫힘 스푸핑은 삼성에서 불가(아래 폐기 경위) → **CNA 에 로그인 폼을 그대로 두고
+  (`#31` 게이트 OFF = 원래 동작), 로그인 폼에 "Copy address" 버튼을 기본 노출**해 3경로 커버:
+  - **경로 1(기존)**: CNA 폼에 ID/PW → 로그인 → 창 자동 닫힘(성공 감지) = 온라인. 가장 빠름.
+  - **경로 2**: 폼 입력 싫음 → "Copy address" 탭 → CNA 닫고 → 크롬 등에 붙여넣기 → 거기서 로그인.
+  - **경로 3(S20 등 자동 안 닫힘)**: "Copy address" → 상단 "이 네트워크를 그대로 사용" 수동 닫기
+    → 브라우저 붙여넣기 → 로그인. (복사 버튼 자체는 창을 안 닫음 — 닫기는 경로1=로그인성공뿐.)
+  - **구현 (`etc/inc/captiveportal.inc` `renderLoginPortalHtml` 단일 추가)**: 로그인 폼 아래
+    "Copy address" 블록 — 안내문/버튼 **영문 고정**(다국적 선원 공통 이해, i18n 미적용). 복사할
+    주소 = JS `location.protocol+'//'+location.host`(302 후 실제 포털 호스트가 권위) + 서버측
+    `$_SERVER['HTTP_HOST']` 폴백(무JS 시 수동 입력용, user-select:all). 복사 = HTTP(비보안)라
+    `navigator.clipboard` 부재 → `document.execCommand('copy')` 동기 경로(#31 CNA 에서 동작 확인됨).
+    "Copied!" 피드백. 일반 브라우저에도 노출(무해 — 공유/타브라우저 열기용).
+  - **검증**: php -l + 렌더 하네스 10검사(버튼·영문문구·주소박스·서버폴백·execCommand·location·
+    Copied!·한국어 미혼입·로그인폼/쿼터카드 유지) 전부 통과.
+- **⚠️ (폐기) 자동닫힘 접근 — 플래그로 전체 OFF, 코드만 보존**: 아래 안내페이지/ack/probe-success
+  기계장치는 삼성 S20 Ultra 에서 동작 불가로 폐기, `CP_CNA_GUIDE_ENABLED`(기본 OFF) 게이트로 비활성.
+  코드/함수는 보존하되
+  `usr/local/captiveportal/index.php` 상단 게이트 `define('CP_CNA_GUIDE_ENABLED',
+  @file_exists('/tmp/cp_cna_guide.on'))` 로 #31 자동닫힘 런타임 동작 **전체를 단일 플래그로 on/off**.
+  파일 없으면(기본) OFF = **이 스레드 이전 원래 동작**(OS 프로브 → 302 로그인 리다이렉트 /
+  미인증 GET → 로그인 페이지 / 세션 항상 생성). 켜기: `touch /tmp/cp_cna_guide.on`, 끄기: `rm`.
+  - **게이팅 방식**: `CP_IS_OS_PROBE = CP_CNA_GUIDE_ENABLED && cp_detect_os_probe()` (단축평가 —
+    OFF 면 detect 미호출·false) / `CP_IS_CNA_ACK` 동일. 조기 가이드·ack·probe-success 분기는 이
+    두 상수로 게이트. `$connectedSession===''` 블록에 `if (!CP_CNA_GUIDE_ENABLED &&
+    cp_detect_os_probe()){302 to loginurl;}` 로 OFF 경로의 원래 probe→302 복원.
+  - **OFF 한 이유(이 스레드 결론)**: 자동닫힘이 주력 기종(삼성 S20 Ultra)에서 **동작 불가** 확정 —
+    삼성 CNA 가 ① 페이지 내 내비게이션(스크립트 location.href·실제 `<a>` 앵커 **둘 다**)을 차단해
+    ack 미발화(✓ 완료 페이지 안 뜸, 2회 실측) + ② 창 닫힘을 **HTTPS 프로브 검증**에 의존
+    (`https://www.google.com/generate_204` — 인증서·미인증 443 차단으로 스푸핑 불가). iOS/스톡
+    안드로이드는 HTTP 프로브 기반이라 동작 여지 있으나, 주력 기종 불가라 **A(현 상태 수용) vs
+    B(전면 억제) 결정 전까지 전체 OFF**. (B = pfSense Allowed Hostnames 로 미인증에도 HTTP 프로브
+    통과 → 팝업 자체 제거; 결정 시 별도 진행.)
 - **증상/요구**: WiFi 연결 시 자동으로 뜨는 OS 내장 로그인 창(CNA: iOS 미니 Safari / Android
   "네트워크에 로그인")에서 ID/PW 입력 시 **로그인 직후 창이 바로 닫혀** connected 페이지(쿼터/
   비번변경)를 볼 수 없음. "기본 브라우저로 넘기기"/"안 닫히게"는 CNA 가 OS 소유라 직접 제어
@@ -891,6 +924,20 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
     `connectivitycheck.platform.hicloud.com`(Huawei) / `captive.g.aaplimg.com`(Apple 대체).
     **전부 "프로브 전용" 호스트만** — www.google.com 류 실브라우징 도메인은 절대 금지(실브라우저
     사용자가 안내 페이지를 받게 됨, 코드 주석 명시).
+  - **ack 내비게이션 = 스크립트 → 실제 앵커 전환(삼성 S20 Ultra 실측 수정)**: 초기 구현은 복사
+    버튼 클릭 시 `setTimeout(()=>location.href='/?cp_cna_ack=1',900)` 스크립트 이동이었으나,
+    **삼성 CaptivePortalLogin webview 가 스크립트 기반 top-frame 내비게이션을 무시**(JS 타이머
+    자체는 동작 — 2초 라벨 원복은 실행됨 / 0.9초 location.href 이동만 안 먹음 → ack 미도달 → ✓
+    완료 페이지 안 뜸). **수정: 안내 페이지의 복사 컨트롤을 `<button>` → `<a href="/?cp_cna_ack=1">`
+    실제 앵커로** 교체("탭 = user-gesture 내비게이션"은 webview 가 honor). 클릭 핸들러는 동기
+    execCommand 복사만 하고 preventDefault 안 함 → 복사 직후 앵커 기본 내비게이션 진행. 완료
+    페이지 컨트롤은 href 없는 `<button>` 유지(라벨 토글만).
+  - **남은 미지수(다음 선상 테스트의 결정점)**: 앵커 수정으로 ack 가 도달해 ✓ 완료 페이지가 뜨고
+    마커가 찍히면 다음 OS 재검증 프로브는 204/Success 를 받는다. **그럼에도 삼성 창이 안 닫히면
+    = 삼성이 HTTPS 프로브(`https://www.google.com/generate_204`)로 재검증**(스푸핑 불가 — 미인증
+    443 차단·인증서) → 코드로 해결 불가 → **A(현 상태 수용) vs B(전면 억제: 미인증에도 HTTP
+    프로브 통과 → 팝업 자체 제거)** 결정 단계. 진단: 복사 탭 직후 `tcpdump -ni <if> "host <ip>
+    and (tcp port 80 or 443 or udp port 53)"` 로 재검증이 80(가로채기 가능)인지 443(벽)인지 확인.
   - 흐름: 사용자가 기본 브라우저에서 로그인 완료 → 프로브가 방화벽 직접 통과(진짜 성공 응답)
     → **CNA 는 저절로 닫힘**. 인증된 클라이언트의 프로브는 포털에 도달하지 않으므로 무영향.
 - **검증**: php -l / 실코드 추출 하네스 — 프로브 판정 13(신규 호스트·`/redirect` 제외·ack URI
@@ -958,14 +1005,14 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 
 ## 다음 작업 대기 중
 
-- [x] **#30**: CNA 로그인 즉시 닫힘 → CNA 에 "기본 브라우저로 접속" 안내만 표시(절충안) +
-  프로브 session_start 전 단락(sess_* 미생성) — index.php 단일 파일 (커밋 대기)
-- [ ] #30 검증(선상): iOS/Android 연결 시 CNA 에 자국어 안내 표시 / **"주소 복사" 탭 → 완료
-  페이지(✓) → 수초 내 창 자동 닫힘**(Android "현재 상태로 이 네트워크 사용" 메뉴 탐색 불필요;
-  안 닫히는 기종은 폴백 힌트 문구로 진행) / 브라우저 주소창 붙여넣기 → 로그인 → connected
-  페이지 유지 / Xiaomi/Huawei 단말도 자동 닫힘 동작(미동작 기종의 프로브 호스트 관측 시
-  cp_probe_map 에 추가) / Windows 는 기본 브라우저에 로그인 폼 그대로 / `ls /tmp/cp_cna_ack_*`
-  소량 유지(TTL 10분 자가 정리) + `ls /tmp/sess_*` 증가 없음 / 필요 시 선내 공지(포털 주소) 병행
+- [x] **#31 (채택안)**: CNA 로그인 창 — 로그인 폼 유지 + 로그인 폼에 **"Copy address" 버튼 기본
+  노출(영문 고정)** → 3경로(폼로그인 / 복사→타브라우저 / S20 수동닫기→타브라우저) 커버.
+  `captiveportal.inc` `renderLoginPortalHtml` 단일 추가. 자동닫힘(#31 게이트)은 OFF 유지 — develop 커밋 대기.
+- [ ] #31 검증(선상): CNA 에 로그인 폼 + "Copy address" 버튼 노출 / 폼에 ID/PW → 로그인 → 온라인 /
+  "Copy address" 탭 → "Copied!" → 크롬에 붙여넣기 → 포털 로그인 / 일반 브라우저에서도 버튼 정상 /
+  무JS 기종은 주소 텍스트 수동 입력 가능 / 필요 시 선내 공지(영문 안내) 병행
+- [ ] #31 (폐기 자동닫힘) 참고: `CP_CNA_GUIDE_ENABLED` 기본 OFF 라 안내/ack/probe-success 비활성
+  (삼성 자동닫힘 불가로 폐기). 되살릴 일 없으면 후속에서 #31 자동닫힘 코드 제거 가능(현재는 보존).
 - [x] **#29**: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자(0.5°, tz-lookup v11.5.0 박제)
   →DateTimeZone(DST 자동)→nautical 폴백, 매시 7분 크론, gmtcheck 수동모드 존중, 표시부 무수정
   — develop `660727e` (tip: `e229a70`)
