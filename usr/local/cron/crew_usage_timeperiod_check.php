@@ -36,32 +36,44 @@ foreach ($radiusCfg as $userentry) {
 }
 //$gatewaylist= available_default_gateways()['v4'];
 // CP DB 순회하며 조건에 따라 disconnect
+$flagsToClear = [];
 foreach ($cpdb as $eachuser) {
-    // 안전하게 인덱스 존재 확인
     $username = isset($eachuser[4]) ? strtolower(trim($eachuser[4])) : '';
-    $clientId = $eachuser[5] ?? null; // captiveportal_disconnect_client에 넘기던 값
+    $clientId = $eachuser[5] ?? null;
 
     if ($username === '' || $clientId === null) {
         continue;
     }
-    /*$mappedGateway = $userterminalMap[$clientId] ?? '';
-
-    if (!in_array($mappedGateway, $gatewaylist, true)) {
-        captiveportal_disconnect_client($clientId);
-    }*/
 
     // 1) 스케줄 suspend이면 바로 disconnect
     if (get_suspend_timeschedule($username)) {
         captiveportal_disconnect_client($clientId);
-        //write_cause($clientId, 'client_suspended', 'Currently your ID has been forced logged out due to suspension policy. You may login again.');
-        continue; // 이미 끊었으면 다음 유저로
+        continue;
     }
 
     // 2) FreeRADIUS modified=update면 disconnect
-    //    (config에 해당 username이 없으면 무시)
     if (($radiusMap[$username] ?? '') === 'update') {
-        //write_cause($clientId, 'update', 'Currently your ID has been forced logged out due to suspension policy. You may login again.');
         captiveportal_disconnect_client($clientId);
+        $flagsToClear[] = $username;
+    }
+}
+
+// kick 후 varusersmodified 플래그 클리어 (#30 lost-update 방지)
+// captiveportal_authenticate_user 가 로그인 시 지우는 것에만 의존하면,
+// CP를 통해 로그인하지 않는 계정(synersat 등)은 플래그가 영구히 남아
+// 매분 kick 시도가 반복된다. lock+parse_config(true) 로 stale 덮어씀도 방지.
+if (!empty($flagsToClear)) {
+    $cnf_lock = lock('freeradius_user_config', LOCK_EX);
+    try {
+        $config = parse_config(true);
+        foreach ($config['installedpackages']['freeradius']['config'] as $k => $u) {
+            if (in_array(strtolower($u['varusersusername'] ?? ''), $flagsToClear, true)) {
+                $config['installedpackages']['freeradius']['config'][$k]['varusersmodified'] = '';
+            }
+        }
+        write_config('crew_usage_timeperiod_check: cleared varusersmodified after kick');
+    } finally {
+        unlock($cnf_lock);
     }
 }
 

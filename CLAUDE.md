@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `e229a70` | #1~#29 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`)) |
+| `develop` | `e229a70` | #1~#29 포함, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단) |
 | `main` | `8114d11` | #1~#10 전부 반영 완료 (merge 커밋). **#11~#17 미반영** |
 | `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
 
@@ -852,8 +852,120 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   절사 — 기존 동작 유지). **외부 푸시 API 는 잔존**(수동/원격 보정용) — 중앙서버 푸시는 중지
   권장(이중 writer 방지; 크론은 변경시에만 쓰므로 충돌해도 lost-update 는 없음).
 
+### 30. CNA(OS 캡티브 미니브라우저) 로그인 즉시 닫힘 → 안내 페이지로 전환 (develop 반영, 커밋 대기)
+- **증상/요구**: WiFi 연결 시 자동으로 뜨는 OS 내장 로그인 창(CNA: iOS 미니 Safari / Android
+  "네트워크에 로그인")에서 ID/PW 입력 시 **로그인 직후 창이 바로 닫혀** connected 페이지(쿼터/
+  비번변경)를 볼 수 없음. "기본 브라우저로 넘기기"/"안 닫히게"는 CNA 가 OS 소유라 직접 제어
+  불가(window.open/커스텀 스킴 차단, 닫힘=연결성 프로브 성공 시 OS 강제) → **절충안 채택:
+  CNA 에는 로그인 폼 대신 "기본 브라우저를 열어 포털 주소로 접속" 안내만 표시**(발견성 유지).
+- **수정 (`usr/local/captiveportal/index.php` 단일 파일, 자족 구현 — 버전 섞임 무관)**:
+  - `cp_detect_os_probe()`: 기존 probeMap(gstatic/msftconnecttest/ncsi/edge-http/captive.apple)
+    식별을 순수 함수화해 **session_start 전** 판정 → 프로브 요청은 **세션 파일 생성 자체를
+    건너뜀**(#24~26 후속이던 "OS probe 를 session_start 전에 단락" 동시 해결). msftconnecttest
+    의 `/redirect` 는 의도적 미포함 — Windows 는 그 경로를 **기본 브라우저**로 열므로 로그인 폼
+    을 그대로 받아야 함(증상 자체가 iOS/Android 한정).
+  - `cp_render_cna_guide()`: 존 설정 로드 직후(과거 302-to-login 분기 대체) 프로브/CNA 요청에
+    **200+HTML 안내 직접 렌더** — OS 기대값(204/Success/connecttest.txt)이 아니므로 captive
+    판정은 유지 → CNA 에 안내 표시. 내용 = ① **"주소 복사" 버튼**(클립보드 복사 — 시스템
+    클립보드라 CNA 닫아도 유지; "복사됨!" 피드백) ② 이 창 닫기(iOS: "취소"→"인터넷 연결 없이
+    사용" / Android: "연결 유지? 예" — UA 분기 힌트) ③ 브라우저 열어 주소창에 붙여넣기.
+    포털 주소 = `http://{ourhostname}`(루트 `/` 는 zone 기본값 crew 로 index.php 처리).
+    URL 박스는 user-select:all → 복사 실패 기기에서도 수동 선택/직접 입력 폴백. i18n 7개
+    언어(en/ko/tl/vi/id/zh/my — #21 코드 체계, CNA 는 무쿠키라 Accept-Language 주신호 +
+    `fil`→tl 매핑). Content-Length 명시(spawn-fcgi 지연 방지, cp_splash_redirect 패턴).
+  - **복사 구현 주의**: 포털은 HTTP(비보안 컨텍스트)라 `navigator.clipboard` 가 보통 부재 →
+    **`document.execCommand('copy')` 폴백이 사실상 주경로**(iOS WKWebView 호환 readonly
+    textarea + setSelectionRange 패턴). "기본 브라우저로 직접 열기"(iOS `x-safari-` /
+    Android `intent://` 비공식 스킴)는 검토 후 **불채택** — OS 버전/제조사 의존 비공식 동작.
+  - **창 자동 닫힘(ack 마커)** — "닫으려면 Android '현재 상태로 이 네트워크 사용' 메뉴를 찾아야
+    해 비직관적" 문제 해결: "주소 복사" 탭 → 복사 + `/?cp_cna_ack=1` 내비게이션(완료 페이지
+    `cp_render_cna_done`: ✓ + URL 재표시 + 복사 재시도 버튼) → 서버가 **클라이언트 IP 마커**
+    (`/tmp/cp_cna_ack_<ip>`, TTL 10분, 만료 시 조회 중 삭제 — #24 디스크 안전) 기록 → 완료
+    페이지 "로드 완료"가 CNA 재검증 프로브를 유발 → 마커 있는 IP 의 프로브엔 **기대 성공 응답**
+    (`cp_probe_success_response`: Android 계열 204 / NCSI 고정 텍스트 / Apple Success HTML) →
+    OS 가 captive 해제로 판정해 **창을 스스로 닫음**(로그인 성공과 동일 메커니즘) → 메뉴 탐색
+    불필요. 마커는 방화벽 인증과 **무관**(트래픽 여전히 차단), TTL 내 미로그인 시 다음 OS
+    재검증에서 CNA 재등장(재안내 루프). 안 닫히는 OEM 변형 대비 OS 별 폴백 힌트(iOS "완료" /
+    Android ⋮ 메뉴 → "현재 상태로 이 네트워크 사용") 문구 유지.
+  - **probeMap 확장**: `clients3.google.com`(구형 Android) / `connect.rom.miui.com`(Xiaomi) /
+    `connectivitycheck.platform.hicloud.com`(Huawei) / `captive.g.aaplimg.com`(Apple 대체).
+    **전부 "프로브 전용" 호스트만** — www.google.com 류 실브라우징 도메인은 절대 금지(실브라우저
+    사용자가 안내 페이지를 받게 됨, 코드 주석 명시).
+  - 흐름: 사용자가 기본 브라우저에서 로그인 완료 → 프로브가 방화벽 직접 통과(진짜 성공 응답)
+    → **CNA 는 저절로 닫힘**. 인증된 클라이언트의 프로브는 포털에 도달하지 않으므로 무영향.
+- **검증**: php -l / 실코드 추출 하네스 — 프로브 판정 13(신규 호스트·`/redirect` 제외·ack URI
+  비프로브 포함) + ack 판정 5(POST/포털호스트 거부) + 마커 set/active/TTL만료삭제/파일명
+  새니타이즈 5 + 언어해석(fil→tl, fi→en 등) + dict 7개 언어×13키 완전성 + 렌더(안내: ack
+  내비게이션·자동닫힘 문구 / 완료: ✓·URL 재표시·재내비게이션 없음) + 호스트별 성공응답
+  (Apple Success/NCSI 텍스트/204 빈 본문) 전부 통과.
+- **트레이드오프(수용)**: CNA 안 즉시 로그인 경로 제거 → 복사→닫기→붙여넣기 단계 추가(안내문이
+  대신). ko 외 번역은 best-effort(#21 동일 — 현지검수 권장).
+
+### 30. `varusersmodified="update"` 전원 의도치 않게 mass-set → 전원 동시 끊김 (develop 반영)
+
+- **증상**: 특정 시각(00:01이 아닌 07:03 등 임의 시각)에 활성 사용자 **전원이 동시 DISCONNECT**
+  (같은 PID 가 25명을 13초에 순차 처리 = `crew_usage_timeperiod_check.php` 루프). 이후 재접속
+  시 정상화. `config.xml` 에 비CP계정(`synersat` 등)의 `varusersmodified="update"` 플래그가
+  영구히 잔존해 해당 계정이 CP에 접속하면 **매분 kick** 반복.
+- **진단 사슬**:
+  1. `DISCONNECT` 25건이 **동일 PID** 로 연속 → `captiveportal_disconnect_all()` 아니라
+     `crew_usage_timeperiod_check.php` 가 `varusersmodified="update"` 유저를 루프 disconnect.
+  2. mass disconnect 가 **00:01(크론 직후)이 아닌 07:03** → reset 크론이 아니라 **관리자가
+     위젯을 제출한 시각**.
+  3. `manage_freeradiususer.widget.php` 의 POST 핸들러가 **페이지 로드 시점(T0) 의 stale
+     `$config` 스냅샷으로 `write_config()`** → T0 당시 `varusersmodified="update"` 였던 모든
+     사용자의 플래그가 복원(lost-update). reset 크론이 플래그를 세트 → 유저들이 로그인해
+     authenticate_user 가 플래그를 지움 → 관리자가 위젯 제출(T0 스냅샷 덮어씀) → 플래그 복원.
+  4. `synersat` 등 비CP계정은 `captiveportal_authenticate_user` 경로를 타지 않아 플래그가
+     **자동으로 절대 지워지지 않음** → kick 크론이 매분 kick 시도.
+- **버그 2종(중첩)**:
+  - **A. 위젯 lost-update** (`manage_freeradiususer.widget.php`): 모든 POST 분기
+    (deluser/resetuser/resetpw/createuser)가 lock/parse_config(true) 없이 stale `$config` 로
+    `write_config()` → 다른 writer 의 변경을 통째 덮어씀.
+  - **B. kick 후 플래그 미해제** (`crew_usage_timeperiod_check.php`): `captiveportal_disconnect_client`
+    호출 후 `varusersmodified` 를 지우지 않아 비CP계정은 영구히 플래그 잔존 + 매분 kick.
+    `captiveportal_authenticate_user` 의 `write_config("freeradius user update")` 도 동일한
+    lost-update 위험(stale `$uconf` 참조로 write).
+- **수정 3곳**:
+  - **위젯** (`manage_freeradiususer.widget.php`): 4개 분기 모두 로그 등 느린 I/O 는 락 밖,
+    실제 config 수정은 `lock('freeradius_user_config', LOCK_EX)` + `parse_config(true)` +
+    delta 재적용 + `write_config` + `unlock` 패턴으로 전환(#22/#10 패턴 일관화).
+    createuser 분기는 fresh config 기준으로 다음 username 도 재계산 → 중복 생성 방지 부수효과.
+  - **kick 크론** (`crew_usage_timeperiod_check.php`): disconnect 후 `$flagsToClear` 수집 →
+    루프 종료 후 `lock + parse_config(true)` + `varusersmodified = ''` + `write_config`.
+    비CP계정 영구 플래그 잔존 해소. `varusersresetquota` 는 authenticate_user 폴백이 필요하므로
+    유지(kick 크론은 modified 만 클리어).
+  - **인증 경로** (`captiveportal.inc` `captiveportal_authenticate_user`): `unset($uconf['varusersmodified'])`
+    + `write_config("freeradius user update")` 를 `lock + parse_config(true)` + fresh config 내
+    사용자 재탐색(`strcasecmp`) + `unset` + `write_config` + `unlock` 으로 교체. stale `$uconf`
+    참조 덮어씀 차단.
+- **선상 즉시 조치**: 잔존 플래그 수동 클리어 (아래 — `synersat` 예시)
+  ```sh
+  php -r "
+  require('/etc/inc/config.inc'); require('/etc/inc/util.inc'); parse_config();
+  global \$config;
+  foreach (\$config['installedpackages']['freeradius']['config'] as \$k => \$u) {
+    if ((\$u['varusersmodified'] ?? '') === 'update') {
+      \$config['installedpackages']['freeradius']['config'][\$k]['varusersmodified'] = '';
+      echo 'cleared: ' . \$u['varusersusername'] . PHP_EOL;
+    }
+  }
+  write_config('manual clear varusersmodified');
+  "
+  ```
+- **배포 정합성**: `manage_freeradiususer.widget.php` + `crew_usage_timeperiod_check.php` +
+  `captiveportal.inc` 3파일 일괄 배포.
+
 ## 다음 작업 대기 중
 
+- [x] **#30**: CNA 로그인 즉시 닫힘 → CNA 에 "기본 브라우저로 접속" 안내만 표시(절충안) +
+  프로브 session_start 전 단락(sess_* 미생성) — index.php 단일 파일 (커밋 대기)
+- [ ] #30 검증(선상): iOS/Android 연결 시 CNA 에 자국어 안내 표시 / **"주소 복사" 탭 → 완료
+  페이지(✓) → 수초 내 창 자동 닫힘**(Android "현재 상태로 이 네트워크 사용" 메뉴 탐색 불필요;
+  안 닫히는 기종은 폴백 힌트 문구로 진행) / 브라우저 주소창 붙여넣기 → 로그인 → connected
+  페이지 유지 / Xiaomi/Huawei 단말도 자동 닫힘 동작(미동작 기종의 프로브 호스트 관측 시
+  cp_probe_map 에 추가) / Windows 는 기본 브라우저에 로그인 폼 그대로 / `ls /tmp/cp_cna_ack_*`
+  소량 유지(TTL 10분 자가 정리) + `ls /tmp/sess_*` 증가 없음 / 필요 시 선내 공지(포털 주소) 병행
 - [x] **#29**: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자(0.5°, tz-lookup v11.5.0 박제)
   →DateTimeZone(DST 자동)→nautical 폴백, 매시 7분 크론, gmtcheck 수동모드 존중, 표시부 무수정
   — develop `660727e` (tip: `e229a70`)

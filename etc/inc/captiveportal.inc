@@ -1851,9 +1851,23 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                 }
             }
 
-            // 마지막에 modified 플래그 해제 (처리 완료 후)
-            unset($uconf['varusersmodified']);
-            write_config("freeradius user update");
+            // 마지막에 modified 플래그 해제 — lock+parse_config(true) 로 최신본에 적용 (#30)
+            // stale $uconf 에 unset 하면 그 사이 다른 writer 가 변경한 내용을
+            // write_config 가 덮어쓰는 lost-update 가 발생하므로 fresh config 기준으로 지운다.
+            $cnf_lock_auth = lock('freeradius_user_config', LOCK_EX);
+            try {
+                parse_config(true);
+                foreach ($config['installedpackages']['freeradius']['config'] as $_ak => $_au) {
+                    if (strcasecmp($_au['varusersusername'] ?? '', $login) === 0) {
+                        unset($config['installedpackages']['freeradius']['config'][$_ak]['varusersmodified']);
+                        unset($config['installedpackages']['freeradius']['config'][$_ak]['varusersresetquota']);
+                        break;
+                    }
+                }
+                write_config("freeradius user update");
+            } finally {
+                unlock($cnf_lock_auth);
+            }
 
             // NOTE: freeradius_update_user() 는 여기서 호출하지 않음.
             // 이유:
