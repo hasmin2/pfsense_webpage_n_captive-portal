@@ -1,0 +1,1139 @@
+<?php
+declare(strict_types=1);
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    @session_start();
+}
+
+/*
+ * UI configuration
+ * - termsEnabled: show or hide the terms row
+ * - termsRequired: require the checkbox before login
+ * - syncLoginToQuota: copy the login username into the quota field automatically
+ */
+$uiConfig = [
+    'termsEnabled'  => true,
+'termsRequired' => true
+];
+
+global $config;
+$prepaidEnabled = isset($config['system']['prepaid_enabled'])
+    || isset($config['captiveportal']['prepaid_enabled']);
+
+/* ---------------------------
+* Common helpers
+* --------------------------- */
+if (!function_exists('h')) {
+function h($value): string
+{
+return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+}
+
+if (!function_exists('req_value')) {
+function req_value(string $key, string $default = ''): string
+{
+if (isset($_POST[$key])) {
+return trim((string)$_POST[$key]);
+}
+if (isset($_GET[$key])) {
+return trim((string)$_GET[$key]);
+}
+return $default;
+}
+}
+
+if (!function_exists('flash_get_once')) {
+function flash_get_once(): array
+{
+if (!empty($_SESSION['cp_flash']) && is_array($_SESSION['cp_flash'])) {
+$data = $_SESSION['cp_flash'];
+unset($_SESSION['cp_flash']);
+return $data;
+}
+return [];
+}
+}
+
+if (!function_exists('pick_value')) {
+function pick_value(array $flash, string $key, string $default = ''): string
+{
+if (array_key_exists($key, $flash)) {
+return trim((string)$flash[$key]);
+}
+return req_value($key, $default);
+}
+}
+
+/* ---------------------------
+* Display data
+* Priority: session flash > POST/GET
+* --------------------------- */
+$flash = flash_get_once();
+
+$portalError = pick_value($flash, 'portal_error');
+$portalInfo  = pick_value($flash, 'portal_info');
+
+$quotaNotice    = pick_value($flash, 'quota_notice');
+$quotaResultMsg = pick_value($flash, 'quota_result');
+$quotaUser      = pick_value($flash, 'quota_user', req_value('quota_user'));
+$quotaUsed      = pick_value($flash, 'quota_used');
+$quotaRemain    = pick_value($flash, 'quota_remaining');
+
+$loginUserValue = req_value('auth_user');
+$quotaUserValue = $quotaUser !== '' ? $quotaUser : req_value('quota_user');
+
+$loginAccountTypeValue = strtolower(pick_value(
+$flash,
+'login_account_type',
+req_value('login_account_type', 'normal')
+));
+
+if (!in_array($loginAccountTypeValue, ['normal', 'prepaid'], true)) {
+$loginAccountTypeValue = 'normal';
+}
+
+$quotaAccountTypeValue = strtolower(pick_value(
+$flash,
+'quota_account_type',
+req_value('quota_account_type', 'normal')
+));
+
+if (!in_array($quotaAccountTypeValue, ['normal', 'prepaid'], true)) {
+$quotaAccountTypeValue = 'normal';
+}
+
+$showQuotaResult = (
+$quotaResultMsg !== '' ||
+$quotaUser !== '' ||
+$quotaUsed !== '' ||
+$quotaRemain !== ''
+);
+
+/* 다국어: 언어 결정(?lang / 쿠키 cp_lang / Accept-Language / en).
+   captiveportal.inc 의 헬퍼 사용(portal_reply_page 가 이 템플릿을 include 하므로 로드됨).
+   표준 외 경로에서 단독 실행될 경우를 대비해 function_exists 가드. */
+$cpLang  = function_exists('cp_resolve_lang')   ? cp_resolve_lang()   : 'en';
+$cpLangs = function_exists('cp_supported_langs') ? cp_supported_langs() : array('en' => 'English');
+if (!function_exists('cpt')) {
+    function cpt(string $key, string $lang): string {
+        return function_exists('cp_t') ? cp_t($key, $lang) : $key;
+    }
+}
+
+?>
+
+<html lang="<?= h($cpLang) ?>">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+	<title><?= h(cpt('title', $cpLang)) ?></title>
+
+	<style>
+		:root{
+			--bg-1:#07111f;
+			--bg-2:#0d1d34;
+			--bg-3:#16345f;
+			--card:rgba(9, 17, 30, 0.84);
+			--line:rgba(255,255,255,0.10);
+			--line-strong:rgba(255,255,255,0.18);
+			--text:#f5f8fc;
+			--muted:rgba(245,248,252,0.72);
+			--primary:#5ea9ff;
+			--primary-2:#2d7cf5;
+			--success:#29c781;
+			--warning:#ffb347;
+			--danger:#ff6178;
+			--radius-xl:28px;
+			--radius-lg:20px;
+			--radius-md:14px;
+			--shadow:0 24px 64px rgba(0,0,0,0.34);
+		}
+
+		* { box-sizing:border-box; }
+
+		html, body {
+			margin:0;
+			padding:0;
+			min-height:100%;
+			font-family:Arial, Helvetica, sans-serif;
+			color:var(--text);
+			background:
+					radial-gradient(circle at top left, rgba(94,169,255,0.18), transparent 28%),
+					radial-gradient(circle at bottom right, rgba(41,199,129,0.12), transparent 26%),
+					linear-gradient(135deg, var(--bg-1), var(--bg-2) 44%, var(--bg-3));
+		}
+
+		body {
+			min-height:100vh;
+		}
+
+		.page{
+			min-height:100vh;
+			position:relative;
+			overflow:hidden;
+			background-size:cover;
+			background-position:center;
+			background-repeat:no-repeat;
+		}
+
+		.page::before{
+			content:"";
+			position:absolute;
+			inset:0;
+			background:
+					linear-gradient(135deg, rgba(5,10,18,0.84), rgba(8,17,29,0.65)),
+					linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+		}
+
+		.shell{
+			position:relative;
+			z-index:1;
+			min-height:100vh;
+			display:flex;
+			flex-direction:column;
+			align-items:center;
+			justify-content:flex-start;
+			padding:28px 24px 24px;
+		}
+
+		.top-logo-area{
+			width:100%;
+			max-width:680px;
+			display:flex;
+			justify-content:center;
+			align-items:center;
+			margin-bottom:24px;
+		}
+
+		.top-logo-wrap{
+			width:80%;
+			height:120px;
+			display:flex;
+			align-items:center;
+			justify-content:center;
+			border-radius:30px;
+			background:rgba(255,255,255,0.08);
+			border:1px solid rgba(255,255,255,0.14);
+			box-shadow:0 18px 50px rgba(0,0,0,0.24);
+			overflow:hidden;
+			backdrop-filter:blur(12px);
+			-webkit-backdrop-filter:blur(12px);
+		}
+
+		.top-logo-wrap img{
+			max-width:82%;
+			max-height:82%;
+			object-fit:contain;
+			display:block;
+		}
+
+		.portal{
+			width:100%;
+			max-width:680px;
+			display:grid;
+			grid-template-columns:1fr;
+			gap:18px;
+		}
+
+		.panel{
+			border:1px solid var(--line);
+			border-radius:var(--radius-xl);
+			box-shadow:var(--shadow);
+			backdrop-filter:blur(16px);
+			-webkit-backdrop-filter:blur(16px);
+			overflow:hidden;
+			background:linear-gradient(180deg, rgba(7,12,22,0.90), rgba(9,17,30,0.82));
+			padding:22px;
+		}
+
+		.card{
+			background:var(--card);
+			border:1px solid var(--line);
+			border-radius:22px;
+			padding:20px;
+		}
+
+		.card + .card{
+			margin-top:18px;
+		}
+
+		.card-head{
+			display:flex;
+			align-items:flex-start;
+			justify-content:space-between;
+			gap:12px;
+			margin-bottom:16px;
+		}
+
+		.card-title{
+			margin:0 0 5px;
+			font-size:22px;
+			letter-spacing:-0.02em;
+		}
+
+		.card-subtitle{
+			margin:0;
+			color:var(--muted);
+			font-size:14px;
+			line-height:1.6;
+		}
+
+		.page-title{
+			margin:0 0 6px;
+			font-size:30px;
+			letter-spacing:-0.03em;
+			line-height:1.15;
+		}
+
+		.page-subtitle{
+			margin:0 0 18px;
+			color:var(--muted);
+			font-size:14px;
+			line-height:1.6;
+		}
+
+		.card-tools{
+			flex:0 0 auto;
+		}
+		.active-range {
+			background-color: #3498db !important;
+			color: #fff !important;
+			border-color: #3498db !important;
+		}
+		.mini-btn{
+			min-height:38px;
+			padding:0 14px;
+			border-radius:12px;
+			border:1px solid rgba(255,255,255,0.10);
+			background:rgba(255,255,255,0.06);
+			color:#e8f1ff;
+			font-size:13px;
+			font-weight:700;
+			cursor:pointer;
+		}
+
+		.mini-btn:hover{
+			background:rgba(255,255,255,0.10);
+		}
+
+		.notice{
+			margin-bottom:14px;
+			padding:12px 14px;
+			border-radius:14px;
+			font-size:13px;
+			line-height:1.55;
+			border:1px solid transparent;
+			word-break:break-word;
+		}
+
+		.notice-error{
+			background:rgba(255,97,120,0.15);
+			border-color:rgba(255,97,120,0.24);
+			color:#ffd9df;
+		}
+
+		.notice-success{
+			background:rgba(41,199,129,0.14);
+			border-color:rgba(41,199,129,0.22);
+			color:#d9ffed;
+		}
+
+		.notice-info{
+			background:rgba(94,169,255,0.14);
+			border-color:rgba(94,169,255,0.22);
+			color:#dcebff;
+		}
+
+		.notice-warning{
+			background:rgba(255,179,71,0.14);
+			border-color:rgba(255,179,71,0.22);
+			color:#fff0d6;
+		}
+
+		.field{
+			margin-bottom:14px;
+		}
+
+		.field label{
+			display:block;
+			margin-bottom:7px;
+			color:var(--muted);
+			font-size:13px;
+			font-weight:700;
+			letter-spacing:.02em;
+		}
+
+		.input-wrap{
+			position:relative;
+		}
+
+		.input{
+			width:100%;
+			height:50px;
+			border-radius:14px;
+			border:1px solid var(--line-strong);
+			background:rgba(255,255,255,0.06);
+			color:var(--text);
+			padding:0 14px;
+			font-size:15px;
+			outline:none;
+			transition:border-color .2s ease, background .2s ease, box-shadow .2s ease;
+		}
+
+		.input::placeholder{
+			color:rgba(245,248,252,0.42);
+		}
+
+		.input:focus{
+			border-color:rgba(94,169,255,0.85);
+			background:rgba(255,255,255,0.09);
+			box-shadow:0 0 0 4px rgba(94,169,255,0.15);
+		}
+
+		.input.with-action{
+			padding-right:92px;
+		}
+
+		.input-action{
+			position:absolute;
+			top:50%;
+			right:8px;
+			transform:translateY(-50%);
+			min-width:66px;
+			height:34px;
+			padding:0 10px;
+			border:0;
+			border-radius:10px;
+			background:transparent;
+			color:var(--muted);
+			font-size:13px;
+			font-weight:700;
+			cursor:pointer;
+		}
+
+		.input-action:hover{
+			background:rgba(255,255,255,0.08);
+			color:var(--text);
+		}
+
+		.username-account-row,
+		.quota-account-row{
+			display:grid;
+			grid-template-columns:minmax(0, 1fr) 170px;
+			gap:12px;
+			align-items:end;
+			margin-bottom:14px;
+		}
+
+		.username-account-row .field,
+		.quota-account-row .field{
+			margin-bottom:0;
+		}
+
+		.account-type-field{
+			margin-bottom:0;
+		}
+
+		.account-type-select{
+			width:100%;
+			height:50px;
+			border-radius:14px;
+			border:1px solid var(--line-strong);
+			background:rgba(255,255,255,0.06);
+			color:var(--text);
+			padding:0 14px;
+			font-size:15px;
+			font-weight:700;
+			outline:none;
+			cursor:pointer;
+			transition:border-color .2s ease, background .2s ease, box-shadow .2s ease;
+		}
+
+		.account-type-select:focus{
+			border-color:rgba(94,169,255,0.85);
+			background:rgba(255,255,255,0.09);
+			box-shadow:0 0 0 4px rgba(94,169,255,0.15);
+		}
+
+		.account-type-select option{
+			color:#111827;
+			background:#ffffff;
+		}
+
+		.terms-line{
+			display:flex;
+			align-items:flex-start;
+			gap:10px;
+			margin:8px 0 18px;
+			color:var(--muted);
+			font-size:13px;
+			line-height:1.55;
+		}
+
+		.terms-line input[type=checkbox]{
+			margin-top:2px;
+			flex:0 0 auto;
+		}
+
+		.terms-line a{
+			color:#8dc4ff;
+			text-decoration:none;
+		}
+
+		.terms-line a:hover{
+			text-decoration:underline;
+		}
+
+		.actions{
+			display:grid;
+			gap:10px;
+		}
+
+		.btn{
+			width:100%;
+			min-height:50px;
+			border:0;
+			border-radius:14px;
+			cursor:pointer;
+			font-size:15px;
+			font-weight:700;
+			transition:transform .15s ease, opacity .2s ease, filter .2s ease;
+		}
+
+		.btn:hover{
+			transform:translateY(-1px);
+			filter:brightness(1.04);
+		}
+
+		.btn:active{
+			transform:translateY(0);
+		}
+
+		.btn:disabled{
+			opacity:.48;
+			cursor:not-allowed;
+			transform:none;
+			filter:none;
+		}
+
+		.btn-primary{
+			color:#fff;
+			background:linear-gradient(135deg, var(--primary), var(--primary-2));
+			box-shadow:0 12px 28px rgba(45,124,245,0.28);
+		}
+
+		.btn-secondary{
+			color:#edf5ff;
+			background:rgba(255,255,255,0.08);
+			border:1px solid rgba(255,255,255,0.10);
+		}
+
+		.helper{
+			margin-top:12px;
+			color:var(--muted);
+			font-size:12px;
+			line-height:1.5;
+		}
+
+		.hidden{
+			display:none !important;
+		}
+
+		.quota-result{
+			margin-top:14px;
+			padding:14px;
+			border-radius:16px;
+			background:rgba(255,255,255,0.05);
+			border:1px solid rgba(255,255,255,0.08);
+		}
+
+		.quota-grid{
+			display:grid;
+			grid-template-columns:repeat(3, minmax(0,1fr));
+			gap:10px;
+			margin-top:10px;
+		}
+
+		.quota-box{
+			border-radius:14px;
+			padding:12px;
+			background:rgba(255,255,255,0.05);
+			border:1px solid rgba(255,255,255,0.08);
+		}
+
+		.quota-box .label{
+			display:block;
+			font-size:11px;
+			text-transform:uppercase;
+			letter-spacing:.04em;
+			color:var(--muted);
+			margin-bottom:5px;
+		}
+
+		.quota-box .value{
+			display:block;
+			font-size:15px;
+			font-weight:700;
+			color:var(--text);
+			word-break:break-word;
+		}
+
+		.status-lines {
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+			margin-top: 8px;
+		}
+
+		.status-line {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 12px;
+			padding: 8px 10px;
+			background: #f8fbff;
+			border: 1px solid #d9e1ec;
+			border-radius: 10px;
+		}
+
+		.status-key {
+			min-width: 48px;
+			font-size: 12px;
+			font-weight: 700;
+			color: #5d6b7a;
+			text-transform: uppercase;
+		}
+
+		.status-value {
+			font-size: 14px;
+			font-weight: 700;
+			color: #1f2d3d;
+		}
+
+		.speed-slider-wrap {
+			display: grid;
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+			gap: 8px;
+			margin-top: 8px;
+		}
+
+		.speed-option {
+			position: relative;
+			display: block;
+			cursor: pointer;
+		}
+
+		.speed-option input[type="radio"] {
+			position: absolute;
+			opacity: 0;
+			pointer-events: none;
+		}
+
+		.speed-pill {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			gap: 6px;
+			min-height: 44px;
+			padding: 10px 12px;
+			font-size: 13px;
+			font-weight: 700;
+			color: #506070;
+			background: #f4f7fb;
+			border: 1px solid #d9e1ec;
+			border-radius: 999px;
+			transition: all 0.18s ease;
+			text-align: center;
+			box-sizing: border-box;
+		}
+
+		.speed-option input[type="radio"]:checked + .speed-pill {
+			color: #ffffff;
+			background: #2563eb;
+			border-color: #2563eb;
+			box-shadow: 0 4px 12px rgba(37, 99, 235, 0.22);
+		}
+
+		.speed-option:hover .speed-pill {
+			border-color: #9fb9ea;
+		}
+
+		.tooltip-wrap {
+			position: relative;
+			display: inline-flex;
+			align-items: center;
+		}
+
+		.tooltip-icon {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 16px;
+			height: 16px;
+			border-radius: 50%;
+			font-size: 11px;
+			font-weight: 700;
+			line-height: 1;
+			color: #ffffff;
+			background: rgba(0, 0, 0, 0.28);
+		}
+
+		.speed-option input[type="radio"]:checked + .speed-pill .tooltip-icon {
+			background: rgba(255, 255, 255, 0.22);
+		}
+
+		.tooltip-bubble {
+			position: absolute;
+			left: 50%;
+			bottom: calc(100% + 10px);
+			transform: translateX(-50%);
+			min-width: 180px;
+			max-width: 220px;
+			padding: 8px 10px;
+			border-radius: 10px;
+			background: #1f2937;
+			color: #ffffff;
+			font-size: 12px;
+			font-weight: 500;
+			line-height: 1.45;
+			text-align: left;
+			white-space: normal;
+			box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+			opacity: 0;
+			visibility: hidden;
+			transition: opacity 0.15s ease, visibility 0.15s ease;
+			z-index: 20;
+			pointer-events: none;
+		}
+
+		.tooltip-bubble::after {
+			content: "";
+			position: absolute;
+			left: 50%;
+			top: 100%;
+			transform: translateX(-50%);
+			border-width: 6px;
+			border-style: solid;
+			border-color: #1f2937 transparent transparent transparent;
+		}
+
+		.tooltip-wrap:hover .tooltip-bubble {
+			opacity: 1;
+			visibility: visible;
+		}
+
+		.status-chip-link {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			min-width: 78px;
+			height: 30px;
+			padding: 0 12px;
+			border: 2px solid #63d98a;
+			border-radius: 8px;
+			background: #eaf9ef;
+			color: #26b765;
+			font-weight: 700;
+			font-size: 15px;
+			line-height: 1;
+			text-decoration: none;
+			box-sizing: border-box;
+		}
+
+		.status-chip-link:hover {
+			background: #dff6e7;
+			color: #1ea85c;
+			text-decoration: none;
+		}
+
+		.status-chip-link:visited {
+			color: #26b765;
+		}
+
+		@media (max-width: 768px) {
+			.speed-slider-wrap {
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+			}
+		}
+
+		@media (max-width: 640px){
+			.shell{
+				padding:18px 14px 14px;
+			}
+
+			.username-account-row,
+			.quota-account-row{
+				grid-template-columns:1fr;
+				gap:14px;
+			}
+
+			.top-logo-area{
+				margin-bottom:18px;
+			}
+
+			.top-logo-wrap{
+				width:140px;
+				height:140px;
+				border-radius:20px;
+			}
+
+			.panel{
+				padding:16px;
+			}
+
+			.card{
+				padding:18px 16px;
+			}
+
+			.card-head{
+				flex-direction:column;
+				align-items:stretch;
+			}
+
+			.card-tools .mini-btn{
+				width:100%;
+			}
+
+			.quota-grid{
+				grid-template-columns:1fr;
+			}
+
+			.page-title{
+				font-size:24px;
+			}
+		}
+
+		@media (min-width: 641px) and (max-width: 980px){
+			.top-logo-wrap{
+				width:180px;
+				height:180px;
+				border-radius:24px;
+			}
+		}
+	</style>
+</head>
+
+<body>
+<div id="cp-lang-bar" style="position:fixed;top:10px;right:12px;z-index:1000;display:flex;align-items:center;gap:6px;">
+	<label for="cp-lang-select" style="color:#f5f8fc;font-size:13px;opacity:.85;"><?= h(cpt('lang_label', $cpLang)) ?></label>
+	<select id="cp-lang-select" onchange="cpSetLang(this.value)"
+			style="background:rgba(9,17,30,.84);color:#f5f8fc;border:1px solid rgba(255,255,255,.22);border-radius:8px;padding:6px 8px;font-size:14px;">
+		<?php foreach ($cpLangs as $cpCode => $cpName): ?>
+			<option value="<?= h($cpCode) ?>"<?= $cpCode === $cpLang ? ' selected' : '' ?>><?= h($cpName) ?></option>
+		<?php endforeach; ?>
+	</select>
+</div>
+<script type="text/javascript">
+	function cpSetLang(v){
+		try { document.cookie = 'cp_lang=' + encodeURIComponent(v) + ';path=/;max-age=31536000'; } catch(e){}
+		location.assign(location.pathname + (location.search || ''));
+	}
+</script>
+<div class="page" id="page">
+	<div class="shell">
+		$PORTAL_MAIN_CONTENTS$
+	</div>
+</div>
+
+<script type="text/javascript">
+	(function () {
+		var config = {
+			backgroundImagePath: '/captiveportal-background.jpg',
+			syncLoginToQuota: <?= !empty($uiConfig['syncLoginToQuota']) ? 'true' : 'false' ?>
+	};
+
+		var loginAccountTypeDefault = <?= json_encode($loginAccountTypeValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+		var quotaAccountTypeDefault = <?= json_encode($quotaAccountTypeValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+		var prepaidEnabled = <?= $prepaidEnabled ? 'true' : 'false' ?>;
+
+		function $(id) {
+			return document.getElementById(id);
+		}
+
+		function setBackground() {
+			var page = $('page');
+			if (!page) return;
+
+			page.style.backgroundImage =
+					'linear-gradient(135deg, rgba(4,10,20,0.72), rgba(9,18,32,0.55)), url(' +
+					window.location.origin + config.backgroundImagePath + ')';
+		}
+		function isBlockedCrewpayAuthId(value) {
+			return /^crewpay-/i.test((value || '').trim());
+		}
+
+		function getOrCreateAuthIdError(input) {
+			var id = 'auth_user_block_error';
+			var error = $(id);
+
+			if (error) return error;
+
+			error = document.createElement('div');
+			error.id = id;
+			error.className = 'notice notice-error hidden';
+			error.style.marginTop = '10px';
+			error.textContent = "Auth ID cannot start with 'crewpay-'.";
+
+			var field = closestByClass(input, 'field');
+			if (field) {
+				field.appendChild(error);
+			} else if (input.parentNode) {
+				input.parentNode.appendChild(error);
+			}
+
+			return error;
+		}
+
+		function setAuthIdBlockState(showError) {
+			var input = $('login_user');
+			if (!input) return false;
+
+			var blocked = isBlockedCrewpayAuthId(input.value);
+			var error = getOrCreateAuthIdError(input);
+
+			if (blocked) {
+				input.setCustomValidity("Auth ID cannot start with 'crewpay-'.");
+				input.setAttribute('aria-invalid', 'true');
+				error.classList.remove('hidden');
+
+				if (showError && typeof input.reportValidity === 'function') {
+					input.reportValidity();
+				}
+			} else {
+				input.setCustomValidity('');
+				input.removeAttribute('aria-invalid');
+				error.classList.add('hidden');
+			}
+
+			return blocked;
+		}
+
+		function bindAuthIdBlock() {
+			var input = $('login_user');
+			var loginForm = document.forms['login_form'];
+
+			if (!input) return;
+
+			input.addEventListener('input', function () {
+				setAuthIdBlockState(false);
+			});
+
+			input.addEventListener('change', function () {
+				setAuthIdBlockState(false);
+			});
+
+			if (loginForm) {
+				loginForm.addEventListener('submit', function (e) {
+					if (setAuthIdBlockState(true)) {
+						e.preventDefault();
+						e.stopImmediatePropagation();
+
+						var loginBtn = $('loginBtn');
+						if (loginBtn) {
+							loginBtn.disabled = false;
+							loginBtn.value = 'Login';
+						}
+
+						input.focus();
+						return false;
+					}
+				}, true);
+			}
+		}
+		function normalizeLogo() {
+			var img = $('main_logo');
+			if (!img) return;
+
+			var src = img.getAttribute('src') || '';
+			if (!src) return;
+
+			if (src.charAt(0) === '/') {
+				img.src = window.location.origin + src;
+			} else {
+				try {
+					img.src = new URL(src, window.location.origin).toString();
+				} catch (e) {}
+			}
+		}
+
+		function bindPasswordToggle() {
+			var loginPass = $('login_pass');
+			var toggle = $('togglePassword');
+			if (!loginPass || !toggle) return;
+
+			toggle.addEventListener('click', function () {
+				var isPassword = loginPass.type === 'password';
+				loginPass.type = isPassword ? 'text' : 'password';
+				toggle.textContent = isPassword ? <?= json_encode(cpt('hide', $cpLang), JSON_UNESCAPED_UNICODE) ?> : <?= json_encode(cpt('show', $cpLang), JSON_UNESCAPED_UNICODE) ?>;
+			});
+		}
+
+		function bindQuotaButton() {
+			var quotaInput = $('quota_user');
+			var quotaBtn = $('check_quota');
+			if (!quotaInput || !quotaBtn) return;
+
+			function syncButton() {
+				quotaBtn.disabled = quotaInput.value.trim().length === 0;
+			}
+
+			quotaInput.addEventListener('input', syncButton);
+			quotaInput.addEventListener('change', syncButton);
+			syncButton();
+		}
+
+		function bindUsernameSync() {
+			if (!config.syncLoginToQuota) return;
+
+			var loginUser = $('login_user');
+			var quotaUser = $('quota_user');
+			if (!loginUser || !quotaUser) return;
+
+			loginUser.addEventListener('input', function () {
+				if (!quotaUser.value.trim()) {
+					quotaUser.value = loginUser.value;
+					var quotaBtn = $('check_quota');
+					if (quotaBtn) {
+						quotaBtn.disabled = quotaUser.value.trim().length === 0;
+					}
+				}
+			});
+		}
+
+		function closestByClass(el, className) {
+			while (el && el !== document) {
+				if (el.classList && el.classList.contains(className)) {
+					return el;
+				}
+				el = el.parentNode;
+			}
+			return null;
+		}
+
+		function buildAccountTypeField(selectId, fieldName, selectedValue) {
+			var selected = selectedValue === 'prepaid' ? 'prepaid' : 'normal';
+
+			var field = document.createElement('div');
+			field.className = 'field account-type-field';
+
+			var label = document.createElement('label');
+			label.setAttribute('for', selectId);
+			label.textContent = 'Account Type';
+
+			var select = document.createElement('select');
+			select.className = 'account-type-select';
+			select.name = fieldName;
+			select.id = selectId;
+
+			var normal = document.createElement('option');
+			normal.value = 'normal';
+			normal.textContent = 'Normal';
+
+			var prepaid = document.createElement('option');
+			prepaid.value = 'prepaid';
+			prepaid.textContent = 'Prepaid';
+
+			select.appendChild(normal);
+			select.appendChild(prepaid);
+			select.value = selected;
+
+			field.appendChild(label);
+			field.appendChild(select);
+
+			return field;
+		}
+
+		function moveAccountTypeNextToInput(inputId, selectId, fieldName, selectedValue, rowClass, fieldClass) {
+			var input = $(inputId);
+			if (!input) return;
+
+			if ($(selectId)) return;
+
+			var inputField = closestByClass(input, 'field');
+			if (!inputField || !inputField.parentNode) return;
+
+			if (closestByClass(inputField, rowClass)) return;
+
+			var row = document.createElement('div');
+			row.className = rowClass;
+
+			inputField.parentNode.insertBefore(row, inputField);
+
+			if (fieldClass) {
+				inputField.classList.add(fieldClass);
+			}
+
+			row.appendChild(inputField);
+			row.appendChild(buildAccountTypeField(selectId, fieldName, selectedValue));
+		}
+
+		function moveAccountTypesNextToInputs() {
+			moveAccountTypeNextToInput(
+					'login_user',
+					'login_account_type',
+					'login_account_type',
+					loginAccountTypeDefault,
+					'username-account-row',
+					'username-field'
+			);
+
+			moveAccountTypeNextToInput(
+					'quota_user',
+					'quota_account_type',
+					'quota_account_type',
+					quotaAccountTypeDefault,
+					'quota-account-row',
+					'quota-field'
+			);
+		}
+
+		function bindSubmitLoading() {
+			var loginForm = document.forms['login_form'];
+			var quotaForm = document.forms['quota_form'];
+			var loginBtn = $('loginBtn');
+			var quotaBtn = $('check_quota');
+
+			if (loginForm && loginBtn) {
+				loginForm.addEventListener('submit', function () {
+					loginBtn.value = 'Signing in...';
+					loginBtn.disabled = true;
+				});
+			}
+
+			if (quotaForm && quotaBtn) {
+				quotaForm.addEventListener('submit', function () {
+					quotaBtn.value = 'Checking...';
+					quotaBtn.disabled = true;
+				});
+			}
+		}
+
+		function hideEmptyStateButton() {
+			var btn = $('cur_state');
+			if (!btn) return;
+
+			var value = (btn.value || '').trim();
+			if (!value || value === '$PORTAL_INFO_BTN_MESSAGE$') {
+				btn.classList.add('hidden');
+			}
+		}
+
+		document.addEventListener('DOMContentLoaded', function () {
+			setBackground();
+			normalizeLogo();
+			bindPasswordToggle();
+			bindQuotaButton();
+			bindUsernameSync();
+			if (prepaidEnabled) {
+				moveAccountTypesNextToInputs();
+			}
+			bindAuthIdBlock();
+			bindSubmitLoading();
+			hideEmptyStateButton();
+		});
+	})();
+</script>
+</body>
+</html>

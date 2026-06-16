@@ -215,6 +215,11 @@ function captiveportal_load_modules() {
 function captiveportal_configure() {
     global $config, $cpzone, $cpzoneid;
 
+    // 멱등 self-heal: 구버전 per-user 로그인 룰("[User Rule] <id> auto generated rule")을
+    // config.xml 에서 일괄 제거한다. (pfctl 테이블 방식으로 전환되며 고아로 남은 룰 →
+    //  DHCP IP 재할당 시 옛 gateway 로 오라우팅될 위험.) 제거할 게 없으면 no-op.
+    cp_purge_legacy_user_login_rules();
+
     if (is_array($config['captiveportal'])) {
         foreach ($config['captiveportal'] as $cpkey => $cp) {
             $cpzone = $cpkey;
@@ -222,6 +227,9 @@ function captiveportal_configure() {
             captiveportal_configure_zone($cp);
         }
     }
+
+    // filter 재로드 후 pfctl 라우팅 테이블 즉시 복원
+    cp_sync_routing_tables();
 }
 
 function captiveportal_configure_zone($cpcfg) {
@@ -251,14 +259,13 @@ function captiveportal_configure_zone($cpcfg) {
         }
 
         /* write portal page */
-        if (is_array($cpcfg['page']) && $cpcfg['page']['htmltext']) {
+        /*if (is_array($cpcfg['page']) && $cpcfg['page']['htmltext']) {
             $htmltext = base64_decode($cpcfg['page']['htmltext']);
         } else {
-            /* example/template page */
             $htmltext = get_default_captive_portal_html();
         }
 
-        $fd = @fopen("{$g['varetc_path']}/captiveportal_{$cpzone}.html", "w");
+        /fd = @fopen("{$g['varetc_path']}/captiveportal_{$cpzone}.html", "w");
         if ($fd) {
             // Special case handling.  Convert so that we can pass this page
             // through the PHP interpreter later without clobbering the vars.
@@ -277,15 +284,15 @@ function captiveportal_configure_zone($cpcfg) {
         }
         unset($htmltext);
 
-        /* write error page */
-        if (is_array($cpcfg['page']) && $cpcfg['page']['errtext']) {
+
+        /*if (is_array($cpcfg['page']) && $cpcfg['page']['errtext']) {
             $errtext = base64_decode($cpcfg['page']['errtext']);
         } else {
-            /* example page  */
+
             $errtext = get_default_captive_portal_html();
         }
 
-        $fd = @fopen("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html", "w");
+        $fd = @fopen("{$g['varetc_path']}/captiveportal_{$cpzone}.html", "w");
         if ($fd) {
             // Special case handling.  Convert so that we can pass this page
             // through the PHP interpreter later without clobbering the vars.
@@ -304,11 +311,11 @@ function captiveportal_configure_zone($cpcfg) {
         }
         unset($errtext);
 
-        /* write logout page */
+
         if (is_array($cpcfg['page']) && $cpcfg['page']['logouttext']) {
             $logouttext = base64_decode($cpcfg['page']['logouttext']);
         } else {
-            /* example page */
+
             $translated_text1 = gettext("Redirecting...");
             $translated_text2 = gettext("Redirecting to");
             $translated_text3 = gettext("Logout");
@@ -347,12 +354,12 @@ document.location.href="<?=\$my_redirurl;?>";
 EOD;
         }
 
-        $fd = @fopen("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html", "w");
+        $fd = @fopen("{$g['varetc_path']}/captiveportal_{$cpzone}.html", "w");
         if ($fd) {
             fwrite($fd, $logouttext);
             fclose($fd);
         }
-        unset($logouttext);
+        unset($logouttext);*/
 
         /* write elements */
         captiveportal_write_elements();
@@ -415,9 +422,9 @@ EOD;
         killbypid("{$g['varrun_path']}/nginx-{$cpzone}-CaptivePortal.pid");
         killbypid("{$g['varrun_path']}/nginx-{$cpzone}-CaptivePortal-SSL.pid");
         killbypid("{$g['varrun_path']}/cp_prunedb_{$cpzone}.pid");
-        @unlink("{$g['varetc_path']}/captiveportal_{$cpzone}.html");
-        @unlink("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
-        @unlink("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
+        #@unlink("{$g['varetc_path']}/captiveportal_{$cpzone}.html");
+        #@unlink("{$g['varetc_path']}/captiveportal_{$cpzone}-error.html");
+        #@unlink("{$g['varetc_path']}/captiveportal_{$cpzone}-logout.html");
 
         captiveportal_radius_stop_all(10); // NAS-Request
 
@@ -519,6 +526,7 @@ function captiveportal_init_webgui_zone($cpcfg) {
         @unlink("{$g['varrun']}/nginx-{$cpzone}-CaptivePortal-SSL.pid");
         $res = mwexec("/usr/local/sbin/nginx -c {$g['varetc_path']}/nginx-{$cpzone}-CaptivePortal-SSL.conf");
     }
+    copy('/usr/local/captiveportal-crew.html', "{$g['varetc_path']}/captiveportal-crew.html");
 }
 
 function captiveportal_init_rules_byinterface($interface) {
@@ -851,7 +859,6 @@ function captiveportal_prune_old() {
     /* Read database */
     /* NOTE: while this can be simplified in non radius case keep as is for now */
     $cpdb = captiveportal_read_db();
-    datacounter_process_kick_spool("/var/run/datacounter-kick", 20);
     $unsetindexes = array();
     $voucher_needs_sync = false;
     /*
@@ -922,44 +929,22 @@ function captiveportal_prune_old() {
         } else {
             $utrafficquota = $trafficquota;
         }*/
-        $used   = (int)getcurquota_cached($cpentry[5], $cpentry[2]);
-        $max    = (int)getmaxquota_cached($cpentry[5]);
-        $remain = ($max - $used) * 1048576;
+        $used_mb   = (float)getcurquota_cached($cpentry[5], $cpentry[2]);
+        $max_mb    = (float)getmaxquota_cached($cpentry[4]);
+        $remain_mb = $max_mb - $used_mb;
 
         if (!$timedout) {
-            if ($remain <= 0) {
-                $timedout = true;
-                $term_cause = 10; // NAS-Request
-                $logout_cause = "$remain REMAIN is negative, exiting";
-            } else {
-                // optional: skip heavy volume check when plenty remains
-                $CHECK_THRESHOLD = 500 * 1024 * 1024; // 500MB
-                if ($remain < $CHECK_THRESHOLD) {
-                    $volume = getVolume($cpentry[2], $cpentry[3]);
-                    $in  = isset($volume['input_bytes'])  ? (int)$volume['input_bytes']  : 0;
-                    $out = isset($volume['output_bytes']) ? (int)$volume['output_bytes'] : 0;
-
-                    if (($in + $out) > $remain) {
-                        $timedout = true;
-                        $term_cause = 10; // NAS-Request
-                        $logout_cause = "$remain OVER QUOTA EXCEEDED";
-                    }
-                }
+            if ($remain_mb <= 0) {
+                $timedout     = true;
+                $term_cause   = 10;
+                $logout_cause = "QUOTA EXHAUSTED: used={$used_mb}MB max={$max_mb}MB";
             }
+            // getVolume() 비교 로직 전체 제거
         }
-        /*$utrafficquota = $maxbyte - $minbyte;
-        if (!$timedout && $utrafficquota > 0) {
-            $volume = getVolume($cpentry[2], $cpentry[3]);
-            if (($volume['input_bytes'] + $volume['output_bytes']) > $utrafficquota) {
-                $timedout = true;
-                $term_cause = 10; // NAS-Request
-                $logout_cause = 'ULTRA QUOTA EXCEEDED';
-            }
-        }*/
 
         if ($timedout) {
             captiveportal_disconnect($cpentry, $term_cause, $stop_time);
-            captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], $logout_cause);
+            cp_wireless_auth($cpentry[4], $cpentry[3], $cpentry[2], $logout_cause);
             $unsetindexes[] = $cpentry[5];
         }
 
@@ -999,17 +984,35 @@ function captiveportal_prune_old() {
                         $cpentry[3], // clientmac
                         $cpentry[5]); // sessionid
                 } else if ($cpcfg['reauthenticateacct'] == "interimupdate") {
-                    $session_time = $pruning_time - $cpentry[0];
-                    if (!empty($cpentry[10]) && $cpentry[10] > 60) {
-                        $interval = $cpentry[10];
+                    // interim_interval(DB col 10) 이 60 초과로 설정된 경우에만 주기를 적용한다.
+                    // 미설정/≤60 이면 interval=0 → 매 prune 사이클마다 송신(가장 견고).
+                    $interval = (!empty($cpentry[10]) && $cpentry[10] > 60) ? (int)$cpentry[10] : 0;
+
+                    // 경과시간(threshold) 기반 송신.
+                    // 기존 modulo 창(session_time % interval <= 59) 은 minicron 드리프트로
+                    // 60초 창을 통째로 건너뛰어 interim 이 누락(→ 마지막 구간 손실 확률↑)됐다.
+                    // "마지막 송신 후 interval 초 이상 경과" 는 한 번 참이 되면 송신 전까지
+                    // 계속 참이라 드리프트로 건너뛸 수 없다. 마지막 송신 시각은 /var/run 마커의
+                    // mtime 으로 추적한다(리부트 시 자동 정리, 세션 종료 시 disconnect 가 제거).
+                    $do_update = false;
+                    $mfile = '';
+                    if ($interval === 0) {
+                        $do_update = true;
                     } else {
-                        $interval = 0;
+                        $sid_safe = preg_replace('/[^0-9a-zA-Z]/', '', (string)$cpentry[5]);
+                        $mfile = "{$g['varrun_path']}/cp_lastinterim_{$cpzone}_{$sid_safe}";
+                        $last_sent = @filemtime($mfile);
+                        if ($last_sent === false) {
+                            // 마커 없음(첫 송신 전): 세션이 interval 이상 지속됐을 때부터 송신.
+                            if (($pruning_time - $cpentry[0]) >= $interval) {
+                                $do_update = true;
+                            }
+                        } else if (($pruning_time - $last_sent) >= $interval) {
+                            $do_update = true;
+                        }
                     }
-                    $past_interval_min = ($session_time > $interval);
-                    if ($interval != 0) {
-                        $within_interval = ($session_time % $interval >= 0 && $session_time % $interval <= 59);
-                    }
-                    if ($interval === 0 || ($interval > 0 && $past_interval_min && $within_interval)) {
+
+                    if ($do_update) {
                         captiveportal_send_server_accounting('update',
                             $cpentry[1], // ruleno
                             $cpentry[4], // username
@@ -1017,6 +1020,9 @@ function captiveportal_prune_old() {
                             $cpentry[3], // clientmac
                             $cpentry[5], // sessionid
                             $cpentry[0]); // start time
+                        if ($mfile !== '') {
+                            @touch($mfile, $pruning_time);
+                        }
                     }
                 }
             }
@@ -1151,6 +1157,11 @@ function captiveportal_disconnect($dbent, $term_cause = 1, $stop_time = null, $c
 
     $stop_time = (empty($stop_time)) ? time() : $stop_time;
 
+    /* interimupdate 송신 추적 마커 정리: 세션 종료 시 /var/run 마커 제거(누수 방지). */
+    if (!empty($dbent[5])) {
+        @unlink("{$g['varrun_path']}/cp_lastinterim_{$cpzone}_" . preg_replace('/[^0-9a-zA-Z]/', '', (string)$dbent[5]));
+    }
+
     /* this client needs to be deleted - remove ipfw rules */
     if (isset($config['captiveportal'][$cpzone]['radacct_enable']) && $dbent['authmethod'] == 'radius') {
         if ($config['captiveportal'][$cpzone]['reauthenticateacct'] == "stopstartfreeradius") {
@@ -1189,8 +1200,21 @@ function captiveportal_disconnect($dbent, $term_cause = 1, $stop_time = null, $c
                 IP_FW_TABLE_XDEL, "{$dbent[2]}/{$clientsn}");
         }
         /* XXX: Redundant?! Ensure all pf(4) states are killed. */
-        $_gb = @pfSense_kill_states(utf8_encode($dbent[2]));
-        $_gb = @pfSense_kill_srcstates(utf8_encode($dbent[2]));
+        /* Deferred: 즉시 kill 하면 HTTP 응답 전에 포털 TCP 연결이 RST → ~19초 지연.
+         * 웹 context (index.php): fastcgi_finish_request() 이후 shutdown 함수가 처리.
+         * CLI context (cron/RC): 아래 static 등록 shutdown 함수가 스크립트 종료 시 처리. */
+        $GLOBALS['_cp_deferred_state_kills'][] = $dbent[2];
+        static $_cp_kill_shutdown_registered = false;
+        if (!$_cp_kill_shutdown_registered) {
+            $_cp_kill_shutdown_registered = true;
+            // 즉시 kill 금지: 응답/연결 종료 전에 RST 되면 ~19초 지연.
+            // detached 백그라운드(짧은 sleep)로 분리 — cp_flush_deferred_state_kills().
+            register_shutdown_function(static function() {
+                if (function_exists('cp_flush_deferred_state_kills')) {
+                    cp_flush_deferred_state_kills();
+                }
+            });
+        }
     }
 
     /*
@@ -1257,7 +1281,8 @@ function captiveportal_disconnect_client($sessionid, $term_cause = 1, $logoutRea
 
         foreach ($result as $cpentry) {
             captiveportal_disconnect($cpentry, $term_cause);
-            captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], "DISCONNECT");
+            cp_wireless_auth($cpentry[4], $cpentry[3], $cpentry[2], "DISCONNECT");
+
         }
         captiveportal_remove_entries(array($sessionid));
         unset($result);
@@ -1316,35 +1341,7 @@ function captiveportal_disconnect_all($term_cause = 6, $logoutReason = "DISCONNE
     return true;
 }
 
-/* send RADIUS acct stop for all current clients connected with RADIUS servers */
-/*function captiveportal_radius_stop_all($term_cause = 6, $logoutReason = "DISCONNECT") {
-    global $g, $config, $cpzone, $cpzoneid;
 
-    $cpdb = captiveportal_read_db();
-
-    $radacct = isset($config['captiveportal'][$cpzone]['radacct_enable']) ? true : false;
-    foreach ($cpdb as $cpentry) {
-        if ($cpentry['authmethod'] === 'radius' && $radacct) {
-            if ($config['captiveportal'][$cpzone]['reauthenticateacct'] == "stopstartfreeradius") {
-                $session_time = (time() - $cpentry[0]) % 60;
-                $start_time = time() - $session_time;
-            } else {
-                $start_time = $cpentry[0];
-            }
-            captiveportal_send_server_accounting('stop',
-                $cpentry[1], // ruleno
-                $cpentry[4], // username
-                $cpentry[2], // clientip
-                $cpentry[3], // clientmac
-                $cpentry[5], // sessionid
-                $start_time, // start time
-                $stop_time, // stop time
-                $term_cause); // Acct-Terminate-Cause
-        }
-        captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], $logoutReason);
-    }
-    unset($cpdb);
-}*/
 function captiveportal_radius_stop_all($term_cause = 6, $logoutReason = "DISCONNECT") {
     global $g, $config, $cpzone, $cpzoneid;
 
@@ -1645,6 +1642,94 @@ function captiveportal_get_last_activity($ip) {
 }
 
 
+if (!function_exists('cp_wireless_log')) {
+    function cp_wireless_log(string $message, string $tag = 'logportal', string $process = 'captiveportal'): bool
+    {
+        global $cpzone;
+
+        $logfile = '/var/log/wireless.log';
+
+        // 로그 인젝션/줄바꿈/탭 방지
+        $message = trim(str_replace(["\r", "\n", "\t"], ' ', $message));
+        $message = preg_replace('/\s+/', ' ', $message);
+
+        $tag = preg_replace('/[^a-zA-Z0-9_.:-]/', '_', $tag);
+        if ($tag === '') {
+            $tag = 'logportal';
+        }
+
+        $process = preg_replace('/[^a-zA-Z0-9_.:-]/', '_', $process);
+        if ($process === '') {
+            $process = 'logportal';
+        }
+
+        $zone = '';
+        if (!empty($cpzone)) {
+            $zone = " zone={$cpzone}";
+        }
+
+        $pid = getmypid();
+
+        /*
+         * pfSense log viewer 정상 인식 포맷:
+         * May 6 03:50:04  capt: CAPt[45228] CaptivePortal zone=crew - DISCONNECT: ...
+         */
+        $line = sprintf(
+                "%s %s: %s[%d] CaptivePortal%s - %s\n",
+                date('M j H:i:s'),
+                $tag,
+                $process,
+                $pid,
+                $zone,
+                $message
+        );
+
+        $ret = @file_put_contents($logfile, $line, FILE_APPEND | LOCK_EX);
+
+        if ($ret === false) {
+            error_log("[cp_wireless_log] failed to write {$logfile}: {$message}");
+            return false;
+        }
+
+        return true;
+    }
+}
+
+if (!function_exists('cp_admin_actor')) {
+    /*
+     * 관리 작업(리셋/삭제/PW변경 등)을 수행한 주체를 반환한다.
+     * - GUI 로그인 세션이 있으면 그 관리자 ID($_SESSION['Username']).
+     * - 세션이 없는 호출(원격 API 등)은 "REMOTE API" + 호출자 IP.
+     *   IP는 TCP 피어(REMOTE_ADDR)를 쓰고, 리버스 프록시 뒤일 수 있어
+     *   X-Forwarded-For 선두값이 다르면 보조로 덧붙인다(XFF는 스푸핑 가능 — 참고용).
+     * - $_SERVER 자체가 없는 CLI/cron 호출이면 "REMOTE API".
+     * cp_wireless_log가 줄바꿈/탭을 다시 정리하므로 여기선 값만 정리한다.
+     */
+    function cp_admin_actor(): string
+    {
+        if (!empty($_SESSION['Username'])) {
+            $actor = trim(str_replace(["\r", "\n", "\t"], ' ', (string)$_SESSION['Username']));
+            if ($actor !== '') {
+                return $actor;
+            }
+        }
+
+        // 세션 없음 → 원격 API 호출로 간주, 호출자 IP를 식별한다.
+        $ip = !empty($_SERVER['REMOTE_ADDR']) ? (string)$_SERVER['REMOTE_ADDR'] : '';
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $xff = explode(',', (string)$_SERVER['HTTP_X_FORWARDED_FOR']);
+            $xff_ip = trim($xff[0]);
+            if ($xff_ip !== '' && $xff_ip !== $ip) {
+                $ip = ($ip !== '') ? "{$ip} via {$xff_ip}" : $xff_ip;
+            }
+        }
+        $ip = trim(str_replace(["\r", "\n", "\t"], ' ', $ip));
+
+        return ($ip !== '') ? "REMOTE API ({$ip})" : "REMOTE API";
+    }
+}
+
+
 /* log successful captive portal authentication to syslog */
 /* part of this code from php.net */
 function captiveportal_logportalauth($user, $mac, $ip, $status, $message = null) {
@@ -1656,6 +1741,32 @@ function captiveportal_logportalauth($user, $mac, $ip, $status, $message = null)
         $message = "{$status}: {$user}, {$mac}, {$ip}, {$message}";
     }
     captiveportal_syslog($message);
+}
+function cp_wireless_auth($user, $mac, $ip, $status, $message = null): bool {
+    $user   = trim((string)$user);
+    $mac    = trim((string)$mac);
+    $ip     = trim((string)$ip);
+    $status = trim((string)$status);
+
+    if ($message === null || $message === '') {
+        $logmsg = "{$status}: {$user}, {$mac}, {$ip}";
+    } else {
+        $message = trim((string)$message);
+        $logmsg = "{$status}: {$user}, {$mac}, {$ip}, {$message}";
+    }
+
+    if (!function_exists('cp_wireless_log')) {
+        error_log("[CP] cp_wireless_auth failed: cp_wireless_log() not found");
+        return false;
+    }
+
+    $ret = cp_wireless_log($logmsg);
+
+    if ($ret === false) {
+        error_log("[CP] cp_wireless_auth failed to write log: {$logmsg}");
+    }
+
+    return $ret;
 }
 
 /* log simple messages to syslog */
@@ -1673,7 +1784,7 @@ function captiveportal_syslog($message) {
 /* Authenticate users using Authentication Backend */
 function captiveportal_authenticate_user(&$login = '', &$password = '', $clientmac = '', $clientip = '', $pipeno = 'null', $context = 'first') {
     if($login===''){
-        return array('result'=> false, 'attributes'=>array(), 'auth_method' =>'', 'login_status'=> 'FAILURE', 'login_message' => "User doesn't exist.");
+        return array('result'=> false, 'attributes'=>array(), 'auth_method' =>'', 'login_status'=> 'FAILURE', 'login_message' => "Username blank");
     }
     global $g, $config, $cpzone;
     $cpcfg = $config['captiveportal'][$cpzone];
@@ -1689,34 +1800,13 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
             $userindex=$item;
         }
     }
-    //여기 하는 일은 로그인 하는 순간 처리하는 것을 함. 로그인 버튼을 누르고 나면 각종 검사 함.
-    //////////////////////////////////////////////////////////////////////////////////////////////////
-    // 나는 여기서 어스 서버에 정식으로 등록하기 전에 추가적인 제약사항을 이부분에서 검사하고 승인을 취소하는 것을 진행
-    /////1번은 사용자 확인 안됨 (중간에 지우거나 등등)
-    /*if(!isset($userindex)){
-        return array('result'=> false, 'attributes'=>$reply_attributes, 'auth_method' =>$auth_method, 'login_status'=> $login_status, 'login_message' => "User doesn't exist.");
-    } else { //사용자 확인됨. 넘어감 //사용량이 초과한건지 확인함
-        //먼저 사용자 업데이트 상황이 있는지 확인
-        if($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified'] && $login!==''){
-            //첫번째로 사용량 리셋 있는지? 이건 다른것과 달리 파일을 지워야해서 따로 뺌
-            unset($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified']);
-            if($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']){
-                unset($config['installedpackages']['freeradius']['config'][$userindex]['varusersresetquota']);
-                $timerange = strtolower($config['installedpackages']['freeradius']['config'][$userindex]['varuserspointoftime']);
-                unlink_if_exists("/var/log/radacct/datacounter/{$timerange}/used-octets-{$login}*");
-            }
-            write_config("freeradius user update");
-            //다음으로 수정사항이 있으면 유저 리싱크 함.
-            freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
-        }
-    }*/
     if (!isset($userindex)) {
         return array(
             'result'        => false,
             'attributes'    => $reply_attributes,
             'auth_method'   => $auth_method,
             'login_status'  => $login_status,
-            'login_message' => "User doesn't exist."
+            'login_message' => "$login - User doesn't exist!!"
         );
     } else {
         // 사용자 확인됨. 넘어감
@@ -1735,8 +1825,6 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                 $allowed_ranges = array('daily', 'weekly', 'monthly');
                 if (in_array($timerange, $allowed_ranges, true)) {
 
-                    // login 안전성 체크 (계정명 규칙에 맞게 조정 가능)
-                    // 예: 영문/숫자/_-. 만 허용
                     if (preg_match('/^[A-Za-z0-9_.-]+$/', $login)) {
                         $dir  = "/var/log/radacct/datacounter/{$timerange}";
                         $base = "{$dir}/used-octets-{$login}";
@@ -1763,13 +1851,35 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                 }
             }
 
-            // 마지막에 modified 플래그 해제 (처리 완료 후)
-            unset($uconf['varusersmodified']);
+            // 마지막에 modified 플래그 해제 — lock+parse_config(true) 로 최신본에 적용 (#30)
+            // stale $uconf 에 unset 하면 그 사이 다른 writer 가 변경한 내용을
+            // write_config 가 덮어쓰는 lost-update 가 발생하므로 fresh config 기준으로 지운다.
+            $cnf_lock_auth = lock('freeradius_user_config', LOCK_EX);
+            try {
+                parse_config(true);
+                foreach ($config['installedpackages']['freeradius']['config'] as $_ak => $_au) {
+                    if (strcasecmp($_au['varusersusername'] ?? '', $login) === 0) {
+                        unset($config['installedpackages']['freeradius']['config'][$_ak]['varusersmodified']);
+                        unset($config['installedpackages']['freeradius']['config'][$_ak]['varusersresetquota']);
+                        break;
+                    }
+                }
+                write_config("freeradius user update");
+            } finally {
+                unlock($cnf_lock_auth);
+            }
 
-            write_config("freeradius user update");
-
-            // 수정사항 적용
-            freeradius_users_resync(false, "user change applied");
+            // NOTE: freeradius_update_user() 는 여기서 호출하지 않음.
+            // 이유:
+            //   1) 쿼터 초과 여부는 datacounter_auth.sh 가 used-octets 파일을 읽어
+            //      결정하며, 위 단계에서 해당 파일을 이미 삭제했으므로 radiusd 재로드
+            //      없이도 RADIUS 인증이 즉시 통과된다.
+            //   2) freeradius_update_user() 는 내부에서 kill -HUP radiusd 를 실행해
+            //      radiusd 가 설정을 다시 읽는 동안 RADIUS 인증 요청이 5초 타임아웃으로
+            //      실패하여 로그인에 10초 이상 지연이 발생한다.
+            //   3) write_config() 가 이미 위에서 호출됐으므로 중복 호출도 없어진다.
+            // 사용자 속성(비밀번호 등)이 변경된 경우에는 crew_account.php 저장 시점에
+            // freeradius_update_user() 가 이미 호출되므로 여기서 다시 호출할 필요가 없다.
         }
     }
     //////////////////////////////////////////////////////////////////////////////////////////////////    //////////////////////////////////////////////////////////////////////////////////////////////////    //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1819,7 +1929,6 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
             }
         }
     }
-
     /* Unable to find the any authentication server config - shouldn't happen! - bail out */
     if (count($auth_servers) === 0) {
         log_error("Zone: {$cpzone} - No valid server could be used for authentication.");
@@ -1858,7 +1967,21 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                     if ($authcfg['type'] === 'none') {
                         $result = true;
                     } else {
-                        $result = authenticate_user($login, $password, $authcfg, $attributes);
+                        $result=false;
+                        $antenna_allowed = antenna_allowed($login);
+                        $isPortalShutdown = false;
+                        $schedule_suspended = false;
+                        if (isset($config['captiveportal'][$cpzone]['terminate_duration'])){
+                            if(strpos( $login, '00001') === false) {
+                                $isPortalShutdown=true;
+                            }
+                        }
+                        if(get_suspend_timeschedule($login)) {
+                            $schedule_suspended = true;
+                        }
+                        if($antenna_allowed && !$isPortalShutdown && !$schedule_suspended) {
+                            $result = authenticate_user($login, $password, $authcfg, $attributes);
+                        }
                     }
 
                     if (!empty($attributes['error_message'])) {
@@ -1890,48 +2013,62 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                     }
                 }
                 // We determine a flag
+
                 if ($result === true) {
                     $val = 3;
-                    if (isset($config['captiveportal'][$cpzone]['terminate_duration'])){
-                        if(strpos( $login, '00001') === false) {
-                            $result = false;
-                            $date = new DateTime();
-                            $timeduration = $config['captiveportal'][$cpzone]['terminate_timestamp'] + $config['captiveportal'][$cpzone]['terminate_duration'] - round($date->getTimestamp() / 60, 0);
-                            if($timeduration>10000){
-                                $msg = "Portal has shutdown by ADMIN until ADMIN back system on.";
-                            }
-                            else {
-                                $msg = "Portal has shutdown by ADMIN, wait for " . $timeduration . " minutes.";
-                            }
-                        }
-                    }
-                    $schedule_suspended = get_suspend_timeschedule($login);
-                    captiveportal_syslog($schedule_suspended);
-
-                    if($schedule_suspended == true){
-                        $result = false;
-                        $msg = "Your ID has been suspended by admin schedule policy.";
-                    }
                 }
-
                 elseif ($result === false && !empty($attributes['reply_message'])) {
                     $val = 2;
                     $msg = $attributes['reply_message'];
                 } elseif ($result === false) {
                     $val = 1;
                     if($login==="" || $password===""){
-                        $msg = "ID or password is empty.\nPlease check and try again";
+                        $msg = "ID or password is empty. Please check and try again";
                     }
                     else if($attributes['ms_chap_error']){  //if login failed
-                        $msg="Password is incorrect.\nPlease try again.";
-                        //$msg = print_r($attributes);
+                        $msg="Password is incorrect.Please try again.";
                     }
                     else if ($attributes['ms_chap2_success']||$attributes['ms_chap_success']){
-                        $msg="maximum usage exceed.";
-                        //$msg = print_r($attributes);
+                        $msg="You have reached maximum data usage.";
+                    }
+                    else if (!$antenna_allowed){
+                        $msg = "The antenna has been disabled due to the main policy";
+                    }
+                    else if ($isPortalShutdown){
+                        $date = new DateTime();
+                        $timeduration = $config['captiveportal'][$cpzone]['terminate_timestamp'] + $config['captiveportal'][$cpzone]['terminate_duration'] - round($date->getTimestamp() / 60, 0);
+                        if($timeduration>10000){
+                            $msg = "Portal has shutdown by ADMIN until ADMIN back system on.";
+                        }
+                        else {
+                            $msg = "Portal has shutdown by ADMIN, wait for " . $timeduration . " minutes.";
+                        }
+                    }
+                    else if ($schedule_suspended){
+                        $msg = "Your ID has been suspended by admin schedule policy.";
+                        cp_wireless_log("$login has been suspended due to schedule");
                     }
                     else {
-                        $msg.="User is suspended : ".$status;
+                        // RADIUS 가 속성 없는 plain Access-Reject 반환.
+                        // 가장 흔한 원인: datacounter_auth.sh 가 quota 초과로 exit 1.
+                        // PHP 쪽에서 직접 quota 파일을 확인해 정확한 메시지를 출력한다.
+                        $quota_exceeded = captiveportal_check_quota_exceeded(
+                            $login,
+                            $uconf['varuserspointoftime'] ?? ''
+                        );
+                        if ($quota_exceeded) {
+                            $msg = "You have reached your data quota for this period.";
+                            cp_wireless_log("[AUTH-QUOTA] user={$login} quota exceeded (fallback check)");
+                        } else {
+                            $msg = "Authentication failed. Contact administrator.";
+                            cp_wireless_log(sprintf(
+                                "[AUTH-UNKNOWN] user=%s result=%s status=%s attrs=%s",
+                                $login,
+                                var_export($result, true),
+                                (string)$status,
+                                implode(',', array_keys($attributes))
+                            ));
+                        }
                     }
                 } elseif ($result === null) {
                     $val = 0;
@@ -1952,14 +2089,113 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
     return array('result'=>$auth_result, 'attributes'=>$reply_attributes, 'auth_method' =>$auth_method, 'login_status'=> $login_status, 'login_message' => $login_msg);
 }
 
+/**
+ * RADIUS 가 plain Access-Reject(속성 없음)를 반환했을 때 PHP 쪽에서
+ * quota 파일을 직접 읽어 초과 여부를 확인하는 fallback.
+ *
+ * datacounter_auth.sh 가 exit 1 만 하고 Reply-Message 를 출력하지 않기 때문에
+ * PHP 는 result=false + 빈 attributes 만 받아 원인을 알 수 없다.
+ * 이 함수로 "quota 초과" vs "기타 인증 오류"를 구분한다.
+ *
+ * @param string $username   로그인 사용자명
+ * @param string $timerange  varuserspointoftime (daily/weekly/monthly/forever)
+ * @return bool  true = quota 초과, false = quota 미초과 또는 quota 미설정
+ */
+function captiveportal_check_quota_exceeded(string $username, string $timerange): bool
+{
+    $timerange = strtolower(trim($timerange));
+    $allowed   = ['daily', 'weekly', 'monthly', 'forever'];
+
+    if (!in_array($timerange, $allowed, true)) {
+        return false;
+    }
+
+    // 사용자명 sanitize (datacounter_auth.sh 와 동일 규칙)
+    $safe = preg_replace('/[^0-9a-zA-Z.:_-]/', 'X', $username);
+    if ($safe === '') {
+        return false;
+    }
+
+    $base_dir = "/var/log/radacct/datacounter/{$timerange}";
+    $max_file = "{$base_dir}/max-octets-{$safe}";
+
+    if (!file_exists($max_file)) {
+        return false;  // quota 미설정 → block 없음
+    }
+
+    $max_octets = (int)trim((string)file_get_contents($max_file));
+    if ($max_octets <= 0) {
+        return false;
+    }
+
+    // used-octets-USER 와 used-octets-USER-* 파일을 모두 합산
+    $used_base  = "{$base_dir}/used-octets-{$safe}";
+    $used_files = glob("{$used_base}*") ?: [];
+    $total_used = 0;
+
+    foreach ($used_files as $f) {
+        if (!is_file($f)) {
+            continue;
+        }
+        $v = (int)trim((string)file_get_contents($f));
+        if ($v > 0) {
+            $total_used += $v;
+        }
+    }
+
+    return ($total_used >= $max_octets);
+}
+
+function antenna_allowed($username)
+{
+    global $config;
+
+    // BUG FIX: 기존 코드는 첫 번째 반복에서 무조건 return 해버려 username 일치와
+    // 무관하게 항상 첫 번째 사용자 기준으로 판단하는 버그가 있었음.
+    $terminaltype = null;
+    foreach ($config['installedpackages']['freeradius']['config'] as $item => $value) {
+        if ($username === $value['varusersusername']) {
+            $terminaltype = $value['varusersterminaltype'] ?? '';
+            break;
+        }
+    }
+
+    if ($terminaltype === null) {
+        // 사용자를 찾지 못한 경우: 허용 (인증 자체에서 거절될 것임)
+        return true;
+    }
+
+    $shutdown_gateways = $config['system']['cp_shutdown_gateways'] ?? '';
+    if ($terminaltype !== '' && strpos($shutdown_gateways, $terminaltype . '||') !== false) {
+        return false;
+    }
+    return true;
+}
 function get_suspend_timeschedule($loginId) {
     global $config;
+
+    // 빈 loginId 는 어떤 스케줄도 매칭하지 않는다
+    if ($loginId === null || $loginId === '') {
+        return false;
+    }
 
     if (empty($config["schedules"]["schedule"]) || !is_array($config["schedules"]["schedule"])) {
         return false;
     }
 
-    foreach ($config["schedules"]["schedule"] as $scheduleItem) {
+    // pfSense config parser가 단일 schedule을 associative array로 반환하는 경우 보정
+    // (set_scheduler()와 동일 처리)
+    if (isset($config['schedules']['schedule']['name'])) {
+        $scheduleList = [$config['schedules']['schedule']];
+    } else {
+        $scheduleList = $config['schedules']['schedule'];
+    }
+
+    foreach ($scheduleList as $scheduleItem) {
+
+        if (!is_array($scheduleItem)) {
+            continue;
+        }
 
         if (($scheduleItem['name'] ?? '') !== $loginId) {
             continue;
@@ -1969,7 +2205,18 @@ function get_suspend_timeschedule($loginId) {
             continue;
         }
 
-        foreach ($scheduleItem['timerange'] as $idx => $eachScheduleItem) {
+        // timerange가 단일 항목인 경우 보정
+        if (isset($scheduleItem['timerange']['rangedescr'])) {
+            $timeranges = [$scheduleItem['timerange']];
+        } else {
+            $timeranges = $scheduleItem['timerange'];
+        }
+
+        foreach ($timeranges as $idx => $eachScheduleItem) {
+
+            if (!is_array($eachScheduleItem)) {
+                continue;
+            }
 
             $allowedWeekdays = [];
             $effectiveWeekday = null;
@@ -2015,6 +2262,12 @@ function get_suspend_timeschedule($loginId) {
             $allowedWeekdays = array_map('intval', (array)extract_schedule_weekdays_v2($eachScheduleItem));
             $weekdayRestricted = !empty($allowedWeekdays);
 
+            // 요일이 지정되지 않은 활성 스케줄은 의도치 않은 설정일 가능성이 높다.
+            // 요일 없음(=모든 요일 적용)은 허용하되 로그를 남긴다.
+            if (!$weekdayRestricted) {
+                cp_wireless_log("[SUSPEND-WARN] user={$loginId} has active schedule with no weekday restriction. hour={$eachScheduleItem['hour']}");
+            }
+
             $inRange = false;
 
             if ($startMinutes <= $endMinutes) {
@@ -2037,6 +2290,7 @@ function get_suspend_timeschedule($loginId) {
             }
 
             if ($inRange && $weekdayOk) {
+                cp_wireless_log("[SUSPEND-MATCH] user={$loginId} suspended by schedule: hour={$eachScheduleItem['hour']} position='" . ($eachScheduleItem['position'] ?? '') . "' localtime={$currentLocalTime} weekday={$currentWeekday}");
                 return true;
             }
         }
@@ -2589,115 +2843,343 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
     $ourhostname = portal_hostname_from_client_ip($clientip);
     $protocol = (isset($cpcfg['httpslogin'])) ? 'https://' : 'http://';
     $portal_url=$redirurl;
-    //////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////	/////////////
-    $sessionid = already_connected($clientip, $clientmac)[5];
-    $username_from_id = getusername($sessionid);
-    if($username_from_id != ""){
-        $username  = $username_from_id;
+    $connectinfo = already_connected($clientip, $clientmac);
+    $sessionid = (is_array($connectinfo) && isset($connectinfo[5])) ? $connectinfo[5] : '';
+
+    if ($username == '' && is_array($connectinfo) && isset($connectinfo[4])) {
+        $username = $connectinfo[4];
     }
-    /* Get captive portal layout */
+
+    // already_connected() 는 IP+MAC 정확일치만 본다. 이 재조회가 실패(false)해도
+    // flash 로 전달받은 username 이 있으면 sessionid 를 username 기준으로 복구한다.
+    // (복구하지 않으면 quota 가 0 으로 잘못 표시되거나, 아래 connected 분기에서
+    //  username/sessionid 공백으로 엉뚱하게 'removed' 처리될 수 있다.)
+    if (($sessionid === '' || $sessionid === null) && !empty($username)) {
+        $recovered = getsession($username);
+        if ($recovered !== false) {
+            $sessionid = $recovered;
+        }
+    }
+    if($config['system']['vesselinfo']['logo']==="sktelink") {
+        $logo = "captiveportal-skt-logo.svg";
+    }
+    else if($config['system']['vesselinfo']['logo']==="inmarsat") {
+        $logo = "captiveportal-inmarsat-logo.svg";
+    }
+    else{
+        $logo = "captiveportal-logo.svg";
+    }
+    $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}.html");
+    $currentquota = getcurquota($sessionid);
+    $maxquota = getmaxquota($username);
+
     if ($type == "redir") {
         $redirurl = is_URL($redirurl) ? $redirurl : $portal_url;
         header("Location: {$redirurl}");
-        return;
-    } else if ($type == "change_pw") {
-        $htmltext = get_include_contents("/var/db/cpelements/captiveportal-crew-resetpw.html");
-    } else if ($type=="commit_change_pw"){
-        foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
-            if($username===$value['varusersusername']){
-                $config['installedpackages']['freeradius']['config'][$item]['varuserspassword']=$password;
+    }
+    else if ($type == "error") {
+        $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+            'logo'     => $logo,
+            'portalError'     => "$title",
+            'portalInfo'      => "",
+            'loginUserValue'  => $username,
+            'uiConfig'        => [],
+            'showQuotaResult' => false,
+            'subject'  => "Login Failed!",
+        ]), $htmltext);
+        echo $htmltext;
+    }
+    else if ($type == "change_pw") {
+        $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderChangepwPortalHtml([
+                'portalError'     => "",
+                'portalInfo'      => "",
+                'loginUserValue'  => $username,
+        ]), $htmltext);
+        echo $htmltext;
+    }
+    else if ($type=="commit_change_pw"){
+        // 동시 PW 변경 lost-update 방지: 전용 락 + 락 안에서 config 최신본 재로딩 후 저장.
+        // (write_config 내부의 lock('config') 와 데드락되지 않도록 다른 이름의 락 사용.)
+        $cnf_lock = lock('freeradius_user_config', LOCK_EX);
+        try {
+            $config = parse_config(true);
+            $__pw_enc = 'Cleartext-Password';
+            foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
+                if($username===$value['varusersusername']){
+                    $config['installedpackages']['freeradius']['config'][$item]['varuserspassword']=$password;
+                    $__pw_enc = $value['varuserspasswordencryption'] ?? 'Cleartext-Password';
+                }
             }
+            write_config("{$username} change password applied");
+        } finally {
+            unlock($cnf_lock);
         }
-        write_config("{$username} change password applied");
         captiveportal_disconnect_client($sessionid);
         sleep(2);
-        freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
 
-        portal_reply_page($redirurl, "login","PW Reset", $clientmac, $clientip);
-    } else if ($type == "connected") {
+        // persist=false: 위 락 구간에서 이미 write_config 했으므로 중복 write(=clobber) 방지.
+        if(freeradius_update_user($username, false)){
+            $title="Password Changed Successfully!!";
+            $result='Your Password has been successfully changed.';
+        }
+        else{
+            $title="Problem occurred while changing password.";
+            $result='Password has not been changed, You may login old password.';
+        }
+        // #23 step3-A: radcheck 동기화(락 밖, 단일). files 가 아직 권위라 동작변경 없음 — radcheck 최신 유지.
+        if (function_exists('freeradius_radcheck_sync_password')) {
+            freeradius_radcheck_sync_password($username, $password, $__pw_enc);
+        }
+        $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+                'logo'     => $logo,
+                'portalError'     => '',
+                'portalInfo'      => $result,
+                'loginUserValue'  => $username,
+                'uiConfig'        => [],
+                'showQuotaResult' => false,
+                'subject'  => $title,
+        ]), $htmltext);
+
+        echo $htmltext;
+        //freeradius_users_resync(false,"user change applied");//-> Freeradius 에다가 리싱크 명령함.
+    }
+    else if ($type === "connected"){
+        // ── passthrough(freelogins) 게스트 처리 ──────────────────────────────
+        // 'unauthenticated' 세션은 freeradius config 사용자가 아니므로 아래의
+        // config 조회·quota·suspend·removed 판정 대상이 아니다. 과거에는 config 에서
+        // 못 찾아 $userindex=-1 → 'User is removed' 분기로 빠져 게스트가 강제
+        // disconnect 되었다(재오픈 시마다 끊김).
+        //
+        // 게스트는 끊지 않고 목적지로 바로 redirect 한다.
+        // 단, 포털 호스트로 redirect 하면 무한 루프가 되므로, 존 설정의 redirurl
+        // (로그인 후 리디렉션 URL)이 유효한 외부 URL 일 때만 redirect 하고,
+        // 대상이 없으면 게스트 상태 페이지로 폴백한다(루프 방지).
+        if ($username === 'unauthenticated') {
+            $guest_redir = '';
+            if (is_URL($config['captiveportal'][$cpzone]['redirurl'] ?? '')) {
+                $guest_redir = $config['captiveportal'][$cpzone]['redirurl'];
+            }
+            if ($guest_redir !== '') {
+                header("Location: {$guest_redir}");
+                return;
+            }
+            // 폴백: redirect 대상이 없으면 게스트 상태 페이지 표시 (disconnect 안 함)
+            $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLogoutPortalHtml([
+                'logo'           => $logo,
+                'portalError'    => '',
+                'displayname'    => 'Guest',
+                'portalInfo'     => 'You are connected as a guest.',
+                'loginUserValue' => 'unauthenticated',
+                'quotaUsed'      => 0,
+                'quotaAllocated' => 0,
+                'loginUsers'     => count(captiveportal_read_db()),
+            ]), $htmltext);
+            echo $htmltext;
+            return;
+        }
+
         $userindex= -1;
         $usernickname = "";
-        foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
-            if($username==$value['varusersusername']){
+        $usercount=count(captiveportal_read_db());
+        foreach (($config['installedpackages']['freeradius']['config'] ?? []) as $item => $value) {
+            if (($value['varusersusername'] ?? '') === $username) {
                 $userindex = $item;
-                $usernickname = $value['varusersdescription'];
+                $usernickname = $value['varusersdescription'] ?? '';
                 break;
             }
         }
         //captiveportal_logportalauth($clientip, $clientmac, $username, $sessionid, "User is showed".$userindex);
         if ($userindex> -1){//사용자가 있을 때
-            $isexist=false;//게이트웨이가 있는지 확인함.
-            if(isset($config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype']) &&
-                $config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype']!==''){
-                $varusersterminaltype=$config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype'];
-                foreach(return_gateways_status(true) as $gwitem){
-                    if($varusersterminaltype===$gwitem['name']){
-                        $isexist = true;
-                        break;
+            $terminalType = $config['installedpackages']['freeradius']['config'][$userindex]['varusersterminaltype'] ?? '';
+            if ($terminalType === '') {
+                $isexist = true;
+            }
+            else {
+                // NOTE: return_gateways_status(true) 는 사용하지 않음.
+                // 이유:
+                //   return_gateways_status() → get_dpinger_status() → dpinger 소켓 폴링.
+                //   latency_stddev='0' && loss='0' 인 게이트웨이(VPN, 안정적 WAN 등)마다
+                //   최대 300회 × 10 ms = 3 초씩 블로킹이 발생한다.
+                //   게이트웨이가 6-7 개인 환경에서는 6×3 = 18초 이상 지연이 누적된다.
+                // 이 지점에서 필요한 것은 "terminalType 이름의 게이트웨이가 config 에 존재하는가"
+                // 뿐이므로, config 메모리 탐색으로 대체한다. (즉시 반환)
+                $isexist = false;
+                if (!empty($config['gateways']['gateway_item']) && is_array($config['gateways']['gateway_item'])) {
+                    foreach ($config['gateways']['gateway_item'] as $gw) {
+                        if (($gw['name'] ?? '') === $terminalType) {
+                            $isexist = true;
+                            break;
+                        }
                     }
                 }
             }
-            else{
-                $isexist = true;//게이트웨이가 지정안되어있거나, 없는경우임.
-            }
             if($isexist) {
                 if ($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified'] == "update") {
-                    $title = "Updating..";
-                    $portalbtnmessage = "Update received. Tap to re-login";
-                    $portalinfobtnmessage = "Please login to apply changes";
-                    $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
-                    captiveportal_disconnect_client($sessionid);
+                    if ($config['installedpackages']['freeradius']['config'][$userindex]['varusersmodified'] == "update") {
+                        $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+                                        'logo'            => $logo,
+                                        'portalError'     => "",
+                                        'portalInfo'      => "This account will be logged out to apply updates.",
+                                        'loginUserValue'  => $username,
+                                        'uiConfig'        => [],
+                                        'showQuotaResult' => false,
+                                        'subject'         => "Account Update",
+                                ]), $htmltext);
+                        session_write_close();
+                        echo $htmltext;
+                        captiveportal_disconnect_client($sessionid);
+                        sleep(2);
+                        exit;
+
+                    }
                 } else {//사용량 확인함.
                     if (isset($config['captiveportal'][$cpzone]['terminate_duration']) && (strpos($username, '00001') === false)) {
-                        $title = "Disconnected by Admin!";
-                        $portalbtnmessage = "Click here to back home";
-                        $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
-                    } else {
-                        $currentquota = getcurquota($sessionid, $clientip);
-                        $maxquota = getmaxquota($sessionid);
+                        $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+                            'logo'     => $logo,
+                            'portalError'     => "",
+                            'portalInfo'      => "System Administrator has been shutdown WIFI portal site",
+                            'loginUserValue'  => $username,
+                            'uiConfig'        => [],
+                            'showQuotaResult' => false,
+                            'subject'  => "WIFI Portal Shutdown!",
+                        ]), $htmltext);
+                        captiveportal_disconnect_client($sessionid);
+                        echo $htmltext;
+                    }
+                    else {
                         if ($currentquota < $maxquota) {
-                            if($usernickname==""){
-                                $title = $username." Online!";
-                            }else{
-                                $title = $usernickname." Online!";
+                            $schedule_suspended = get_suspend_timeschedule($username);
+                            if($schedule_suspended == true){
+                                captiveportal_disconnect_client($sessionid);
+                                sleep(2);
+                                freeradius_update_user($username);
+                                $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+                                    'logo'     => $logo,
+                                    'portalError'     => "",
+                                    'portalInfo'      => "You are currently entered suspend schedule",
+                                    'loginUserValue'  => $username,
+                                    'uiConfig'        => [],
+                                    'showQuotaResult' => false,
+                                    'subject'  => "User Suspended",
+                                ]), $htmltext);
+                                echo $htmltext;
                             }
+                            else{
 
-                            $portalbtnmessage = "Click here to log out";
-                            $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
-                        } else {
-                            $title = "Login Failed!";
-                            $message = "You reached allocated data amount.\nContact system admin";
-                            $portalbtnmessage = "Click here to back home";
-                            $portalerrbtnmessage = $maxquota . "MB limit reached.";
+                                if (strpos($username, 'crewpay-') === 0) {
+                                    $title = 'You are currently logged in with a Prepaid ID.';
+                                    $displayname = substr($username, strlen('crewpay-'));
+                                }
+                                else{
+                                    $displayname = $username;
+                                }
+                                if ($usernickname !== ''){
+                                    $displayname = $usernickname;
+                                }
+
+
+                                $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLogoutPortalHtml([
+                                    'logo'     => $logo,
+                                    'portalError'     => '',
+                                    'displayname'     => $displayname,
+                                    'portalInfo'      => $title,
+                                    'loginUserValue'  => $username,
+                                    'quotaUsed'       => $currentquota,
+                                    'quotaAllocated'     => $maxquota,
+                                    'loginUsers'     => $usercount,
+                                ]), $htmltext);
+                            }
+                            echo $htmltext;
+                        }
+                        else {
                             captiveportal_disconnect_client($sessionid, "Usage-Exceed");
-                            $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
+                            $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+                                'logo'     => $logo,
+                                'portalError'     => "",
+                                'portalInfo'      => "You have used up all of your data quota.",
+                                'loginUserValue'  => $username,
+                                'uiConfig'        => [],
+
+                                'showQuotaResult' => false,
+                                'subject'  => "Quota Reached",
+                            ]), $htmltext);
+                            echo $htmltext;
+                            exit;
                         }
                     }
                 }
             }
             else { //No gateway found
-                $title = "Antenna Offline";
-                $message = "Please try later.";
-                $portalbtnmessage = "Click here to back home";
-                $portalerrbtnmessage = "The connection is OFFLine";
-                captiveportal_disconnect_client($sessionid, "No-Gateway");
-                $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
+                $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+                    'logo'     => $logo,
+                    'portalError'     => "Current login Antenna is offline, please try later.",
+                    'portalInfo'      => "",
+                    'loginUserValue'  => $username,
+                    'uiConfig'        => [],
 
+                    'showQuotaResult' => false,
+                    'subject'  => "Antenna Offline",
+                ]), $htmltext);
+                captiveportal_disconnect_client($sessionid, "No-Gateway");
+                echo $htmltext;
             }
-        } else {
-            $title="Removing..";
-            captiveportal_logportalauth($clientip, $clientmac, $username, $sessionid, "User is Removing ".$userindex);
-            $portalbtnmessage= "Removed your account. Tap to re-login";
-            $portalinfobtnmessage = "Removing your Account information";
-            $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
-            captiveportal_disconnect_client($sessionid);
-            write_config("FreeRADIUS user change applied");
+        }
+        else {
+            // userindex == -1 인 경우는 두 가지로 나뉜다.
+            //   (A) $username 이 빈 값  → username 회수 실패(already_connected 재조회 실패 등).
+            //       실제 사용자 삭제가 아니므로 강제 disconnect 하면 안 되고, WELCOME 로그인
+            //       페이지를 띄워야 한다. (기존엔 무조건 removing 으로 빠져 세션이 끊겼다.)
+            //   (B) $username 은 있으나 freeradius config 에 없음 → 진짜 삭제된 사용자.
+            if ($username === '' || $username === null) {
+                $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+                        'logo'     => $logo,
+                        'portalError'     => "",
+                        'portalInfo'      => "",
+                        'loginUserValue'  => "",
+                        'uiConfig'        => [],
+                        'showQuotaResult' => false,
+                        'subject'  => "Welcome",
+                ]), $htmltext);
+                echo $htmltext;   // disconnect 호출하지 않음
+            }
+            else {
+                captiveportal_logportalauth($clientip, $clientmac, $username, $sessionid, "User is Removing ".$userindex);
+                $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+                        'logo'     => $logo,
+                        'portalError'     => "",
+                        'portalInfo'      => "User has  been removed",
+                        'uiConfig'        => [],
+                        'showQuotaResult' => false,
+                        'subject'  => "User is removed!",
+                ]), $htmltext);
+                captiveportal_disconnect_client($sessionid);
+                echo $htmltext;
+            }
         }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    } else if ($type == "login") {
-        $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal_{$cpzone}.html");
-        ;
-    } else if ($type == "check_quota") {
+    }
+    else if ($type == "login") {
+        if($title==='resetPW'){
+            $subject = "Reset Password Completed.";
+            $info = "Your Password has been reset. Please login with new password again.";
+        }
+        $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+            'logo'     => $logo,
+            'portalError'     => "",
+            'portalInfo'      => $info,
+            'loginUserValue'  => $username,
+            'uiConfig'        => [],
+
+            'showQuotaResult' => false,
+            'subject'  => $subject,
+        ]), $htmltext);
+
+        echo $htmltext;
+
+        exit;
+    }
+    else if ($type == "check_quota") {
+
         if(!empty($username)){
             foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
                 if($username==$value['varusersusername']){
@@ -2705,90 +3187,51 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
                     break;
                 }
             }
+            $subject="Check Quota";
             if(isset($userindex)){
                 $allocated = $config['installedpackages']['freeradius']['config'][$userindex]['varusersmaxtotaloctets'];
                 $curoctets=check_quota($username, $config['installedpackages']['freeradius']['config'][$userindex]['varusersmaxtotaloctetstimerange']);
+                $remain = number_format(($allocated-$curoctets), 2);
                 $ratio = ($curoctets/$allocated)*100;
-                $message="Allocated {$allocated}MB.\n{$curoctets}MB used";
-                $portalbtnmessage= "Tap here to back home...";
-                $portalerrbtnmessage= number_format($ratio, 2)."% used.";
+                $info = "${username} quota check was successful";
+                $currentquota = number_format($ratio, 2)."%";
+                $showqutaresult=true;
             } else {
-                $message = "Username not found";
-                $portalerrbtnmessage="N/A";
+                $info = "Username not found";
+                $showqutaresult=false;
             }
+            $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+                    'logo'     => $logo,
+                    'portalError'     => "",
+                    'portalInfo'      => '',
+                    'loginUserValue'  => '',
+                    'uiConfig'        => [],
+                    'quotaNotice'     => $info,
+                    'quotaUserValue'  => $remain.'MB',
+                    'showQuotaResult' => $showqutaresult,
+                    'subject'  => $subject,
+                    'quotaUsed'       => number_format($curoctets, 2)."MB",
+                    'quotaAllocated'     => $allocated."MB",
+            ]), $htmltext);
+            echo $htmltext;
+
         }
-        $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
-    }  else {
-        $message = $title;
-        $portalerrbtnmessage = "Login Failed";
+    }
+    else {
+        $info = "Your id was not found";
         $title = "Login failed!";
-        $htmltext = get_include_contents("{$g['varetc_path']}/captiveportal-{$cpzone}-error.html");
+        $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
+                'logo'     => $logo,
+                'portalError'     => "",
+                'portalInfo'      => $info,
+                'loginUserValue'  => $username,
+                'uiConfig'        => [],
+                'showQuotaResult' => false,
+        ]), $htmltext);
+        echo $htmltext;
+
     }
 
-    /* substitute the PORTAL_REDIRURL variable */
-    if ($cpcfg['preauthurl']) {
-        $htmltext = str_replace("\$PORTAL_REDIRURL\$", "{$cpcfg['preauthurl']}", $htmltext);
-        $htmltext = str_replace("#PORTAL_REDIRURL#", "{$cpcfg['preauthurl']}", $htmltext);
-    }
-    if($config['system']['vesselinfo']['logo']==="sktelink") {
-        $htmltext = str_replace("\$PORTAL_MAIN_LOGO\$", "captiveportal-skt-logo.svg", $htmltext);
-    }
-    else if($config['system']['vesselinfo']['logo']==="inmarsat") {
-        $htmltext = str_replace("\$PORTAL_MAIN_LOGO\$", "captiveportal-inmarsat-logo.svg", $htmltext);
-    }
-    else{
-        $htmltext = str_replace("\$PORTAL_MAIN_LOGO\$", "captiveportal-logo.svg", $htmltext);
-    }
-    /* substitute other variables */
-    $htmltext = str_replace("\$PORTAL_ACTION\$", $portal_url, $htmltext);
-    $htmltext = str_replace("#PORTAL_ACTION#", $portal_url, $htmltext);
-
-    $htmltext = str_replace("\$PORTAL_ZONE\$", htmlspecialchars($cpzone), $htmltext);
-    $htmltext = str_replace("\$PORTAL_REDIRURL\$", htmlspecialchars($redirurl), $htmltext);
-    $htmltext = str_replace("\$PORTAL_DETAIL_MESSAGE\$", htmlspecialchars($message), $htmltext);
-    $htmltext = str_replace("\$PORTAL_BTN_MESSAGE\$", htmlspecialchars($portalbtnmessage), $htmltext);
-    $htmltext = str_replace("\$PORTAL_ERR_BTN_MESSAGE\$", htmlspecialchars($portalerrbtnmessage), $htmltext);
-    $htmltext = str_replace("\$PORTAL_INFO_BTN_MESSAGE\$", htmlspecialchars($portalinfobtnmessage), $htmltext);
-
-    $htmltext = str_replace("\$CLIENT_MAC\$", htmlspecialchars($clientmac), $htmltext);
-    $htmltext = str_replace("\$CLIENT_IP\$", htmlspecialchars($clientip), $htmltext);
-    $htmltext = str_replace("\$CURRENT_QUOTA\$", htmlspecialchars($currentquota), $htmltext);
-    $htmltext = str_replace("\$MAX_QUOTA\$", htmlspecialchars($maxquota), $htmltext);
-    $htmltext = str_replace("\$SESSION_ID\$", htmlspecialchars($sessionid), $htmltext);
-    $htmltext = str_replace("\$PORTAL_TITLE_MESSAGE\$", htmlspecialchars($title), $htmltext);
-
-    // Special handling case for captive portal master page so that it can be ran
-    // through the PHP interpreter using the include method above.  We convert the
-    // $VARIABLE$ case to #VARIABLE# in /etc/inc/captiveportal.inc before writing out.
-    $htmltext = str_replace("#CURRENT_QUOTA#", htmlspecialchars($currentquota), $htmltext);
-    $htmltext = str_replace("#MAX_QUOTA#", htmlspecialchars($maxquota), $htmltext);
-    $htmltext = str_replace("#PORTAL_ZONE#", htmlspecialchars($cpzone), $htmltext);
-    $htmltext = str_replace("#PORTAL_REDIRURL#", htmlspecialchars($redirurl), $htmltext);
-    $htmltext = str_replace("#PORTAL_DETAIL_MESSAGE#", htmlspecialchars($message), $htmltext);
-    $htmltext = str_replace("#PORTAL_TITLE_MESSAGE#", htmlspecialchars($title), $htmltext);
-    $htmltext = str_replace("#PORTAL_ERR_BTN_MESSAGE#", htmlspecialchars($portalerrbtnmessage), $htmltext);
-    $htmltext = str_replace("#PORTAL_INFO_BTN_MESSAGE#", htmlspecialchars($portalinfobtnmessage), $htmltext);
-
-    $htmltext = str_replace("#CLIENT_MAC#", htmlspecialchars($clientmac), $htmltext);
-    $htmltext = str_replace("#CLIENT_IP#", htmlspecialchars($clientip), $htmltext);
-    $htmltext = str_replace("#USERNAME#", htmlspecialchars($username), $htmltext);
-    $htmltext = str_replace("#PASSWORD#", htmlspecialchars($password), $htmltext);
-    if ($type === "connected") {
-        $schedule_suspended = get_suspend_timeschedule($username);
-        if($schedule_suspended == true){
-            captiveportal_disconnect_client($sessionid);
-            sleep(2);
-            freeradius_users_resync(false,"user suspend applied");//-> Freeradius 에다가 리싱크 명령함.
-
-        }
-        $htmltext .= "\n<script>
-            setTimeout(function () {
-                // 현재 접속한 사이트의 루트 URL로 이동
-                window.location.href = window.location.origin;
-            }, 5000);
-        </script>";
-    }
-    echo $htmltext;
 }
 
 function captiveportal_reapply_attributes($cpentry, $attributes) {
@@ -2931,7 +3374,7 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
             if (!isset($config['captiveportal'][$cpzone]['noconcurrentlogins'])) {
                 /* 'noconcurrentlogins' not set : accept login 'username' creating multiple sessions. */
                 captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], "config['captiveportal'][$cpzone]['noconcurrentlogins'] 3 does not exists = NOT set");
-                captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], "CONCURRENT LOGIN - NOT TERMINATING EXISTING SESSION(S)");
+                captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], "CONCURRENT LOGIN - NOT TERMINATINGACCEPT EXISTING SESSION(S)");
 //////////////////////// add (multiple) firewall rule here on next time///////////////////////
             } elseif ($config['captiveportal'][$cpzone]['noconcurrentlogins'] == "last") {
                 /* Classic situation : accept the new login, disconnect the old - present - connection */
@@ -3095,9 +3538,9 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
 
             /* store information to database */
             captiveportal_write_db($insertquery);
+
             unlock($cpdblck);
             unset($insertquery, $bpassword);
-
             $radacct = isset($config['captiveportal'][$cpzone]['radacct_enable']) ? true : false;
             if ($authmethod === 'radius' && $radacct) {
                 captiveportal_send_server_accounting('start',
@@ -3108,31 +3551,32 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
                     $sessionid, // sessionid
                     time());  // start time
             }
-            if (captiveportal_xmlrpc_sync_get_details($syncip, $syncport, $syncuser, $syncpass, isset($existing_sessionid))) {
-                // $existing_sessionid prevent carp loop : only forward
-                // the connection to the other node if we generated the sessionid by ourselves
-                $rpc_client = new pfsense_xmlrpc_client();
-                $rpc_client->setConnectionData($syncip, $syncport, $syncuser, $syncpass);
-                $rpc_client->set_noticefile("CaptivePortalUserSync");
-                $arguments = array(
-                    'clientip' => $clientip,
-                    'clientmac' => $clientmac,
-                    'username' => $username,
-                    'password' => $password,
-                    'attributes' => $attributes,
-                    'allow_time' => $allow_time,
-                    'authmethod' => $authmethod,
-                    'context' => $context,
-                    'sessionid' => $sessionid
-                );
-
-                $rpc_client->xmlrpc_method('captive_portal_sync',
-                    array(
-                        'op' => 'connect_user',
-                        'zone' => $cpzone,
-                        'user' => base64_encode(serialize($arguments))
-                    )
-                );
+            if(isset($syncip)&&isset($syncport)){
+                if (captiveportal_xmlrpc_sync_get_details($syncip, $syncport, $syncuser, $syncpass, isset($existing_sessionid))) {
+                    // $existing_sessionid prevent carp loop : only forward
+                    // the connection to the other node if we generated the sessionid by ourselves
+                    $rpc_client = new pfsense_xmlrpc_client();
+                    $rpc_client->setConnectionData($syncip, $syncport, $syncuser, $syncpass);
+                    $rpc_client->set_noticefile("CaptivePortalUserSync");
+                    $arguments = array(
+                        'clientip' => $clientip,
+                        'clientmac' => $clientmac,
+                        'username' => $username,
+                        'password' => $password,
+                        'attributes' => $attributes,
+                        'allow_time' => $allow_time,
+                        'authmethod' => $authmethod,
+                        'context' => $context,
+                        'sessionid' => $sessionid
+                    );
+                    $rpc_client->xmlrpc_method('captive_portal_sync',
+                        array(
+                            'op' => 'connect_user',
+                            'zone' => $cpzone,
+                            'user' => base64_encode(serialize($arguments))
+                        )
+                    );
+                }
             }
         }
     } else {
@@ -3163,7 +3607,6 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
     } else if (is_URL($redirurl)) {
         $my_redirurl = $redirurl;
     }
-
     if (isset($config['captiveportal'][$cpzone]['logoutwin_enable']) && !isset($config['captiveportal'][$cpzone]['passthrumacadd'])) {
         $ourhostname = portal_hostname_from_client_ip($clientip);
         $protocol = (isset($config['captiveportal'][$cpzone]['httpslogin'])) ? 'https://' : 'http://';
@@ -3174,7 +3617,7 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
         } else {
             $message = 0;
         }
-        include_once("{$g['varetc_path']}/captiveportal-{$cpzone}-logout.html");
+        include_once("{$g['varetc_path']}/captiveportal-{$cpzone}.html");
 
     }
     /*else {
@@ -3183,7 +3626,6 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
 
     return $sessionid;
 }
-
 
 /*
  * Used for when pass-through credits are enabled.
@@ -3362,136 +3804,6 @@ function remainder($bytes) {
     return $bytes;
 }
 
-/*function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $username = null, $clientip = null, $clientmac = null, $sessionid = null, $start_time = null, $stop_time = null, $term_cause = null) {
-    global $cpzone, $config;
-
-    $cpcfg = $config['captiveportal'][$cpzone];
-    $acctcfg = auth_get_authserver($cpcfg['radacct_server']);
-    if (!isset($cpcfg['radacct_enable']) || empty($acctcfg) ||
-        captiveportal_ha_is_node_in_backup_mode($cpzone)) {
-        return null;
-    }
-
-    if ($type === 'on') {
-        $racct = new Auth_RADIUS_Acct_On;
-    } elseif ($type === 'off') {
-        $racct = new Auth_RADIUS_Acct_Off;
-    } elseif ($type === 'start') {
-        $racct = new Auth_RADIUS_Acct_Start;
-        if (!is_int($start_time)) {
-            $start_time = time();
-        }
-        add_crew_linked_rule($clientip, $username);
-        write_config("{$username} crew wifi login");
-    } elseif ($type === 'stop') {
-        $racct = new Auth_RADIUS_Acct_Stop;
-        if (!is_int($stop_time)) {
-            $stop_time = time();
-        }
-        del_crew_linked_rule($clientip, $username);
-        write_config("{$username} crew wifi log out");
-    } elseif ($type === 'update') {
-        $racct = new Auth_RADIUS_Acct_Update;
-        if (!is_int($stop_time)) {
-            $stop_time = time(); // "top time" here will be used only for calculating session time.
-        }
-        //add_crew_linked_rule($clientip, $username);
-        //write_config("voucher changed");
-    } else {
-        return null;
-    }
-
-    $racct->addServer($acctcfg['host'], $acctcfg['radius_acct_port'],
-        $acctcfg['radius_secret'], $acctcfg['radius_timeout']);
-
-    $racct->authentic = RADIUS_AUTH_RADIUS;
-    if ($cpcfg['auth_method'] === 'radmac' && $username === "unauthenticated" && !empty($clientmac)) {
-        $racct->username = mac_format($clientmac);
-    } elseif (!empty($username)) {
-        $racct->username = $username;
-    }
-
-    if (PEAR::isError($racct->start())) {
-        captiveportal_syslog('RADIUS ACCOUNTING FAILED : '.$racct->getError());
-        $racct->close();
-        return null;
-    }
-
-    $nasip = $acctcfg['radius_nasip_attribute'];
-    if (!is_ipaddr($nasip)) {
-        $nasip = get_interface_ip($nasip);
-        if (!is_ipaddr($nasip)) {
-            $nasip = get_interface_ip();//We use WAN interface IP as fallback for NAS-IP-Address
-        }
-    }
-    $nasmac = get_interface_mac(find_ip_interface($nasip));
-    $racct->putAttribute(RADIUS_NAS_IP_ADDRESS, $nasip, "addr");
-
-    $racct->putAttribute(RADIUS_NAS_IDENTIFIER, empty($cpcfg["radiusnasid"]) ? "CaptivePortal-{$cpzone}" : $cpcfg["radiusnasid"] );
-
-    if (is_int($ruleno)) {
-        $racct->putAttribute(RADIUS_NAS_PORT_TYPE, RADIUS_ETHERNET);
-        $racct->putAttribute(RADIUS_NAS_PORT, intval($ruleno), 'integer');
-    }
-
-    if (!empty($sessionid)) {
-        $racct->putAttribute(RADIUS_ACCT_SESSION_ID, $sessionid);
-    }
-
-    if (!empty($clientip) && is_ipaddr($clientip)) {
-        $racct->putAttribute(RADIUS_FRAMED_IP_ADDRESS, $clientip, "addr");
-    }
-    if (!empty($clientmac)) {
-        $racct->putAttribute(RADIUS_CALLING_STATION_ID, mac_format($clientmac));
-    }
-    if (!empty($nasmac)) {
-        $racct->putAttribute(RADIUS_CALLED_STATION_ID, mac_format($nasmac).':'.gethostname());
-    }
-
-    // Accounting request Stop and Update : send the current data volume
-    if (($type === 'stop' || $type === 'update') && is_int($start_time)) {
-        $volume = getVolume($clientip);
-        $session_time = $stop_time - $start_time;
-        $volume['input_bytes_radius'] = remainder($volume['input_bytes']);
-        $volume['input_gigawords'] = gigawords($volume['input_bytes']);
-        $volume['output_bytes_radius'] = remainder($volume['output_bytes']);
-        $volume['output_gigawords'] = gigawords($volume['output_bytes']);
-
-        // Volume stuff: Ingress
-        $racct->putAttribute(RADIUS_ACCT_INPUT_PACKETS, intval($volume['input_pkts']), "integer");
-        $racct->putAttribute(RADIUS_ACCT_INPUT_OCTETS, intval($volume['input_bytes_radius']), "integer");
-        // Volume stuff: Outgress
-        $racct->putAttribute(RADIUS_ACCT_OUTPUT_PACKETS, intval($volume['output_pkts']), "integer");
-        $racct->putAttribute(RADIUS_ACCT_OUTPUT_OCTETS, intval($volume['output_bytes_radius']), "integer");
-        $racct->putAttribute(RADIUS_ACCT_SESSION_TIME, intval($session_time), "integer");
-
-        $racct->putAttribute(CUSTOM_RADIUS_ACCT_OUTPUT_GIGAWORDS, intval($volume['output_gigawords']), "integer");
-        $racct->putAttribute(CUSTOM_RADIUS_ACCT_INPUT_GIGAWORDS, intval($volume['input_gigawords']), "integer");
-        // Set session_time
-        $racct->session_time = $session_time;
-    }
-
-    if ($type === 'stop') {
-        if (empty($term_cause)) {
-            $term_cause = 1;
-        }
-        $racct->putAttribute(RADIUS_ACCT_TERMINATE_CAUSE, $term_cause);
-    }
-
-    // Send request
-    $result = $racct->send();
-
-    if (PEAR::isError($result)) {
-        captiveportal_syslog('RADIUS ACCOUNTING FAILED : '.$racct->getError());
-        $result = null;
-    } elseif ($result !== true) {
-        $result = false;
-    }
-
-    $racct->close();
-    return $result;
-}
-*/
 function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $username = null, $clientip = null, $clientmac = null, $sessionid = null, $start_time = null, $stop_time = null, $term_cause = null) {
     global $cpzone, $config;
 
@@ -3502,8 +3814,13 @@ function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $use
         return null;
     }
 
-    // ---- retry 정책 (너 환경에 맞춘 보수적 값) ----
-    $max_retry = 3;          // 2~3 추천 (너무 크면 포털 응답이 느려짐)
+    // ---- retry 정책 ----
+    // $max_retry: PHP 레벨 재시도 횟수.
+    // addServer() 5번째 인자(maxtries)=1 로 PEAR 내부 재시도를 비활성화했으므로
+    // PHP 레벨에서만 재시도가 일어난다.
+    // 최대 대기 = max_retry × radius_timeout 초.
+    // radius_timeout=3 기준: 1×3=3초 (start), 2×3=6초 (stop/update).
+    $max_retry = ($type === 'start' || $type === 'on' || $type === 'off') ? 1 : 2;
     $retry_delay_us = 300000; // 0.3초
     $first_try_ts = time();
 
@@ -3521,14 +3838,15 @@ function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $use
             $start_time = time();
         }
         add_crew_linked_rule($clientip, $username);
-        write_config("{$username} crew wifi login");
+        // write_config 제거: pfctl table 방식으로 전환, config.xml 수정 불필요
     } elseif ($type === 'stop') {
         $racct = new Auth_RADIUS_Acct_Stop;
         if (!is_int($stop_time)) {
             $stop_time = time();
         }
-        del_crew_linked_rule($clientip, $username);
-        write_config("{$username} crew wifi log out");
+        del_crew_linked_rule($clientip, $username, false);
+        // kill_states=false: 실제 state 제거는 captiveportal_disconnect() 가 deferred 큐에 적재한다.
+        // write_config 제거: pfctl table 방식으로 전환, config.xml 수정 불필요
     } elseif ($type === 'update') {
         $racct = new Auth_RADIUS_Acct_Update;
         if (!is_int($stop_time)) {
@@ -3538,8 +3856,12 @@ function captiveportal_send_server_accounting($type = 'on', $ruleno = null, $use
         return null;
     }
 
+    // maxtries=1: PEAR 내부 재시도 비활성화.
+    // 기본값(3)이면 타임아웃 1회당 최대 radius_timeout×3 초를 소비해
+    // 로그인 응답이 18-27 초 지연될 수 있다.
+    // PHP 레벨 retry 는 위 $max_retry 로 제어한다.
     $racct->addServer($acctcfg['host'], $acctcfg['radius_acct_port'],
-        $acctcfg['radius_secret'], $acctcfg['radius_timeout']);
+        $acctcfg['radius_secret'], $acctcfg['radius_timeout'], 1);
 
     $racct->authentic = RADIUS_AUTH_RADIUS;
     if ($cpcfg['auth_method'] === 'radmac' && $username === "unauthenticated" && !empty($clientmac)) {
@@ -3671,16 +3993,177 @@ function already_connected($clientip, $clientmac) {
     global $g, $cpzone;
     if (($clientip != "") && ($clientmac != "")) {
         $query = "WHERE ip = '{$clientip}' AND mac = '{$clientmac}'";
-        $cpdb = captiveportal_read_db();
-        /* Lookup the $sessionid */
-        foreach ($cpdb as $cpentry) {
-            if (($cpentry[2] == $clientip) && ($cpentry[3] == $clientmac)){
-                return $cpentry;
-            }
+        $cpentry = captiveportal_read_db($query);
+        if($cpentry!=="") {
+            return $cpentry[0];
         }
-        return false;
+        else {
+            return false;
+        }
     } else
         return false;
+}
+function cpdb_lookup_best($clientip, $clientmac) {
+    // Returns: ['match' => 'exact'|'mac'|'ip-mismatch'|'none', 'entry' => array|null]
+    $cpdb = captiveportal_read_db();
+
+    $exact = null;
+    $macMatch = null;
+    $ipOnly = null;
+
+    foreach ($cpdb as $cpentry) {
+        if (!is_array($cpentry) || !isset($cpentry[2], $cpentry[3])) {
+            continue;
+        }
+
+        // last match wins (최근 엔트리가 뒤에 있을 가능성)
+        if ($cpentry[3] === $clientmac) {
+            $macMatch = $cpentry;
+        }
+
+        if ($cpentry[2] === $clientip) {
+            if ($cpentry[3] === $clientmac) {
+                $exact = $cpentry;
+            } else {
+                $ipOnly = $cpentry; // same IP but different MAC => concurrent candidate
+            }
+        }
+    }
+
+    if ($exact !== null) return ['match' => 'exact', 'entry' => $exact];
+    if ($macMatch !== null) return ['match' => 'mac', 'entry' => $macMatch];
+    if ($ipOnly !== null) return ['match' => 'ip-mismatch', 'entry' => $ipOnly];
+    return ['match' => 'none', 'entry' => null];
+}
+
+/**
+ * 기존 세션을 새 IP 로 마이그레이션한다. (같은 기기가 DHCP 등으로 IP 만 바뀐 경우)
+ *
+ * sessionid 는 그대로 유지하므로 RADIUS/datacounter 회계 연속성이 보장된다.
+ * (datacounter 는 username+sessionid 기준이라 IP 변경과 무관)
+ *
+ *  - auth_up/auth_down ipfw 테이블: 구IP 제거 → 신IP 추가 (동일 pipeno 재사용)
+ *  - 라우팅 pfctl 테이블(cp_gw_*): 구IP 제거 + state 정리 → 신IP 추가
+ *  - captiveportal DB: ip/mac 갱신
+ *
+ * @param array  $cpentry  기존 세션 DB row (숫자 인덱스 배열)
+ * @param string $newip    새 클라이언트 IP
+ * @param string $newmac   새 클라이언트 MAC (보통 기존과 동일)
+ * @return array|false     갱신된 cpentry (ip/mac 반영), 실패 시 false
+ */
+function captiveportal_migrate_session_ip($cpentry, $newip, $newmac) {
+    global $config, $cpzone;
+
+    if (!is_array($cpentry) || !is_ipaddr($newip)) {
+        return false;
+    }
+
+    $oldip     = $cpentry[2] ?? '';
+    $pipeno    = $cpentry[1] ?? null;
+    $username  = $cpentry[4] ?? '';
+    $sessionid = $cpentry[5] ?? '';
+
+    if ($sessionid === '' || !is_ipaddr($oldip)) {
+        return false;
+    }
+
+    // pipeno 가 유효하지 않으면 신IP 를 auth 테이블에 넣을 수 없어
+    // "connected 인데 통신 불가" 상태가 된다. 이 경우 마이그레이션을 포기하고
+    // false 를 반환해 호출측이 정상 로그인(파이프 재할당)을 받게 한다.
+    if ($pipeno === null || $pipeno === '' || !is_numeric($pipeno)) {
+        return false;
+    }
+
+    $cpdblck = lock("captiveportaldb{$cpzone}", LOCK_EX);
+
+    $newsn = (is_ipaddrv6($newip)) ? 128 : 32;
+    $oldsn = (is_ipaddrv6($oldip)) ? 128 : 32;
+
+    // 1) auth_up/auth_down: 구IP 제거
+    @pfSense_ipfw_table("{$cpzone}_auth_up",   IP_FW_TABLE_XDEL, "{$oldip}/{$oldsn}");
+    @pfSense_ipfw_table("{$cpzone}_auth_down", IP_FW_TABLE_XDEL, "{$oldip}/{$oldsn}");
+
+    // 2) auth_up/auth_down: 신IP 추가 (기존 pipeno 그대로 재사용 → 대역폭 파이프 유지)
+    $rule_entry = "{$newip}/{$newsn}";
+    if (!isset($config['captiveportal'][$cpzone]['nomacfilter'])) {
+        $rule_entry .= ",{$newmac}";
+    }
+    @pfSense_ipfw_table("{$cpzone}_auth_up",   IP_FW_TABLE_XADD, "{$rule_entry}", (int)$pipeno);
+    @pfSense_ipfw_table("{$cpzone}_auth_down", IP_FW_TABLE_XADD, "{$rule_entry}", (int)$pipeno + 1);
+
+    // 3) DB: ip/mac 갱신 (sessionid 유지)
+    $safe_newip  = SQLite3::escapeString($newip);
+    $safe_newmac = SQLite3::escapeString((string)$newmac);
+    $safe_sid    = SQLite3::escapeString($sessionid);
+    captiveportal_write_db("UPDATE captiveportal SET ip='{$safe_newip}', mac='{$safe_newmac}' WHERE sessionid='{$safe_sid}'");
+
+    unlock($cpdblck);
+
+    // 4) 라우팅 테이블: 구IP 제거 + state 정리 → 신IP 추가
+    //    구IP 는 더 이상 사용하지 않으므로 즉시 state kill 해도 현재 포털 연결(신IP)에 영향 없음.
+    del_crew_linked_rule($oldip, $username, true);
+    add_crew_linked_rule($newip, $username);
+
+    cp_wireless_log("[MIGRATE] user={$username} sid={$sessionid} {$oldip} -> {$newip} mac={$newmac}");
+
+    // index.php 가 [5]=sessionid 를 사용하므로 갱신된 row 반환
+    $cpentry[2] = $newip;
+    $cpentry[3] = $newmac;
+    return $cpentry;
+}
+
+/**
+ * 동일 MAC·다른 IP 세션을 찾아 신IP 로 자동 마이그레이션한다.
+ * (정확 일치(IP+MAC) 실패 시 index.php 에서 호출)
+ *
+ * quota 초과 사용자는 마이그레이션하지 않고 기존 세션을 정리한 뒤 false 반환
+ * → 호출측에서 로그인 프롬프트 표시.
+ *
+ * @return array|false  마이그레이션된 cpentry, 또는 false(해당없음/거부)
+ */
+function captiveportal_try_migrate_session_by_mac($newip, $newmac) {
+    global $config, $cpzone;
+
+    if (empty($newmac) || !is_ipaddr($newip)) {
+        return false;
+    }
+
+    // MAC 으로 기존 세션 조회 (IP 는 다를 수 있음)
+    $safe_mac = SQLite3::escapeString($newmac);
+    $rows = captiveportal_read_db("WHERE mac = '{$safe_mac}'");
+    if (empty($rows) || !is_array($rows)) {
+        return false;
+    }
+
+    // IP 가 신IP 와 다른 엔트리만 마이그레이션 대상 (동일 IP 는 already_connected 가 이미 처리)
+    $cpentry = null;
+    foreach ($rows as $row) {
+        if (is_array($row) && isset($row[2]) && $row[2] !== $newip) {
+            $cpentry = $row;  // 마지막(최근) 매칭 우선
+        }
+    }
+    if ($cpentry === null) {
+        return false;
+    }
+
+    $username = $cpentry[4] ?? '';
+
+    // quota 재확인: 사용자의 집계 주기(varuserspointoftime) 기준
+    $timerange = '';
+    foreach (($config['installedpackages']['freeradius']['config'] ?? []) as $u) {
+        if (($u['varusersusername'] ?? '') === $username) {
+            $timerange = $u['varuserspointoftime'] ?? '';
+            break;
+        }
+    }
+    if (captiveportal_check_quota_exceeded($username, $timerange)) {
+        // quota 초과 → 자동 로그인 거부, 기존 세션 정리 후 재인증 유도
+        cp_wireless_log("[MIGRATE-DENY] user={$username} quota exceeded; disconnecting stale session sid={$cpentry[5]}");
+        captiveportal_disconnect_client($cpentry[5], 1);
+        return false;
+    }
+
+    return captiveportal_migrate_session_ip($cpentry, $newip, $newmac);
 }
 
 function getusername($sessionid) {
@@ -3699,23 +4182,37 @@ function getusername($sessionid) {
 function getsession($username) {
     global $cpzone;
     $cpdb = captiveportal_read_db();
-    /* Lookup the username*/
+    /* Lookup the username (대소문자 무시).
+       세션 DB 의 username 과 config/요청 username 의 대소문자 불일치로 조회가
+       실패하면 무효 리셋(파일만 삭제 → 살아있는 세션이 되씀)·로그아웃 실패로
+       이어지므로 strcasecmp 로 매칭한다. */
     foreach ($cpdb as $cpentry) {
-        if ($cpentry[4] == $username){
+        if (isset($cpentry[4]) && strcasecmp((string)$cpentry[4], (string)$username) === 0){
             return $cpentry[5];
         }
     }
     return false;
 }
 
-
-function captiveportal_fxuser_disconnect(){
-    foreach ($this->config['installedpackages']['freeradius']['config'] as $value) {
-        if (!isset($value['varusersterminaltype']) || $value['varusersterminaltype'] === "") {
-            captiveportal_disconnect_client(getsession($value['varusersusername']));
-            captiveportal_syslog(getsession($value['varusersusername']));
+/**
+ * 주어진 username 의 활성 CP 세션 ID 를 전부 반환 (대소문자 무시).
+ * getsession()은 첫 세션만 반환하므로, 다중 기기 동시 로그인 대응으로 별도 제공.
+ * captiveportal_read_db() 는 전역 $cpzone 에 의존한다.
+ */
+function cp_get_sessionids_for_username_ci(string $username): array {
+    global $cpzone;
+    $out  = array();
+    $cpdb = captiveportal_read_db();
+    if (is_array($cpdb)) {
+        foreach ($cpdb as $cpentry) {
+            if (isset($cpentry[4]) && strcasecmp((string)$cpentry[4], $username) === 0) {
+                if (isset($cpentry[5]) && (string)$cpentry[5] !== '') {
+                    $out[] = $cpentry[5];
+                }
+            }
         }
     }
+    return $out;
 }
 
 function getcurquota($sessionid) {
@@ -3726,17 +4223,13 @@ function getcurquota($sessionid) {
         return "0.00";
     }
 
-    // sanitize (auth 셸과 유사)
     $safeUser = preg_replace('/[^0-9a-zA-Z._:-]/', 'X', (string)$username);
 
-    // timerange 찾기
     $timerange = '';
-    if (!empty($config['installedpackages']['freeradius']['config']) && is_array($config['installedpackages']['freeradius']['config'])) {
-        foreach ($config['installedpackages']['freeradius']['config'] as $item => $value) {
-            if (($value['varusersusername'] ?? '') === $username) {
-                $timerange = (string)($value['varusersmaxtotaloctetstimerange'] ?? '');
-                break; // 첫 매칭에서 종료
-            }
+    foreach ($config['installedpackages']['freeradius']['config'] as $value) {
+        if (($value['varusersusername'] ?? '') === $username) {
+            $timerange = (string)($value['varusersmaxtotaloctetstimerange'] ?? '');
+            break;
         }
     }
 
@@ -3751,7 +4244,7 @@ function getcurquota($sessionid) {
 
     $usagenum = 0;
 
-    // 1) BASE exact file
+    // BASE 파일
     if (is_file($baseFile) && is_readable($baseFile)) {
         $line = trim((string)@file_get_contents($baseFile));
         if (preg_match('/^\d+$/', $line)) {
@@ -3759,22 +4252,17 @@ function getcurquota($sessionid) {
         }
     }
 
-    // 2) SESSION files exact-prefix only
+    // SESSION 파일
     $files = glob($sessionPattern, GLOB_NOSORT);
     if (is_array($files)) {
         foreach ($files as $filepath) {
-            if (!is_file($filepath) || !is_readable($filepath)) {
-                continue;
-            }
+            if (!is_file($filepath) || !is_readable($filepath)) continue;
             $line = trim((string)@file_get_contents($filepath));
             if (preg_match('/^(\d+)/', $line, $m)) {
                 $usagenum += (int)$m[1];
             }
         }
     }
-
-    // ⚠️ getVolume($clientip)는 여기서 더하지 않음 (중복 가능성 높음)
-    // 필요하면 UI 참고값으로 별도 함수/별도 라벨로 표시
 
     return number_format($usagenum / 1048576, 2, '.', '');
 }
@@ -3820,9 +4308,8 @@ function check_quota($username, $timerange)
     return number_format($usagenum / 1048576, 2, '.', '');
 }
 
-function getmaxquota($sessionid){
+function getmaxquota($username){
     global $config;
-    $username=getusername($sessionid);
     if ($username != "") {
         foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
             if($value['varusersusername']==$username){
@@ -3834,6 +4321,82 @@ function getmaxquota($sessionid){
     }
     return $result;
 }
+
+/**
+ * 사용자 사용량(쿼터)을 "즉시" 0 으로 리셋한다. (WIFI DATA RESET 명령 처리용)
+ *
+ * 기존 동작은 resetquota=true 태그만 달아두고 "차후 로그인 시" authenticate_user 에서
+ * 파일을 지웠다. 본 함수는 그 리셋을 명령 시점에 바로 수행한다.
+ *
+ * 순서가 핵심:
+ *   1) 활성 세션이 있으면 먼저 로그아웃(disconnect)시킨다. 로그아웃은 accounting Stop 을
+ *      보내 세션을 종료하고 ipfw 카운터를 정리하므로, 이후 세션이 used-octets 파일을
+ *      다시 쓰지 않는다. (살아있는 세션 중에 파일을 지우면 다음 Interim/Stop 이 다시 써서
+ *      0 이 유지되지 않는다.)
+ *   2) used-octets-{user}(메인) + used-octets-{user}-*(세션) 파일을 삭제 → 합산값 0.
+ *      max-octets-{user}(한도)는 보존한다. timerange 디렉터리 전체를 훑어
+ *      어느 range 든 확실히 0 으로 만든다(pointoftime↔maxtotaloctetstimerange 불일치 안전).
+ *
+ * 주의: resetquota/modified 태그는 호출측이 그대로 유지한다(차후 로그인 fallback).
+ *       authenticate_user 의 차후-로그인 리셋은 그대로 두어 오프라인 유저/레이스를 커버.
+ *
+ * @param string $username
+ * @return bool  유효 username 이면 true
+ */
+function captiveportal_reset_user_usage(string $username): bool {
+    global $cpzone;
+    if (empty($cpzone)) {
+        $cpzone = 'crew';
+    }
+
+    $username = trim($username);
+    // 파일 경로/세션 조회에 쓰이므로 안전한 사용자명만 허용
+    if ($username === '' || !preg_match('/^[A-Za-z0-9_.:-]+$/', $username)) {
+        cp_wireless_log("DATA RESET skipped (invalid username): '{$username}'");
+        return false;
+    }
+
+    // 1) 활성 세션(대소문자 무시, 다중 기기 포함)을 먼저 전부 로그아웃
+    //    → accounting Stop 으로 SESSFILE→USEDFILE 누적 후 세션 종료 + ipfw 카운터 정리.
+    $sids = cp_get_sessionids_for_username_ci($username);
+    foreach ($sids as $sid) {
+        captiveportal_disconnect_client($sid, 6, "DATA RESET");
+    }
+
+    // 2) 재확인 가드: disconnect 후에도 활성 세션이 남아 있으면, 파일을 지워도
+    //    살아있는 세션의 다음 Interim 이 사용량을 되써서 리셋이 무효가 된다.
+    //    (getsession 케이스 미스로 disconnect 를 건너뛰던 기존 결함의 안전망.)
+    //    → 삭제를 건너뛰고 경고를 남겨 "조용한 실패"를 가시화한다(다음 주기/명령이 재시도).
+    $still = cp_get_sessionids_for_username_ci($username);
+    if (!empty($still)) {
+        cp_wireless_log("DATA RESET aborted: active session still present after disconnect for '{$username}' (sids=" . implode(',', $still) . ")");
+        return false;
+    }
+
+    // 3) used-octets(메인 + 세션) 삭제 → 사용량 0. max-octets(한도)는 보존.
+    $safeUser = preg_replace('/[^0-9a-zA-Z._:-]/', 'X', $username);
+    $removed  = 0;
+    foreach (array('daily', 'weekly', 'monthly', 'forever') as $range) {
+        $base = "/var/log/radacct/datacounter/{$range}/used-octets-{$safeUser}";
+        if (is_file($base)) {
+            @unlink($base);
+            $removed++;
+        }
+        $sessfiles = glob($base . '-*');
+        if (is_array($sessfiles)) {
+            foreach ($sessfiles as $f) {
+                if (is_file($f)) {
+                    @unlink($f);
+                    $removed++;
+                }
+            }
+        }
+    }
+
+    cp_wireless_log("DATA RESET applied (usage=0, files={$removed}): {$username}");
+    return true;
+}
+
 function is_using_fx(){
     global $config;
     $result = "";
@@ -3857,219 +4420,1815 @@ function is_using_fx(){
     return $result;
 }
 
-function del_crew_linked_rule($sourceip, $userid){
-    global $config;
-    $result = false;
-    if ($sourceip != "") {
-        foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
-            if($value['varusersusername']==$userid){
-                if($value['varusersterminaltype']=="" && is_using_fx()!=''){ //Auto and FX system (or dual VSAT)
-                    $terminaltype = is_using_fx();
-                }
-                else {
-                    $terminaltype = $value['varusersterminaltype'];
-                }
-            }
-        }
+/**
+ * ============================================================
+ *  pfctl Table 기반 라우팅 관리 함수군  (per-gateway 동적 구조)
+ *
+ *  설계 원칙:
+ *   - 게이트웨이 1개당 pfctl 테이블 1개 (cp_gw_{name})
+ *   - 게이트웨이 추가/삭제/이름변경 → 코드 변경 없이 자동 대응
+ *   - config.xml / filter_configure() 호출 없음 (로그인/로그아웃 시)
+ *   - filter 재로드 후 복원은 captiveportal_configure() 훅이 담당
+ *   - 1분 크론이 비정상 상황 자가복구 담당
+ * ============================================================
+ */
 
-        foreach($config['filter']['rule'] as $key => $value){
-            if($value['interface']==$config['captiveportal']['crew']['interface']
-                && $value['descr']=="[User Rule] ${userid} auto generated rule"){
-                unset ($config['filter']['rule'][$key]);
-                filter_configure();
-                $result = true;
-            }
-        }
+/**
+ * gateway 이름을 pfctl/alias 에서 사용 가능한 안전한 문자열로 변환.
+ * 반환: 'cp_gw_' + 소문자 영숫자+언더스코어, 최대 31자
+ */
+function cp_gw_table_name($gwname) {
+    $safe = preg_replace('/[^a-z0-9]/', '_', strtolower($gwname));
+    $safe = preg_replace('/_+/', '_', $safe);
+    $safe = trim($safe, '_');
+    return 'cp_gw_' . substr($safe, 0, 25);
+}
+
+/**
+ * VPN 을 제외한 전체 WAN 게이트웨이 목록 반환.
+ * terminal_type 이 설정된 게이트웨이만 포함 (미설정이면 관리 대상 외로 간주).
+ * disabled 게이트웨이 제외.
+ */
+function cp_find_all_wan_gateways() {
+    global $config;
+    $result = [];
+
+    foreach ($config['gateways']['gateway_item'] ?? [] as $gw) {
+        $name  = trim($gw['name']  ?? '');
+        $ttype = strtolower(trim($gw['terminal_type'] ?? ''));
+        if ($name === '' || $ttype === '') continue;
+        if (!empty($gw['disabled']))         continue;
+        if (strpos($ttype, 'vpn') !== false) continue;
+        $result[] = $gw;
     }
-    mwexec("/sbin/pfctl -k ".$sourceip);
+
     return $result;
 }
 
-function add_crew_linked_rule($sourceip, $userid){
+/**
+ * 사용자명으로 varusersterminaltype(gateway name) 조회.
+ * 빈 문자열이면 is_using_fx() 로 Auto 처리.
+ */
+function cp_get_terminaltype_for_user($userid) {
     global $config;
-    del_crew_linked_rule($sourceip, $userid);
-    $gwset = false;
-    $userindex = 0;
-    foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
-        if($value['varusersusername']==$userid){
-            if(isset($value['varusersterminaltype'])){
-                $terminaltype=$value['varusersterminaltype'];
-                $userindex = $item;
-            }
-            else{
-                $value['varusersterminaltype']="";
-                $terminaltype="";
-            }
+
+    $terminaltype = '';
+    if (!is_array($config['installedpackages']['freeradius']['config'] ?? null)) {
+        return '';
+    }
+
+    foreach ($config['installedpackages']['freeradius']['config'] as $value) {
+        if (($value['varusersusername'] ?? '') === $userid) {
+            $terminaltype = $value['varusersterminaltype'] ?? '';
             break;
         }
     }
-    if($terminaltype=="" && is_using_fx()!=''){ //Auto and FX system (or dual VSAT)
-        $terminaltype = is_using_fx();
+
+    // Auto 사용자이고 FX(이중 WAN) 환경이면 보조 gateway 사용
+    if ($terminaltype === '') {
+        $fx = is_using_fx();
+        if ($fx !== '') {
+            $terminaltype = $fx;
+        }
     }
 
-    $newrule = array();
-    $newrule['id'] = '';
-    $newrule['tracker']=time();
-    $newrule['type']='pass';
-    $newrule['interface']=$config['captiveportal']['crew']['interface'];
-    $newrule['ipprotocol']='inet';
-    $newrule['tag'] = '';
-    $newrule['tagged'] = '';
-    $newrule['max'] = '200';
-    $newrule['max-src-nodes'] = '';
-    $newrule['max-src-conn'] = '';
-    $newrule['max-src-states'] = '';
-    $newrule['statetimeout'] = '';
-    $newrule['statetype'] = 'keep state';
-    $newrule['os'] = '';
-    $newrule['source']['address']=$sourceip;
-    $newrule['destination']['network']='(self)';
-    $newrule['destination']['not']='';
-    $newrule['descr']="[User Rule] ${userid} auto generated rule";
-    $newrule['gateway']=$terminaltype;
-    $newrule['updated']['time']=time();
-    $newrule['updated']['username']='${userid}@${sourceip}';
-    $newrule['created']['time']=time();
-    $newrule['created']['username']='${userid}@${sourceip}';
-    array_push($config['filter']['rule'], $newrule);
-    filter_configure();
+    return $terminaltype;
 }
 
-/* ---------- datacounter kick spool processor ---------- */
-
-function datacounter_kicklog($msg) {
-    // pfSense는 systemlog가 있기도 하고, 없으면 syslog로
-    if (function_exists('log_error')) {
-        log_error($msg);
-    } else {
-        syslog(LOG_NOTICE, $msg);
-    }
-}
-
-function datacounter_disconnect_user($username, $acctsessionid, $zone = null) {
+/**
+ * gateway name → pfctl table name 매핑.
+ *
+ * 탐색 순서:
+ *   1) gateway_item 에서 name 정확히 일치하는 WAN 게이트웨이 → cp_gw_table_name() 반환
+ *   2) 대소문자 무시 일치 (이름이 대소문자만 바뀐 경우)
+ *   3) 찾지 못하면 null (Auto 또는 관리 대상 외)
+ *
+ * 반환값: 'cp_gw_{name}' 형태 문자열 | null
+ */
+function cp_get_pf_table_for_gateway($gwname) {
     global $config;
 
-    if ($username === '' && $acctsessionid === '') return false;
-
-    // 1) zone 목록
-    $zones = [];
-    if ($zone !== null && $zone !== '') {
-        $zones[] = $zone;
-    } else {
-        if (!empty($config['captiveportal']) && is_array($config['captiveportal'])) {
-            foreach ($config['captiveportal'] as $zname => $zcfg) {
-                if (is_string($zname) && $zname !== '') $zones[] = $zname;
-                elseif (!empty($zcfg['zone'])) $zones[] = $zcfg['zone'];
-            }
-        }
-        $zones = array_values(array_unique(array_filter($zones)));
+    if ($gwname === '') {
+        return null;
     }
-    if (!$zones) return false;
 
-    // 2) captive portal DB에서 매칭 찾기
-    foreach ($zones as $cpzone) {
-        $entries = null;
-        if (function_exists('captiveportal_read_db')) {
-            $entries = @captiveportal_read_db($cpzone);
-        } elseif (function_exists('captiveportal_db_read')) {
-            $entries = @captiveportal_db_read($cpzone);
-        }
-        if (!is_array($entries)) continue;
+    $all_gws = cp_find_all_wan_gateways();
 
-        foreach ($entries as $dbent) {
-            // pfSense CP dbent는 종종 숫자 인덱스 배열 형태:
-            // [0]=start, [1]=ruleno, [2]=ip, [3]=mac, [4]=username, [5]=sessionid ...
-            $e_user = $dbent[4] ?? ($dbent['username'] ?? $dbent['user'] ?? '');
-            $e_sid  = $dbent[5] ?? ($dbent['sessionid'] ?? $dbent['acctsessionid'] ?? $dbent['session_id'] ?? '');
-            $e_ip   = $dbent[2] ?? ($dbent['ip'] ?? $dbent['clientip'] ?? '');
-            $e_mac  = $dbent[3] ?? ($dbent['mac'] ?? $dbent['clientmac'] ?? '');
-
-            $user_match = ($username !== '' && $e_user !== '' && $e_user === $username);
-            $sid_match  = ($acctsessionid !== '' && $e_sid !== '' && $e_sid === $acctsessionid);
-
-            $ok = false;
-            if ($username !== '' && $acctsessionid !== '') $ok = ($user_match && $sid_match);
-            else $ok = ($user_match || $sid_match);
-
-            if (!$ok) continue;
-
-            // ✅ 핵심: 너 환경의 captiveportal_disconnect()는 (dbent, ...) 시그니처
-            $did = false;
-            if (function_exists('captiveportal_disconnect')) {
-                // captiveportal_disconnect 내부에서 $cpzone 글로벌을 쓰는 환경이 많아 세팅
-                $GLOBALS['cpzone'] = $cpzone;
-                $did = @captiveportal_disconnect($dbent, 1);
-            } elseif (function_exists('captiveportal_disconnect_client')) {
-                // 일부 변형 환경 (zone, ip, mac) 인 경우
-                $did = @captiveportal_disconnect_client($cpzone, $e_ip, $e_mac);
-            }
-
-            datacounter_kicklog(sprintf(
-                "DATACOUNTER KICK: zone=%s user=%s sid=%s ip=%s mac=%s result=%s",
-                $cpzone, $username, $acctsessionid, $e_ip, $e_mac, ($did ? "OK" : "CALLED")
-            ));
-
-            return true;
+    // 1차: 정확히 일치
+    foreach ($all_gws as $gw) {
+        if ($gw['name'] === $gwname) {
+            return cp_gw_table_name($gwname);
         }
     }
 
-    return false;
+    // 2차: 대소문자 무시
+    $lower = strtolower($gwname);
+    foreach ($all_gws as $gw) {
+        if (strtolower($gw['name']) === $lower) {
+            return cp_gw_table_name($gw['name']);
+        }
+    }
+
+    return null;
 }
 
+/**
+ * config.xml 의 [CP Routing] 룰 전체를 현재 gateway 구성 기준으로 완전 재동기화.
+ *
+ * 처리 범위:
+ *   - gateway 이름 변경 → 구 Rule 삭제 + 신 Rule 생성
+ *   - gateway 추가    → 새 Pass Rule + Block Rule 자동 생성
+ *   - gateway 삭제    → 불필요한 Rule 자동 제거
+ *
+ * 생성 규칙 (게이트웨이 N개 기준):
+ *   Pass  : N개  (게이트웨이당 1개, route-to 해당 GW)
+ *   Block : N*(N의 서로 다른 인터페이스 수 - 1) 개
+ *           (자신의 WAN 이 아닌 모든 WAN 인터페이스에 block out)
+ */
+/**
+ * 게이트웨이 테이블 이름에 해당하는 alias 가 없으면 자동 생성.
+ * Host 타입, 빈 address (pfctl 이 직접 관리).
+ * 반환: 생성됐으면 true, 이미 존재하면 false
+ */
+function cp_ensure_alias($name, $descr) {
+    global $config;
 
+    if (!is_array($config['aliases']['alias'])) {
+        $config['aliases']['alias'] = [];
+    }
+    foreach ($config['aliases']['alias'] as $alias) {
+        if (($alias['name'] ?? '') === $name) {
+            return false; // 이미 존재
+        }
+    }
+    $config['aliases']['alias'][] = [
+        'name'    => $name,
+        'type'    => 'host',
+        'address' => '',
+        'descr'   => $descr,
+        'detail'  => '',
+    ];
+    return true;
+}
 
-function datacounter_process_kick_spool($kickDir = "/var/run/datacounter-kick", $maxPerRun = 50, $zone = 'crew') {
-    if (!is_dir($kickDir)) return 0;
+function cp_refresh_pass_rules() {
+    global $config;
 
-    $files = glob(rtrim($kickDir, "/") . "/*.kick");
-    if (!$files) return 0;
+    $all_gws = cp_find_all_wan_gateways();
+    if (empty($all_gws)) {
+        return;
+    }
 
-    sort($files, SORT_STRING);
+    $lan_iface  = $config['captiveportal']['crew']['interface'] ?? 'lan';
+    $all_ifaces = array_unique(array_column($all_gws, 'interface'));
 
-    $done = 0;
-    foreach ($files as $kickPath) {
-        if ($done >= $maxPerRun) break;
+    // ── Alias 자동 생성 (없는 것만) ──────────────────────────────────────────
+    $alias_changed = false;
+    $alias_changed |= cp_ensure_alias('cp_gw_default', 'CP default gateway users (no terminaltype assigned)');
+    foreach ($all_gws as $gw) {
+        $table = cp_gw_table_name($gw['name']);
+        $alias_changed |= cp_ensure_alias(
+            $table,
+            "CP routing table for gateway {$gw['name']} (terminal_type={$gw['terminal_type']})"
+        );
+    }
 
-        $workPath = $kickPath . ".work";
-        if (!@rename($kickPath, $workPath)) {
-            continue; // 다른 프로세스가 잡았음
+    // ── 기대하는 룰 세트를 구성 ──────────────────────────────────────────────
+    $expected = [];
+
+    // Default pass 룰: terminaltype 미설정 사용자 → 기본 게이트웨이로 통과 (route-to 없음)
+    $expected[] = [
+        'type'      => 'pass',
+        'direction' => 'in',
+        'interface' => $lan_iface,
+        'src_alias' => 'cp_gw_default',
+        'gateway'   => '',
+        'descr'     => '[CP Routing] cp_gw_default pass (default gateway)',
+    ];
+
+    foreach ($all_gws as $gw) {
+        $gwname   = $gw['name'];
+        $table    = cp_gw_table_name($gwname);
+        $gw_iface = $gw['interface'];
+
+        // Pass Rule: 이 게이트웨이로 route-to (게이트웨이당 1개)
+        $expected[] = [
+            'type'      => 'pass',
+            'direction' => 'in',
+            'interface' => $lan_iface,
+            'src_alias' => $table,
+            'gateway'   => $gwname,
+            'descr'     => "[CP Routing] {$table} route-to {$gwname}",
+        ];
+
+        // Block Rule: 자신의 WAN 이 아닌 다른 WAN 인터페이스마다 1개
+        foreach ($all_ifaces as $iface) {
+            if ($iface === $gw_iface) continue;
+            $expected[] = [
+                'type'      => 'block',
+                'direction' => 'out',
+                'interface' => $iface,
+                'src_alias' => $table,
+                'gateway'   => '',
+                'descr'     => "[CP Routing] block {$table} on {$iface}",
+            ];
+        }
+    }
+
+    // ── 현재 config.xml 의 [CP Routing] 룰과 비교 ──────────────────────────
+    $existing_descrs = [];
+    foreach ($config['filter']['rule'] ?? [] as $rule) {
+        if (isset($rule['floating']) && strpos($rule['descr'] ?? '', '[CP Routing]') !== false) {
+            $existing_descrs[] = $rule['descr'];
+        }
+    }
+
+    $expected_descrs = array_column($expected, 'descr');
+    $need_add        = array_diff($expected_descrs, $existing_descrs);
+    $need_remove     = array_diff($existing_descrs, $expected_descrs);
+
+    // 변경 없으면 종료
+    if (empty($need_add) && empty($need_remove)) {
+        return;
+    }
+
+    // ── 삭제: 불필요해진 룰 제거 ─────────────────────────────────────────────
+    foreach ($config['filter']['rule'] as $key => $rule) {
+        if (!isset($rule['floating'])) continue;
+        if (strpos($rule['descr'] ?? '', '[CP Routing]') === false) continue;
+        if (in_array($rule['descr'], $need_remove, true)) {
+            unset($config['filter']['rule'][$key]);
+        }
+    }
+    $config['filter']['rule'] = array_values($config['filter']['rule']);
+
+    // ── 추가: 누락된 룰 생성 ─────────────────────────────────────────────────
+    foreach ($expected as $e) {
+        if (!in_array($e['descr'], $need_add, true)) continue;
+
+        $rule = [
+            'id'         => '',
+            'tracker'    => (string)(time() + rand(1, 9999)),
+            'type'       => $e['type'],
+            'floating'   => 'yes',
+            'direction'  => $e['direction'],
+            'quick'      => 'yes',
+            'interface'  => $e['interface'],
+            'ipprotocol' => 'inet',
+            'tag'        => '',
+            'tagged'     => '',
+            'source'     => ['address' => $e['src_alias']],
+            'destination'=> ['any' => true],
+            'descr'      => $e['descr'],
+            'updated'    => ['time' => (string)time(), 'username' => 'cp_routing_auto'],
+            'created'    => ['time' => (string)time(), 'username' => 'cp_routing_auto'],
+        ];
+        if ($e['type'] === 'pass') {
+            $rule['statetype'] = 'keep state';
+            // gateway 비어있으면 route-to 없이 기본 라우팅 사용
+            if ($e['gateway'] !== '') {
+                $rule['gateway'] = $e['gateway'];
+            }
         }
 
-        $raw = @file_get_contents($workPath);
-        if ($raw === false) {
-            @unlink($workPath);
+        // Floating 룰은 앞에 삽입 (우선순위 확보)
+        array_unshift($config['filter']['rule'], $rule);
+    }
+
+    $added   = count($need_add);
+    $removed = count($need_remove);
+
+    if ($alias_changed || $added > 0 || $removed > 0) {
+        write_config("cp_routing: aliases/rules resynced (aliases=+{$alias_changed}, rules added={$added}, removed={$removed})");
+
+        // 변경사항을 pf 에 즉시 반영.
+        // filter_configure() 내부에서 호출된 경우 재귀 방지를 위해
+        // send_event 로 비동기 재로드 요청 (check_reload_status 가 처리)
+        if (function_exists('send_event')) {
+            send_event("filter reload");
+        }
+    }
+}
+
+/**
+ * pfctl table 에 IP 원자적 교체.
+ * $ips 가 비어있으면 테이블을 flush.
+ */
+function cp_sync_pf_table($table, array $ips) {
+    $safeTable = escapeshellarg($table);
+    if (empty($ips)) {
+        mwexec("/sbin/pfctl -t {$safeTable} -T flush 2>/dev/null");
+        return;
+    }
+    $tmp = "/tmp/cp_table_{$table}.txt";
+    file_put_contents($tmp, implode("\n", array_unique($ips)) . "\n");
+    mwexec("/sbin/pfctl -t {$safeTable} -T replace -f " . escapeshellarg($tmp));
+}
+
+/**
+ * CP 세션 DB 기준으로 pfctl 라우팅 테이블 전체 재동기화.
+ * captiveportal_configure() 훅 및 크론에서 호출.
+ *
+ * 수행 순서:
+ *   1) config.xml Pass/Block Rule 이 현재 gateway 목록과 다르면 갱신
+ *      (gateway 추가/삭제/이름변경 대응 — 다음 filter_configure() 사이클에 반영)
+ *   2) CP 세션 DB → 각 게이트웨이별 pfctl 테이블 원자적 교체
+ */
+/**
+ * crew zone CP 세션 DB 를 직접 읽어 세션 배열 반환.
+ * captiveportal_read_db() 는 전역 $cpzone 에 의존하므로
+ * cron/hook 에서 안전하게 호출하려면 직접 SQLite 파일을 열어야 함.
+ * 반환: [[allow_time, pipeno, ip, mac, username, sessionid, ...], ...]
+ */
+function cp_read_crew_sessions() {
+    global $g;
+
+    $db_path = ($g['vardb_path'] ?? '/var/db') . '/captiveportalcrew.db';
+    if (!file_exists($db_path)) {
+        return [];
+    }
+
+    $db = new SQLite3($db_path, SQLITE3_OPEN_READONLY);
+    if (!$db) {
+        return [];
+    }
+
+    $result   = [];
+    $response = $db->query("SELECT allow_time, pipeno, ip, mac, username, sessionid FROM captiveportal");
+    if ($response) {
+        while ($row = $response->fetchArray(SQLITE3_NUM)) {
+            $result[] = $row;
+        }
+    }
+    $db->close();
+
+    return $result;
+}
+
+function cp_sync_routing_tables() {
+    // 1) gateway 변동 감지 및 Pass/Block Rule 동적 갱신
+    cp_refresh_pass_rules();
+
+    // 2) 모든 WAN 게이트웨이 테이블 + default 테이블을 빈 배열로 초기화
+    $all_gws   = cp_find_all_wan_gateways();
+    $table_ips = ['cp_gw_default' => []];
+    foreach ($all_gws as $gw) {
+        $table_ips[cp_gw_table_name($gw['name'])] = [];
+    }
+
+    // 3) 세션 DB 에서 IP → 게이트웨이 → 테이블 매핑
+    // captiveportal_read_db() 는 전역 $cpzone 을 사용하므로 직접 DB 파일을 열어 읽음
+    $sessions = cp_read_crew_sessions();
+    if (is_array($sessions)) {
+        foreach ($sessions as $s) {
+            $ip   = $s[2] ?? '';
+            $user = $s[4] ?? '';
+            if (!filter_var($ip, FILTER_VALIDATE_IP)) continue;
+
+            $gwname = cp_get_terminaltype_for_user($user);
+            $table  = cp_get_pf_table_for_gateway($gwname);
+
+            if ($table === null) {
+                // terminaltype 미설정 → 기본 게이트웨이 테이블
+                $table = 'cp_gw_default';
+            }
+
+            if (array_key_exists($table, $table_ips)) {
+                $table_ips[$table][] = $ip;
+            }
+        }
+    }
+
+    // 4) 각 테이블 원자적 교체 (빈 배열이면 flush)
+    foreach ($table_ips as $table => $ips) {
+        cp_sync_pf_table($table, $ips);
+    }
+}
+
+/**
+ * cp_gw_* pfctl 라우팅 테이블만 CP 세션 DB 기준으로 재적재(안전망).
+ *
+ * cp_sync_routing_tables() 와 달리 config.xml/룰을 건드리지 않는다
+ * (cp_refresh_pass_rules 미호출 → write_config/filter_configure 없음 → #10 무관, 저비용).
+ * 오직 pfctl 테이블 멤버십만 갱신한다.
+ *
+ * 목적(과금 무결성): route-to/block 룰은 테이블에 IP 가 있을 때만 동작한다.
+ *   filter_configure()(게이트웨이 up/down 이 자동 트리거)가 빈 alias 기준으로
+ *   테이블을 flush 하면, 그 순간 고정(pinned) 사용자 트래픽이 기본 경로(반대 uplink)로
+ *   새어 오과금된다. 매분 이 함수로 재적재해 테이블이 절대 비지 않게 유지한다.
+ *
+ * 방어 가드:
+ *   (1) empty-guard: 세션 읽기가 비거나 배열이 아니면 아무 것도 하지 않는다.
+ *       (빈 세트로 전 테이블을 flush 하면 전원 라우팅이 붕괴되므로 절대 금지.
+ *        실유저 0명이면 로그아웃 경로가 이미 테이블을 정리했으므로 skip 해도 안전.)
+ *   (2) 미해석-고정 가드: terminal_type 이 "설정됐는데 매칭 실패"(오타/disabled/rename)면
+ *       cp_gw_default 로 흡수(=누수)하지 않고 경고 로그만 남기고 어느 테이블에도 넣지 않는다.
+ *       공란/'auto' 만 의도된 예외로 cp_gw_default(자동 라우팅) 처리.
+ *       ※ 미해석 사용자의 진짜 블랙홀(전용 block 룰)은 별도 후속(재배포 동반).
+ *
+ * @return int 동기화한 IP 개수. 세션 없음/읽기 실패 시 -1(아무 것도 안 함).
+ */
+function cp_resync_pf_tables_only() {
+    global $config;
+
+    $sessions = cp_read_crew_sessions();
+
+    // (1) empty-guard
+    if (!is_array($sessions) || empty($sessions)) {
+        return -1;
+    }
+
+    // username(소문자) => 원시 varusersterminaltype 맵 1회 구성
+    // (cp_get_terminaltype_for_user 는 공란 시 is_using_fx 로 치환하므로,
+    //  "의도된 auto/공란" vs "미해석 고정" 구분에는 원시값이 필요하다.)
+    $rawMap = array();
+    if (is_array($config['installedpackages']['freeradius']['config'] ?? null)) {
+        foreach ($config['installedpackages']['freeradius']['config'] as $value) {
+            $u = strtolower(trim((string)($value['varusersusername'] ?? '')));
+            if ($u !== '') {
+                $rawMap[$u] = strtolower(trim((string)($value['varusersterminaltype'] ?? '')));
+            }
+        }
+    }
+
+    // 대상 테이블 초기화(default + 모든 WAN GW)
+    $all_gws   = cp_find_all_wan_gateways();
+    $table_ips = array('cp_gw_default' => array());
+    foreach ($all_gws as $gw) {
+        $table_ips[cp_gw_table_name($gw['name'])] = array();
+    }
+
+    $count = 0;
+    foreach ($sessions as $s) {
+        $ip   = $s[2] ?? '';
+        $user = $s[4] ?? '';
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
             continue;
         }
 
-        $data = [];
-        foreach (preg_split("/\r\n|\n|\r/", trim($raw)) as $line) {
-            $line = trim($line);
-            if ($line === '' || $line[0] === '#') continue;
-            $kv = explode("=", $line, 2);
-            if (count($kv) === 2) $data[trim($kv[0])] = trim($kv[1]);
+        $gwname = cp_get_terminaltype_for_user($user);
+        $table  = cp_get_pf_table_for_gateway($gwname);
+
+        if ($table === null) {
+            $rawNorm = $rawMap[strtolower(trim((string)$user))] ?? '';
+            if ($rawNorm === '' || $rawNorm === 'auto') {
+                // 의도된 예외: 공란/'auto' → 기본(자동) 라우팅
+                $table = 'cp_gw_default';
+            } else {
+                // (2) 미해석-고정: 지정 GW 가 오타/disabled/rename 등으로 해석 실패.
+                //     cp_gw_default 로 흡수하면 누수(오과금) → 경고만 남기고 넣지 않는다.
+                cp_wireless_log("[CP Routing] PINNED user '{$user}' terminal_type '{$rawNorm}' unresolved (typo/disabled/renamed gateway) ip={$ip} — left unrouted (not default)");
+                continue;
+            }
         }
 
-        $username = $data['username'] ?? '';
-        $sid      = $data['acctsessionid'] ?? '';
-        $reason   = $data['reason'] ?? '';
-        $ts       = $data['ts'] ?? '';
-
-        $ok = datacounter_disconnect_user($username, $sid, $zone);
-
-        datacounter_kicklog(sprintf(
-            "DATACOUNTER KICK-REQUEST consumed file=%s user=%s sid=%s reason=%s ts=%s match=%s",
-            basename($workPath), $username, $sid, $reason, $ts, ($ok ? "YES" : "NO")
-        ));
-
-        $donePath = preg_replace('/\.kick\.work$/', '.kick.done', $workPath);
-        @file_put_contents($donePath, "ts=" . time() . "\nresult=" . ($ok ? "YES" : "NO") . "\n");
-
-        @unlink($workPath);
-        $done++;
+        if (array_key_exists($table, $table_ips)) {
+            $table_ips[$table][] = $ip;
+            $count++;
+        }
     }
 
-    return $done;
+    // 테이블 원자적 교체(replace). empty-guard 통과(세션 존재) 상태이므로,
+    // 특정 GW 테이블이 빈 것은 "그 GW 사용자 없음"이라 정상 flush.
+    foreach ($table_ips as $table => $ips) {
+        cp_sync_pf_table($table, $ips);
+    }
+
+    return $count;
 }
+
+/**
+ * 구버전 per-user 로그인 룰 일괄 제거 (멱등 self-heal).
+ *
+ * 과거 구현은 로그인마다 $config['filter']['rule'] 에
+ * "[User Rule] <id> auto generated rule" 을 추가하고 로그아웃 시 제거했다.
+ * 현재는 pfctl 테이블(cp_gw_*) 방식으로 전환되어 이 룰들을 더 이상 만들지/지우지 않으므로,
+ * 마이그레이션 이전 로그인 유저들의 룰이 config.xml 에 고아로 남는다.
+ * → 한 번에 전부 제거(write_config 1회 + filter_configure 1회). 제거할 게 없으면 no-op.
+ *
+ * 주의: 다른 "[User Rule]" 룰(ban-all-rule / allow only 'this' PC / enable_crew_wifi 등)은
+ *       건드리지 않는다. 접미사 " auto generated rule" 로만 정확히 매칭한다.
+ *
+ * @return int 제거한 룰 개수
+ */
+function cp_purge_legacy_user_login_rules(): int {
+    global $config;
+
+    if (empty($config['filter']['rule']) || !is_array($config['filter']['rule'])) {
+        return 0;
+    }
+
+    $suffix = ' auto generated rule';
+    $removed = 0;
+
+    foreach ($config['filter']['rule'] as $k => $rule) {
+        if (!is_array($rule)) {
+            continue;
+        }
+        $descr = (string)($rule['descr'] ?? '');
+        if (strpos($descr, '[User Rule] ') === 0
+            && substr($descr, -strlen($suffix)) === $suffix) {
+            unset($config['filter']['rule'][$k]);
+            $removed++;
+        }
+    }
+
+    if ($removed > 0) {
+        $config['filter']['rule'] = array_values($config['filter']['rule']);
+        write_config("Purged {$removed} legacy per-user CP login rules");
+        filter_configure();
+        cp_wireless_log("Purged {$removed} legacy per-user CP login rules (auto generated)");
+    }
+
+    return $removed;
+}
+
+/**
+ * 로그아웃/테이블 정리 처리.
+ * - 모든 게이트웨이 pfctl table 에서 IP 제거 (어느 테이블에 있든 무조건 정리)
+ * - $kill_states=true(기본) 이면 pf state 도 함께 삭제 (로그아웃 시 즉시 차단)
+ * - $kill_states=false 이면 테이블 제거만 수행 (로그인 시 포털 TCP 연결 보존)
+ * - config.xml 수정 없음, filter_configure() 없음
+ *
+ * ⚠️ 로그인 경로(add_crew_linked_rule)에서 kill_states=true 로 호출하면
+ *    pfctl -k 가 클라이언트→포털 TCP 연결을 RST 시킨다.
+ *    이 RST 는 PHP 가 302 응답을 보내기 전에 도달하므로 클라이언트가
+ *    응답을 수신하지 못하고 iOS CNA 등이 ~19초 retry interval 후 재시도한다.
+ *    로그인 경로에서는 반드시 kill_states=false 로 호출할 것.
+ */
+function del_crew_linked_rule($sourceip, $userid, bool $kill_states = true) {
+    if (!filter_var($sourceip, FILTER_VALIDATE_IP)) {
+        return false;
+    }
+
+    $safeIp  = escapeshellarg($sourceip);
+    $all_gws = cp_find_all_wan_gateways();
+
+    foreach ($all_gws as $gw) {
+        $safeTable = escapeshellarg(cp_gw_table_name($gw['name']));
+        mwexec("/sbin/pfctl -t {$safeTable} -T delete {$safeIp} 2>/dev/null");
+    }
+
+    // 기본 게이트웨이 테이블에서도 제거
+    mwexec("/sbin/pfctl -t cp_gw_default -T delete {$safeIp} 2>/dev/null");
+
+    // 로그아웃 시에만 pf state 정리 → 기존 라우팅 세션 즉시 종료
+    if ($kill_states) {
+        cp_kill_states_for_ip($sourceip);
+    }
+
+    return true;
+}
+function cp_is_valid_ip($ip) {
+    return (bool)filter_var($ip, FILTER_VALIDATE_IP);
+}
+
+function cp_kill_states_for_ip($ip) {
+    if (!cp_is_valid_ip($ip)) {
+        return false;
+    }
+
+    $safeIp = escapeshellarg($ip);
+    // IPv4 states
+    mwexec("/sbin/pfctl -k {$safeIp} -k 0.0.0.0/0");
+    // IPv6 states
+    mwexec("/sbin/pfctl -k {$safeIp} -k ::/0");
+    return true;
+}
+
+/**
+ * deferred 큐에 쌓인 IP 의 pf state 를 정리한다 (web/CLI 공용 shutdown 처리).
+ *
+ * 주의: pfSense spawn-fcgi 에는 fastcgi_finish_request() 가 없어서 shutdown 함수가
+ *       HTTP 응답/연결 종료 "전"에 실행된다. 여기서 즉시 pfctl -k 로 클라이언트 IP 의
+ *       state 를 kill 하면 포털 자신의 TCP 연결이 RST 되어 응답 전달 전에 끊긴다
+ *       (지연 큰 선박 WiFi 에서 일관되게 ~19초 지연 발생).
+ *       → 짧게 대기 후 kill 하는 detached 백그라운드 프로세스로 분리한다.
+ *       (로그아웃 즉시 ipfw auth 테이블/DB 에서는 이미 제거되어 신규 트래픽은 차단됨;
+ *        state kill 은 기존 연결 종료용이라 2초 지연은 기능상 무해.)
+ */
+function cp_flush_deferred_state_kills(): void {
+    if (empty($GLOBALS['_cp_deferred_state_kills'])) {
+        return;
+    }
+    $ips = array_values(array_unique($GLOBALS['_cp_deferred_state_kills']));
+    $GLOBALS['_cp_deferred_state_kills'] = [];
+
+    $cmds = array();
+    foreach ($ips as $ip) {
+        if (!is_ipaddr($ip)) {
+            continue;
+        }
+        $s = escapeshellarg($ip);
+        $cmds[] = "/sbin/pfctl -k {$s} -k 0.0.0.0/0";
+        $cmds[] = "/sbin/pfctl -k {$s} -k ::/0";
+    }
+    if (empty($cmds)) {
+        return;
+    }
+    mwexec_bg("/bin/sleep 2; " . implode("; ", $cmds));
+}
+
+
+/**
+ * 로그인 처리.
+ * - pfctl table 에 IP 추가
+ * - config.xml 수정 없음, filter_configure() 없음
+ */
+function add_crew_linked_rule($sourceip, $userid) {
+    if (!filter_var($sourceip, FILTER_VALIDATE_IP)) {
+        return false;
+    }
+
+    // 이전 세션 잔재 제거 — kill_states=false: 포털 TCP 연결은 유지
+    // (kill_states=true 이면 pfctl -k 가 현재 포털 연결을 RST → HTTP 응답 전달 불가 → ~19초 지연)
+    del_crew_linked_rule($sourceip, $userid, false);
+
+    $gwname = cp_get_terminaltype_for_user($userid);
+    $table  = cp_get_pf_table_for_gateway($gwname);
+
+    if ($table === null) {
+        // terminaltype 미설정 → 기본 게이트웨이 테이블에 등록 (route-to 없이 pass)
+        $table = 'cp_gw_default';
+    }
+
+    $safeIp    = escapeshellarg($sourceip);
+    $safeTable = escapeshellarg($table);
+    mwexec("/sbin/pfctl -t {$safeTable} -T add {$safeIp}");
+
+    return true;
+}
+
+/* =========================================================================
+ * Captive Portal i18n (다국어)
+ *   지원: en, ko, tl(타갈로그), vi(베트남어), id(인도네시아어), zh(중국어), my(미얀마어)
+ *   언어 결정: ?lang / 쿠키 cp_lang / 브라우저 Accept-Language(auto) / en 폴백
+ *   누락 키는 en 으로 폴백.
+ *   주의: ko 외 비영어 번역은 best-effort — 현지(선원) 검수 권장. 사전 한 곳만 고치면 됨.
+ * ========================================================================= */
+function cp_supported_langs(): array {
+    // code => 드롭다운에 표시할 원어명
+    return array(
+        'en' => 'English',
+        'ko' => '한국어',
+        'tl' => 'Tagalog',
+        'vi' => 'Tiếng Việt',
+        'id' => 'Bahasa Indonesia',
+        'zh' => '中文',
+        'my' => 'မြန်မာ',
+    );
+}
+
+function cp_resolve_lang(): string {
+    $supported = cp_supported_langs();
+
+    // 1) 명시적 선택(?lang / POST)
+    $req = '';
+    if (isset($_GET['lang']))       { $req = strtolower(trim((string)$_GET['lang'])); }
+    elseif (isset($_POST['lang']))  { $req = strtolower(trim((string)$_POST['lang'])); }
+    if ($req !== '' && isset($supported[$req])) { return $req; }
+
+    // 2) 쿠키(드롭다운이 JS 로 저장)
+    if (isset($_COOKIE['cp_lang'])) {
+        $c = strtolower(trim((string)$_COOKIE['cp_lang']));
+        if (isset($supported[$c])) { return $c; }
+    }
+
+    // 3) 브라우저 Accept-Language 자동감지(auto)
+    //    예: "ko-KR,ko;q=0.9,en;q=0.8" → 우선순위대로 첫 매칭
+    if (!empty($_SERVER['HTTP_ACCEPT_LANGUAGE'])) {
+        $al = strtolower((string)$_SERVER['HTTP_ACCEPT_LANGUAGE']);
+        foreach (explode(',', $al) as $part) {
+            $code    = trim(explode(';', $part)[0]); // "ko-kr"
+            $primary = explode('-', $code)[0];       // "ko"
+            if ($primary === 'zh' && isset($supported['zh'])) { return 'zh'; }
+            if (isset($supported[$primary])) { return $primary; }
+        }
+    }
+
+    // 4) 폴백
+    return 'en';
+}
+
+function cp_t(string $key, string $lang = 'en'): string {
+    static $dict = null;
+    if ($dict === null) { $dict = cp_i18n_dict(); }
+    if (isset($dict[$lang][$key])) { return $dict[$lang][$key]; }
+    if (isset($dict['en'][$key]))  { return $dict['en'][$key]; }
+    return $key;
+}
+
+function cp_i18n_dict(): array {
+    return array(
+        'en' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'Welcome!',
+            'subtitle'     => 'Secure network access with login, status information, and quota lookup in one place.',
+            'username'     => 'Username',
+            'ph_username'  => 'Enter your username',
+            'password'     => 'Password',
+            'ph_password'  => 'Enter your password',
+            'show'         => 'Show',
+            'hide'         => 'Hide',
+            'terms_agree'  => 'I agree with the %s.',
+            'terms_link'   => 'terms & licences',
+            'login'        => 'Login',
+            'login_helper' => 'Login errors, session notices, and other messages are displayed in the alert area above.',
+            'mac_notice'   => 'For a stable connection, please disable %s for this network.',
+            'quota_title'  => 'Check quota',
+            'quota_subtitle' => 'Check usage for your reference.',
+            'ph_quota_user'=> 'Enter username for quota check',
+            'check_usage'  => 'Check data usage',
+            'quota_helper' => 'The quota lookup button is enabled after a username is entered.',
+            'quota_loaded' => 'Quota result loaded.',
+            'total'        => 'Total',
+            'used'         => 'Used',
+            'remain'       => 'Remain',
+            'lang_label'   => 'Language',
+        ),
+        'ko' => array(
+            'title'        => '캡티브 포털',
+            'welcome'      => '환영합니다!',
+            'subtitle'     => '로그인, 상태 정보, 사용량 조회를 한 곳에서.',
+            'username'     => '사용자 이름',
+            'ph_username'  => '사용자 이름을 입력하세요',
+            'password'     => '비밀번호',
+            'ph_password'  => '비밀번호를 입력하세요',
+            'show'         => '표시',
+            'hide'         => '숨기기',
+            'terms_agree'  => '%s에 동의합니다.',
+            'terms_link'   => '약관 및 라이선스',
+            'login'        => '로그인',
+            'login_helper' => '로그인 오류 및 알림 메시지는 위 알림 영역에 표시됩니다.',
+            'mac_notice'   => '안정적인 연결을 위해 이 네트워크에서 %s를 꺼 주세요.',
+            'quota_title'  => '사용량 조회',
+            'quota_subtitle' => '참고용 사용량을 확인하세요.',
+            'ph_quota_user'=> '조회할 사용자 이름을 입력하세요',
+            'check_usage'  => '데이터 사용량 조회',
+            'quota_helper' => '사용자 이름을 입력하면 조회 버튼이 활성화됩니다.',
+            'quota_loaded' => '사용량 결과를 불러왔습니다.',
+            'total'        => '전체',
+            'used'         => '사용',
+            'remain'       => '남음',
+            'lang_label'   => '언어',
+        ),
+        'tl' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'Maligayang pagdating!',
+            'subtitle'     => 'Ligtas na koneksyon: pag-login, status, at pagtingin ng quota sa isang lugar.',
+            'username'     => 'Username',
+            'ph_username'  => 'Ilagay ang iyong username',
+            'password'     => 'Password',
+            'ph_password'  => 'Ilagay ang iyong password',
+            'show'         => 'Ipakita',
+            'hide'         => 'Itago',
+            'terms_agree'  => 'Sumasang-ayon ako sa %s.',
+            'terms_link'   => 'mga tuntunin at lisensya',
+            'login'        => 'Mag-login',
+            'login_helper' => 'Ang mga error sa login at iba pang mensahe ay ipinapakita sa alerto sa itaas.',
+            'mac_notice'   => 'Para sa matatag na koneksyon, paki-disable ang %s para sa network na ito.',
+            'quota_title'  => 'Tingnan ang quota',
+            'quota_subtitle' => 'Tingnan ang paggamit para sa iyong sanggunian.',
+            'ph_quota_user'=> 'Ilagay ang username para sa quota check',
+            'check_usage'  => 'Tingnan ang paggamit ng data',
+            'quota_helper' => 'Mae-enable ang button matapos maglagay ng username.',
+            'quota_loaded' => 'Na-load ang resulta ng quota.',
+            'total'        => 'Kabuuan',
+            'used'         => 'Nagamit',
+            'remain'       => 'Natitira',
+            'lang_label'   => 'Wika',
+        ),
+        'vi' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'Chào mừng!',
+            'subtitle'     => 'Truy cập mạng an toàn: đăng nhập, trạng thái và tra cứu dung lượng tại một nơi.',
+            'username'     => 'Tên đăng nhập',
+            'ph_username'  => 'Nhập tên đăng nhập của bạn',
+            'password'     => 'Mật khẩu',
+            'ph_password'  => 'Nhập mật khẩu của bạn',
+            'show'         => 'Hiện',
+            'hide'         => 'Ẩn',
+            'terms_agree'  => 'Tôi đồng ý với %s.',
+            'terms_link'   => 'điều khoản và giấy phép',
+            'login'        => 'Đăng nhập',
+            'login_helper' => 'Lỗi đăng nhập và các thông báo khác sẽ hiển thị ở khu vực cảnh báo phía trên.',
+            'mac_notice'   => 'Để kết nối ổn định, vui lòng tắt %s cho mạng này.',
+            'quota_title'  => 'Kiểm tra dung lượng',
+            'quota_subtitle' => 'Xem mức sử dụng để tham khảo.',
+            'ph_quota_user'=> 'Nhập tên đăng nhập để kiểm tra dung lượng',
+            'check_usage'  => 'Kiểm tra mức dùng dữ liệu',
+            'quota_helper' => 'Nút tra cứu sẽ bật sau khi nhập tên đăng nhập.',
+            'quota_loaded' => 'Đã tải kết quả dung lượng.',
+            'total'        => 'Tổng',
+            'used'         => 'Đã dùng',
+            'remain'       => 'Còn lại',
+            'lang_label'   => 'Ngôn ngữ',
+        ),
+        'id' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'Selamat datang!',
+            'subtitle'     => 'Akses jaringan aman: login, status, dan cek kuota dalam satu tempat.',
+            'username'     => 'Nama pengguna',
+            'ph_username'  => 'Masukkan nama pengguna Anda',
+            'password'     => 'Kata sandi',
+            'ph_password'  => 'Masukkan kata sandi Anda',
+            'show'         => 'Tampilkan',
+            'hide'         => 'Sembunyikan',
+            'terms_agree'  => 'Saya menyetujui %s.',
+            'terms_link'   => 'syarat & lisensi',
+            'login'        => 'Masuk',
+            'login_helper' => 'Kesalahan login dan pesan lain ditampilkan di area peringatan di atas.',
+            'mac_notice'   => 'Untuk koneksi yang stabil, harap nonaktifkan %s untuk jaringan ini.',
+            'quota_title'  => 'Cek kuota',
+            'quota_subtitle' => 'Lihat penggunaan untuk referensi Anda.',
+            'ph_quota_user'=> 'Masukkan nama pengguna untuk cek kuota',
+            'check_usage'  => 'Cek penggunaan data',
+            'quota_helper' => 'Tombol cek aktif setelah nama pengguna dimasukkan.',
+            'quota_loaded' => 'Hasil kuota dimuat.',
+            'total'        => 'Total',
+            'used'         => 'Terpakai',
+            'remain'       => 'Sisa',
+            'lang_label'   => 'Bahasa',
+        ),
+        'zh' => array(
+            'title'        => '强制门户',
+            'welcome'      => '欢迎！',
+            'subtitle'     => '安全网络接入：登录、状态信息与流量查询，一处搞定。',
+            'username'     => '用户名',
+            'ph_username'  => '请输入用户名',
+            'password'     => '密码',
+            'ph_password'  => '请输入密码',
+            'show'         => '显示',
+            'hide'         => '隐藏',
+            'terms_agree'  => '我同意%s。',
+            'terms_link'   => '条款与许可',
+            'login'        => '登录',
+            'login_helper' => '登录错误及通知消息将显示在上方提示区域。',
+            'mac_notice'   => '为保持连接稳定，请在本网络关闭%s。',
+            'quota_title'  => '查询流量',
+            'quota_subtitle' => '查看使用量以供参考。',
+            'ph_quota_user'=> '输入要查询的用户名',
+            'check_usage'  => '查询数据使用量',
+            'quota_helper' => '输入用户名后，查询按钮将启用。',
+            'quota_loaded' => '已加载流量结果。',
+            'total'        => '总计',
+            'used'         => '已用',
+            'remain'       => '剩余',
+            'lang_label'   => '语言',
+        ),
+        'my' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'ကြိုဆိုပါတယ်!',
+            'subtitle'     => 'လုံခြုံသော ကွန်ရက်ချိတ်ဆက်မှု — အကောင့်ဝင်ခြင်း၊ အခြေအနေနှင့် ဒေတာသုံးစွဲမှုကို တစ်နေရာတည်းတွင်။',
+            'username'     => 'အသုံးပြုသူအမည်',
+            'ph_username'  => 'သင့်အသုံးပြုသူအမည် ထည့်ပါ',
+            'password'     => 'စကားဝှက်',
+            'ph_password'  => 'သင့်စကားဝှက် ထည့်ပါ',
+            'show'         => 'ပြရန်',
+            'hide'         => 'ဖျောက်ရန်',
+            'terms_agree'  => '%s ကို သဘောတူပါသည်။',
+            'terms_link'   => 'စည်းကမ်းနှင့် လိုင်စင်',
+            'login'        => 'ဝင်ရန်',
+            'login_helper' => 'အကောင့်ဝင်ရာ အမှားနှင့် အကြောင်းကြားချက်များကို အပေါ်ရှိ သတိပေးနေရာတွင် ပြသပါမည်။',
+            'mac_notice'   => 'တည်ငြိမ်သော ချိတ်ဆက်မှုအတွက် ဤကွန်ရက်တွင် %s ကို ပိတ်ပါ။',
+            'quota_title'  => 'ဒေတာသုံးစွဲမှု စစ်ဆေးရန်',
+            'quota_subtitle' => 'ကိုးကားရန် သုံးစွဲမှုကို ကြည့်ပါ။',
+            'ph_quota_user'=> 'စစ်ဆေးရန် အသုံးပြုသူအမည် ထည့်ပါ',
+            'check_usage'  => 'ဒေတာသုံးစွဲမှု စစ်ဆေးရန်',
+            'quota_helper' => 'အသုံးပြုသူအမည် ထည့်ပြီးမှ ခလုတ်ကို အသုံးပြုနိုင်ပါမည်။',
+            'quota_loaded' => 'ဒေတာသုံးစွဲမှု ရလဒ်ကို တင်ပြီးပါပြီ။',
+            'total'        => 'စုစုပေါင်း',
+            'used'         => 'သုံးပြီး',
+            'remain'       => 'ကျန်',
+            'lang_label'   => 'ဘာသာစကား',
+        ),
+    );
+}
+
+function renderLoginPortalHtml(array $data = []): string
+{
+    $lang = $data['lang'] ?? (function_exists('cp_resolve_lang') ? cp_resolve_lang() : 'en');
+    $logo    = $data['logo'] ?? '';
+    $portalError    = $data['portalError'] ?? '';
+    $portalInfo     = $data['portalInfo'] ?? '';
+    $loginUser = $data['loginUserValue'] ?? '';
+    $uiConfig       = $data['uiConfig'] ?? [];
+    $subject        = $data['subject'] ?? cp_t('welcome', $lang);
+    $quotaNotice    = $data['quotaNotice'] ?? '';
+    $showQuotaResult= $data['showQuotaResult'] ?? false;
+    $quotaResultMsg = $data['quotaResultMsg'] ?? '';
+    $quotaRemain      = $data['quotaUserValue'] ?? '';
+    $quotaUsed      = $data['quotaUsed'] ?? '';
+    $quotaAllocated    = $data['quotaAllocated'] ?? '';
+
+    if (!function_exists('h')) {
+        function h($value) {
+            return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+        }
+    }
+
+    ob_start();
+    ?>
+    <div class="top-logo-area">
+        <div class="top-logo-wrap">
+            <img id="main_logo" src="<?=h($logo)?>" alt="Portal logo">
+        </div>
+    </div>
+    <div class="portal">
+        <section class="panel">
+            <div class="card">
+                <div class="card-head">
+                    <div>
+                        <h1 class="page-title"><?=h($subject)?></h1>
+                        <p class="page-subtitle">
+                            <?= h(cp_t('subtitle', $lang)) ?>
+                        </p>
+                    </div>
+                </div>
+
+                <?php if ($portalError !== ''): ?>
+                    <div class="notice notice-error"><?= h($portalError) ?></div>
+                <?php endif; ?>
+
+                <?php if ($portalInfo !== ''): ?>
+                    <div class="notice notice-info"><?= h($portalInfo) ?></div>
+                <?php endif; ?>
+
+                <div class="notice notice-warning">
+                    <?= sprintf(
+                        h(cp_t('mac_notice', $lang)),
+                        '<b>&ldquo;Private / Random Wi-Fi Address&rdquo;</b>'
+                    ) ?>
+                </div>
+
+                <form name="login_form" method="post" action="/index.php" autocomplete="on">
+                    <div class="field">
+                        <label for="login_user"><?= h(cp_t('username', $lang)) ?></label>
+                        <div class="input-wrap">
+                            <input
+                                    class="input"
+                                    type="text"
+                                    name="auth_user"
+                                    id="login_user"
+                                    placeholder="<?= h(cp_t('ph_username', $lang)) ?>"
+                                    autocomplete="username"
+                                    autocapitalize="none"
+                                    spellcheck="false"
+                                    required
+                            />
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="login_pass"><?= h(cp_t('password', $lang)) ?></label>
+                        <div class="input-wrap">
+                            <input
+                                    class="input with-action"
+                                    type="password"
+                                    name="auth_pass"
+                                    id="login_pass"
+                                    placeholder="<?= h(cp_t('ph_password', $lang)) ?>"
+                                    autocomplete="current-password"
+                                    required
+                            />
+                            <button type="button" class="input-action" id="togglePassword"><?= h(cp_t('show', $lang)) ?></button>
+                        </div>
+                    </div>
+
+                    <?php if (!empty($uiConfig['termsEnabled'])): ?>
+                        <div class="terms-line" id="termsWrap">
+                            <input
+                                    type="checkbox"
+                                    id="agree_terms"
+                                    name="agree_terms"
+                                    value="yes"
+                                <?= !empty($uiConfig['termsRequired']) ? 'required' : '' ?>
+                                    checked
+                            />
+                            <span>
+                        <?= sprintf(
+                            h(cp_t('terms_agree', $lang)),
+                            '<a target="_blank" rel="noopener" href="http://192.168.208.1:8002/example.pdf">' . h(cp_t('terms_link', $lang)) . '</a>'
+                        ) ?>
+                    </span>
+                        </div>
+                    <?php endif; ?>
+                    <div class="actions">
+                        <input
+                                type="submit"
+                                name="accept"
+                                class="btn btn-primary"
+                                value="<?= h(cp_t('login', $lang)) ?>"
+                                id="loginBtn"
+                        >
+                    </div>
+                    <input name="login" type="hidden" value="true">
+                    <div class="helper">
+                        <?= h(cp_t('login_helper', $lang)) ?>
+                    </div>
+                </form>
+
+                <?php
+                // #31: 로그인 폼의 "Copy address(포털 주소)" 블록 표시 토글.
+                //   false = 이 스레드 이전 모습(블록 미표시) — 현재 기본. 아래 코드는 그대로 보존.
+                //   true  로 바꾸면 로그인 폼 아래에 "Copy address" 블록 재노출.
+                $cpShowCopyAddr = false;
+                ?>
+                <?php if ($cpShowCopyAddr): ?>
+                <?php /* 다른 브라우저에서 로그인하려는 사용자를 위한 포털 주소 복사.
+                         문구는 다국적 선원 공통 이해를 위해 "영문 고정"(i18n 미적용).
+                         복사 실패해도 주소가 그대로 보이므로 수동 입력 가능. */ ?>
+                <?php $cpAddr = (empty($_SERVER['HTTPS']) ? 'http://' : 'https://') . ($_SERVER['HTTP_HOST'] ?? ''); ?>
+                <div class="cp-copyaddr" style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(127,127,127,.25);">
+                    <div style="font-size:13px;opacity:.85;line-height:1.45;margin-bottom:8px;">
+                        Prefer to use a full web browser? Copy this address, then paste it into Chrome, Safari, or any browser to log in there.
+                    </div>
+                    <div id="cpPortalAddr" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:700;text-align:center;background:rgba(127,127,127,.12);border:1px dashed rgba(127,127,127,.5);border-radius:8px;padding:10px 8px;margin-bottom:8px;word-break:break-all;-webkit-user-select:all;user-select:all;"><?= h($cpAddr) ?></div>
+                    <button type="button" class="btn btn-secondary" id="cpCopyAddrBtn" style="width:100%;">Copy address</button>
+                </div>
+                <script>
+                (function(){
+                  var addrEl=document.getElementById('cpPortalAddr');
+                  var btn=document.getElementById('cpCopyAddrBtn');
+                  if(!addrEl||!btn){return;}
+                  // location 이 권위 — 실제 페이지가 서비스되는 주소(302 후 포털 호스트)를 복사한다.
+                  var url=location.protocol+'//'+location.host;
+                  addrEl.textContent=url;
+                  var orig=btn.textContent;
+                  function ok(){btn.textContent='Copied!';setTimeout(function(){btn.textContent=orig;},2000);}
+                  // HTTP(비보안)라 navigator.clipboard 보통 부재 → execCommand(동기)가 주경로.
+                  function doCopy(){
+                    var done=false;
+                    try{
+                      var ta=document.createElement('textarea');
+                      ta.value=url;ta.setAttribute('readonly','');
+                      ta.style.position='fixed';ta.style.left='-9999px';ta.style.fontSize='16px';
+                      document.body.appendChild(ta);ta.focus();ta.select();
+                      try{ta.setSelectionRange(0,url.length);}catch(e){}
+                      done=document.execCommand('copy');
+                      document.body.removeChild(ta);
+                    }catch(e){}
+                    if(!done&&navigator.clipboard&&navigator.clipboard.writeText){try{navigator.clipboard.writeText(url);done=true;}catch(e){}}
+                    return done;
+                  }
+                  btn.addEventListener('click',function(){if(doCopy()){ok();}});
+                })();
+                </script>
+                <?php endif; ?>
+            </div>
+            <div class="card">
+                <div class="card-head">
+                    <div>
+                        <h2 class="card-title"><?= h(cp_t('quota_title', $lang)) ?></h2>
+                        <p class="card-subtitle"><?= h(cp_t('quota_subtitle', $lang)) ?></p>
+                    </div>
+                </div>
+
+                <?php if ($quotaNotice !== ''): ?>
+                    <div class="notice notice-warning"><?= h($quotaNotice) ?></div>
+                <?php endif; ?>
+
+                <form name="quota_form" method="post" action="/index.php" autocomplete="on">
+                    <div class="field">
+                        <label for="quota_user"><?= h(cp_t('username', $lang)) ?></label>
+                        <div class="input-wrap">
+                            <input
+                                    class="input"
+                                    type="text"
+                                    name="quota_user"
+                                    id="quota_user"
+                                    placeholder="<?= h(cp_t('ph_quota_user', $lang)) ?>"
+                                    autocomplete="username"
+                                    autocapitalize="none"
+                                    spellcheck="false"
+                            />
+                        </div>
+                    </div>
+
+                    <input name="check_quota" type="hidden" value="true">
+
+                    <div class="actions">
+                        <input
+                                type="submit"
+                                name="quota"
+                                class="btn btn-secondary"
+                                value="<?= h(cp_t('check_usage', $lang)) ?>"
+                                id="check_quota"
+                            <?= $loginUser === '' ? 'disabled' : '' ?>
+                        >
+                    </div>
+
+                    <div class="helper">
+                        <?= h(cp_t('quota_helper', $lang)) ?>
+                    </div>
+                </form>
+
+                <?php if ($showQuotaResult): ?>
+                    <div id="quotaResultBox" class="quota-result">
+                        <div class="notice notice-success" style="margin:0 0 12px 0;">
+                            <?= h($quotaResultMsg !== '' ? $quotaResultMsg : cp_t('quota_loaded', $lang)) ?>
+                        </div>
+
+                        <div class="quota-grid">
+                            <div class="quota-box">
+                                <span class="label"><?= h(cp_t('total', $lang)) ?></span>
+                                <span class="value"><?= h($quotaAllocated !== '' ? $quotaAllocated : '-') ?></span>
+                            </div>
+                            <div class="quota-box">
+                                <span class="label"><?= h(cp_t('used', $lang)) ?></span>
+                                <span class="value"><?= h($quotaUsed !== '' ? $quotaUsed : '-') ?></span>
+                            </div>
+                            <div class="quota-box">
+                                <span class="label"><?= h(cp_t('remain', $lang)) ?></span>
+                                <span class="value"><?= h($quotaRemain !== '' ? $quotaRemain : '-') ?></span>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </section>
+    </div>
+
+    <?php
+
+    return ob_get_clean();
+}
+
+function renderChangepwPortalHtml(array $data = []): string
+{
+    $logo          = $data['logo'] ?? '';
+    $portalError   = $data['portalError'] ?? '';
+    $portalInfo    = $data['portalInfo'] ?? '';
+    $loginUser     = $data['loginUserValue'] ?? '';   // portal_reply_page 전달 키와 통일
+    $loginPassword = $data['loginPassword'] ?? '';
+
+    if (!function_exists('h')) {
+        function h($value) {
+            return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+        }
+    }
+
+    ob_start();
+    ?>
+    <div class="top-logo-area">
+        <div class="top-logo-wrap">
+            <img id="main_logo" src="<?= h($logo) ?>" alt="Portal logo">
+        </div>
+    </div>
+
+    <div class="portal">
+        <section class="panel">
+            <div class="card">
+                <div class="card-head">
+                    <div>
+                        <h1 class="page-title">Change Password!</h1>
+                        <p class="page-subtitle">
+                            You can change your own password once you enter here.
+                        </p>
+                    </div>
+                </div>
+
+                <?php if ($portalError !== ''): ?>
+                    <div class="notice notice-error"><?= h($portalError) ?></div>
+                <?php endif; ?>
+
+                <?php if ($portalInfo !== ''): ?>
+                    <div class="notice notice-info"><?= h($portalInfo) ?></div>
+                <?php endif; ?>
+
+                <form name="commit_change_pwform" method="post" action="/index.php" autocomplete="on" id="commit_change_pwform">
+                    <div class="field">
+                        <label for="new_password">New Password</label>
+                        <div class="input-wrap">
+                            <input
+                                    class="input with-action"
+                                    type="password"
+                                    name="new_password"
+                                    id="new_password"
+                                    placeholder="Enter your new password"
+                                    required
+                            />
+                            <button type="button" class="input-action" id="toggleNewPassword">Show</button>
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="retype_password">Re-Type Password</label>
+                        <div class="input-wrap">
+                            <input
+                                    class="input with-action"
+                                    type="password"
+                                    name="retype_password"
+                                    id="retype_password"
+                                    placeholder="Re-type your new password"
+                                    required
+                            />
+                            <button type="button" class="input-action" id="toggleRetypePassword">Show</button>
+                        </div>
+                    </div>
+
+                    <div class="actions">
+                        <input
+                                type="submit"
+                                name="commit_change_pw_submit"
+                                class="btn btn-primary"
+                                id="commit_change_pw"
+                                value="Change Password"
+                        >
+                    </div>
+
+                    <input name="commit_change_pw" type="hidden" value="true">
+                    <input name="auth_user" type="hidden" value="<?= h($loginUser) ?>">
+                    <input name="login_password" type="hidden" value="<?= h($loginPassword) ?>">
+
+                    <div class="helper">
+                        Login errors, session notices, and other messages are displayed in the alert area above.
+                    </div>
+                </form>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        (function () {
+            var form = document.getElementById('commit_change_pwform');
+            var newPassword = document.getElementById('new_password');
+            var retypePassword = document.getElementById('retype_password');
+            var toggleNewPassword = document.getElementById('toggleNewPassword');
+            var toggleRetypePassword = document.getElementById('toggleRetypePassword');
+
+            function togglePassword(input, button) {
+                if (!input || !button) {
+                    return;
+                }
+
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    button.textContent = 'Hide';
+                } else {
+                    input.type = 'password';
+                    button.textContent = 'Show';
+                }
+            }
+
+            function validatePasswordMatch() {
+                if (!newPassword || !retypePassword) {
+                    return true;
+                }
+
+                if (newPassword.value !== retypePassword.value) {
+                    retypePassword.setCustomValidity('Passwords do not match.');
+                    return false;
+                }
+
+                retypePassword.setCustomValidity('');
+                return true;
+            }
+
+            if (toggleNewPassword) {
+                toggleNewPassword.addEventListener('click', function () {
+                    togglePassword(newPassword, toggleNewPassword);
+                });
+            }
+
+            if (toggleRetypePassword) {
+                toggleRetypePassword.addEventListener('click', function () {
+                    togglePassword(retypePassword, toggleRetypePassword);
+                });
+            }
+
+            if (newPassword) {
+                newPassword.addEventListener('input', validatePasswordMatch);
+            }
+
+            if (retypePassword) {
+                retypePassword.addEventListener('input', validatePasswordMatch);
+            }
+
+            if (form) {
+                form.addEventListener('submit', function (e) {
+                    if (!validatePasswordMatch()) {
+                        e.preventDefault();
+                        retypePassword.reportValidity();
+                        retypePassword.focus();
+                    }
+                });
+            }
+        })();
+    </script>
+    <?php
+
+    return ob_get_clean();
+}
+
+function renderLogoutPortalHtml(array $data = []): string
+{
+    $logo   = $data['logo'] ?? '';
+    $curUsage   = $data['quotaUsed'] ?? '';
+    $maxUsage   = $data['quotaAllocated'] ?? '';
+    $portalError    = $data['portalError'] ?? '';
+    $displayname    = $data['displayname'] ?? '';
+    $portalInfo     = $data['portalInfo'] ?? '';
+    $loginUserValue = $data['loginUserValue'] ?? '';
+    $loginUsers = $data['loginUsers'] ?? '';
+    $selectedSpeedProfile = $data['selectedSpeedProfile'] ?? 'hd';
+
+    /*$speedOptions = [
+        'pause' => [
+            'label' => 'Pause',
+            'help'  => 'Pause data usage. ** Note: Still DATA consumes very slowly.'
+        ],
+        'sd' => [
+            'label' => 'SD',
+            'help'  => 'Capable for SD quality video, minimize data usage - 512/1024Kbps'
+        ],
+        'fhd' => [
+            'label' => 'HD-FHD',
+            'help'  => 'Capable for HD quality video, moderate data usage - 1024/2048Kbps'
+        ],
+        'unlimited' => [
+            'label' => 'Unlimited',
+            'help'  => 'No limitation for data usage, until Satellite limit.'
+        ],
+    ];*/
+
+    if (!function_exists('h')) {
+        function h($value) {
+            return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+        }
+    }
+
+    ob_start();
+    ?>
+    <div class="top-logo-area">
+        <div class="top-logo-wrap">
+            <img id="main_logo" src="<?=h($logo)?>" alt="Portal logo">
+        </div>
+    </div>
+    <div class="portal">
+    <section class="panel">
+    <div class="card">
+        <div class="card-head">
+            <div>
+                <h1 class="page-title"><?php echo ($displayname);?> is online!</h1>
+                <p class="page-subtitle"></p>
+            </div>
+        </div>
+
+        <?php if ($portalError !== ''): ?>
+            <div class="notice notice-error"><?= h($portalError) ?></div>
+        <?php endif; ?>
+
+        <?php if ($portalInfo !== ''): ?>
+            <div class="notice notice-info"><?= h($portalInfo) ?></div>
+        <?php endif; ?>
+
+        <form name="login_form" method="post" action="/" autocomplete="on">
+
+            <div class="field">
+                <label for="connected_user">Online Details</label>
+                <div class="input-wrap">
+
+                    <!--DATA STATUS-->
+                    <!--div class="quota-box" style="margin:0 0 12px 0;">
+                        <span class="label">Used</span>
+                        <span class="value"><?= h($curUsage !== '' ? $curUsage : '0') ?> MB</span>
+                    </div>
+                    <div class="quota-box" style="margin:0 0 12px 0;">
+                        <span class="label">Limit</span>
+                        <span class="value"><?= h($maxUsage !== '' ? $maxUsage : '0') ?> MB</span>
+                    </div-->
+                    <div style="display:flex; gap:12px; margin:0 0 12px 0;">
+                        <div class="quota-box" style="flex:1; margin:0;">
+                            <span class="label">Used</span>
+                            <span class="value"><?= h($curUsage !== '' ? $curUsage : '0') ?> MB</span>
+                        </div>
+
+                        <div class="quota-box" style="flex:1; margin:0;">
+                            <span class="label">Limit</span>
+                            <span class="value"><?= h($maxUsage !== '' ? $maxUsage : '0') ?> MB</span>
+                        </div>
+                        <div class="quota-box" style="flex:1; margin:0;">
+                            <span class="label">Ratio</span>
+                            <span class="value">
+                            <?= h(($maxUsage === null || (float)$maxUsage == 0.0)
+                                ? 'N/A'
+                                : number_format(((float)$curUsage / (float)$maxUsage) * 100, 0) . '%') ?>
+                        </span>
+                        </div>
+                    </div>
+                    <!-- CONNECTION INFO -->
+                    <div class="quota-box" style="margin:0 0 12px 0;">
+                        <span class="label">Connection Info</span>
+                        <span class="value"><?= h($loginUsers) ?> users currently logged in.</span>
+                    </div>
+                    <!--Kbps 그래프 영역 시작 -->
+                    <div class="quota-box" style="margin:0 0 12px 0; display:block;">
+
+                        <!-- 접기/펼치기 헤더 -->
+                        <div id="kbpsToggleHeader" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none; padding:4px 0;">
+                            <span class="label" style="display:block; margin:0;">Usage history</span>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span id="kbpsToggleIcon" style="font-size:13px; color:#6b7785; transition:transform 0.2s;">▼</span>
+                            </div>
+                        </div>
+
+                        <!-- 펼쳐지는 본문 (기본 숨김) -->
+                        <div id="kbpsGraphBody" style="display:none; margin-top:8px;">
+
+                            <!-- 범위 버튼 -->
+                            <div style="display:flex; gap:6px; align-items:center; margin-bottom:10px; justify-content:flex-end;">
+                                <button type="button" id="range24h"   class="mini-btn range-btn active-range" data-hours="24">24h</button>
+                                <button type="button" id="range7d"    class="mini-btn range-btn"              data-hours="168">7d</button>
+                                <button type="button" id="rangeMonth" class="mini-btn range-btn"              data-mode="month">Month</button>
+                                <button type="button" id="refreshBtn" class="mini-btn" title="Refresh">&#x21bb;</button>
+                            </div>
+
+                            <div id="kbpsGraphError" style="margin-bottom:8px; color:#c62828; font-size:12px;"></div>
+                            <div id="kbpsLoading"   style="font-size:12px; color:#555; margin-bottom:6px; display:none;">Loading…</div>
+
+                            <div style="width:100%; background:#fff; border:1px solid #d9e1ec; border-radius:12px; padding:12px; box-sizing:border-box;">
+                                <canvas id="kbpsChart" height="260" style="width:100%; display:block;"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <!--Kbps 그래프 영역 끝-->
+                    <!-- SPEED PROFILE -->
+                    <!--div class="quota-box" style="margin:0 0 12px 0;">
+                        <span class="label">Speed Option</span>
+
+                        <div class="speed-slider-wrap">
+                            <?php foreach (($speedOptions ?? []) as $key => $opt): ?>
+                                <label class="speed-option">
+                                    <input
+                                            type="radio"
+                                            name="speed_profile"
+                                            value="<?= h($key) ?>"
+                                        <?= $selectedSpeedProfile === $key ? 'checked' : '' ?>
+                                    >
+                                    <span class="speed-pill">
+                                <?= h($opt['label']) ?>
+                                <span class="tooltip-wrap">
+                                    <span class="tooltip-icon">?</span>
+                                    <span class="tooltip-bubble"><?= h($opt['help']) ?></span>
+                                </span>
+                            </span>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div-->
+                    <input type="hidden" name="update_speed_profile" id="update_speed_profile" value="0">
+                    <input type="hidden" name="login_user" value="<?= h($loginUserValue) ?>">
+                </div>
+            </div>
+
+            <div class="actions">
+                <input
+                        type="submit"
+                        name="logout_form"
+                        class="btn btn-primary"
+                        value="Logout"
+                        id="logoutBtn"
+                >
+            </div>
+
+            <input name="logout_id" type="hidden" value="<?= h($loginUserValue) ?>">
+
+            <div class="helper">
+                If you want to change your own password, please click below.
+            </div>
+        </form>
+        <form name="change_pw" method="post" action="/" autocomplete="on">
+
+            <div class="actions">
+                <input
+                        type="submit"
+                        name="change_pw"
+                        class="btn btn-primary"
+                        value="Change Password"
+                        id="change_pw"
+                >
+            </div>
+            <input name="change_pw" type="hidden" value="true">
+            <input name="auth_user" type="hidden" value="<?=h($loginUserValue)?>">
+
+    </div>
+    </section>
+    </div>
+    <script>
+        (function () {
+            var INFLUX_URL  = 'http://192.168.209.210:8086/query';
+            var INFLUX_DB   = 'wifiusage';
+            var LOGIN_USER  = '<?= addslashes(h($loginUserValue)) ?>';
+
+            var canvas    = document.getElementById('kbpsChart');
+            var errorBox  = document.getElementById('kbpsGraphError');
+            var loadingEl = document.getElementById('kbpsLoading');
+            var header    = document.getElementById('kbpsToggleHeader');
+            var body      = document.getElementById('kbpsGraphBody');
+            var toggleIcon = document.getElementById('kbpsToggleIcon');
+
+            /* ── 접기/펼치기 ── */
+            var isOpen = false;
+            if (header) {
+                header.addEventListener('click', function () {
+                    isOpen = !isOpen;
+                    body.style.display = isOpen ? 'block' : 'none';
+                    toggleIcon.style.transform = isOpen ? 'rotate(180deg)' : 'rotate(0deg)';
+                    if (isOpen && !chartDrawn) {
+                        fetchAndDraw();
+                    }
+                });
+            }
+
+            if (!canvas) { return; }
+
+            var rangeMode  = 'hours';  /* 'hours' | 'month' */
+            var rangeHours = 24;
+            var chartDrawn = false;
+
+            /* ── 시간 범위 버튼 ── */
+            document.querySelectorAll('.range-btn').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation(); /* 헤더 클릭 이벤트 버블링 방지 */
+                    document.querySelectorAll('.range-btn').forEach(function (b) {
+                        b.classList.remove('active-range');
+                    });
+                    this.classList.add('active-range');
+
+                    var mode = this.getAttribute('data-mode');
+                    if (mode === 'month') {
+                        rangeMode = 'month';
+                    } else {
+                        rangeMode  = 'hours';
+                        rangeHours = parseInt(this.getAttribute('data-hours'), 10);
+                    }
+                    fetchAndDraw();
+                });
+            });
+
+            var refreshBtn = document.getElementById('refreshBtn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    fetchAndDraw();
+                });
+            }
+
+            /* ── InfluxDB 쿼리 생성 ── */
+            function buildQuery() {
+                var whereUser = LOGIN_USER
+                    ? ' AND "user" = \'' + LOGIN_USER + '\''
+                    : '';
+
+                var timeFilter, interval;
+
+                if (rangeMode === 'month') {
+                    /* 이번달 1일 00:00:00 UTC 기준 */
+                    var now = new Date();
+                    var firstDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+                    var iso = firstDay.toISOString(); /* e.g. 2026-05-01T00:00:00.000Z */
+                    timeFilter = ' time >= \'' + iso + '\'';
+                    interval   = '1h';
+                } else {
+                    timeFilter = ' time >= now() - ' + rangeHours + 'h';
+                    interval   = rangeHours <= 24 ? '5m' : '1h';
+                }
+
+                return 'SELECT non_negative_derivative(mean("total_bytes"), 1s) / 125 AS "kbps"'
+                    + ' FROM "datacounter_interim_delta"'
+                    + ' WHERE' + timeFilter
+                    + whereUser
+                    + ' GROUP BY time(' + interval + ') fill(0)';
+            }
+
+            /* ── fetch & 차트 그리기 ── */
+            function fetchAndDraw() {
+                if (!errorBox || !loadingEl) { return; }
+                errorBox.textContent = '';
+                loadingEl.style.display = 'block';
+
+                var url = INFLUX_URL
+                    + '?db=' + encodeURIComponent(INFLUX_DB)
+                    + '&q='  + encodeURIComponent(buildQuery());
+
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', url, true);
+                xhr.timeout = 15000;
+
+                xhr.onload = function () {
+                    loadingEl.style.display = 'none';
+                    if (xhr.status !== 200) {
+                        errorBox.textContent = 'HTTP error: ' + xhr.status;
+                        return;
+                    }
+                    try {
+                        var json   = JSON.parse(xhr.responseText);
+                        var points = parseInfluxResult(json);
+                        drawChart(points);
+                        chartDrawn = true;
+                    } catch (e) {
+                        errorBox.textContent = 'Parse error: ' + e.message;
+                    }
+                };
+
+                xhr.onerror = xhr.ontimeout = function () {
+                    loadingEl.style.display = 'none';
+                    errorBox.textContent = 'Network error: InfluxDB에 연결할 수 없습니다.';
+                };
+
+                xhr.send();
+            }
+
+            /* ── InfluxDB 응답 파싱 ── */
+            function parseInfluxResult(json) {
+                var points = [];
+                try {
+                    var series  = json.results[0].series[0];
+                    var timeIdx = series.columns.indexOf('time');
+                    var kbpsIdx = series.columns.indexOf('kbps');
+
+                    series.values.forEach(function (row) {
+                        var ts   = new Date(row[timeIdx]);
+                        var kbps = row[kbpsIdx] === null ? 0 : +row[kbpsIdx];
+
+                        var label;
+                        if (rangeMode === 'month') {
+                            /* 월간: 날짜 + 시 */
+                            label = (ts.getMonth() + 1) + '/' + ts.getDate()
+                                + ' ' + ts.getHours().toString().padStart(2, '0') + 'h';
+                        } else if (rangeHours <= 24) {
+                            label = ts.getHours().toString().padStart(2, '0')
+                                + ':' + ts.getMinutes().toString().padStart(2, '0');
+                        } else {
+                            label = (ts.getMonth() + 1) + '/' + ts.getDate()
+                                + ' ' + ts.getHours().toString().padStart(2, '0') + 'h';
+                        }
+                        points.push({ label: label, value: kbps });
+                    });
+                } catch (e) {
+                    /* series 없음 = 데이터 없음 → 빈 배열 반환 */
+                }
+                return points;
+            }
+
+            /* ── Canvas 차트 렌더링 ── */
+            function drawChart(points) {
+                var ctx      = canvas.getContext('2d');
+                var ratio    = window.devicePixelRatio || 1;
+                var rect     = canvas.getBoundingClientRect();
+                var cssWidth = Math.max(300, rect.width || canvas.parentNode.clientWidth || 600);
+                var cssHeight = 260;
+
+                canvas.width  = cssWidth  * ratio;
+                canvas.height = cssHeight * ratio;
+                canvas.style.height = cssHeight + 'px';
+
+                ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+                ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+                var pad = { top: 20, right: 20, bottom: 40, left: 60 };
+                var cw  = cssWidth  - pad.left - pad.right;
+                var ch  = cssHeight - pad.top  - pad.bottom;
+
+                if (cw <= 0 || ch <= 0) { return; }
+
+                var maxVal = 0;
+                points.forEach(function (p) { if (p.value > maxVal) maxVal = p.value; });
+                if (maxVal <= 0) maxVal = 10;
+                var roundedMax = Math.ceil(maxVal / 50) * 50;
+                if (roundedMax < 100) roundedMax = 100;
+
+                /* 배경 */
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, cssWidth, cssHeight);
+
+                /* 격자 + Y 라벨 */
+                var gridCount = 5;
+                ctx.font = '12px Arial';
+                for (var g = 0; g <= gridCount; g++) {
+                    var gy = pad.top + (ch / gridCount) * g;
+                    ctx.strokeStyle = '#e7edf5'; ctx.lineWidth = 1;
+                    ctx.beginPath(); ctx.moveTo(pad.left, gy); ctx.lineTo(pad.left + cw, gy); ctx.stroke();
+                    ctx.fillStyle = '#6b7785'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+                    ctx.fillText(
+                        Math.round(roundedMax - (roundedMax / gridCount) * g) + ' K',
+                        pad.left - 6, gy
+                    );
+                }
+
+                /* 축 */
+                ctx.strokeStyle = '#aebdce'; ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.moveTo(pad.left, pad.top);
+                ctx.lineTo(pad.left, pad.top + ch);
+                ctx.lineTo(pad.left + cw, pad.top + ch);
+                ctx.stroke();
+
+                if (points.length === 0) {
+                    ctx.fillStyle = '#8a94a6'; ctx.textAlign = 'center';
+                    ctx.fillText('No data', pad.left + cw / 2, pad.top + ch / 2);
+                    return;
+                }
+
+                var stepX = (points.length === 1) ? 0 : cw / (points.length - 1);
+                function getX(i) { return pad.left + stepX * i; }
+                function getY(v) { return pad.top  + ch  - (v / roundedMax) * ch; }
+
+                /* 영역 채우기 */
+                ctx.beginPath();
+                points.forEach(function (p, i) {
+                    if (i === 0) ctx.moveTo(getX(i), getY(p.value));
+                    else         ctx.lineTo(getX(i), getY(p.value));
+                });
+                ctx.lineTo(getX(points.length - 1), pad.top + ch);
+                ctx.lineTo(getX(0), pad.top + ch);
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(52,152,219,0.18)'; ctx.fill();
+
+                /* 라인 */
+                ctx.beginPath();
+                points.forEach(function (p, i) {
+                    if (i === 0) ctx.moveTo(getX(i), getY(p.value));
+                    else         ctx.lineTo(getX(i), getY(p.value));
+                });
+                ctx.strokeStyle = '#3498db'; ctx.lineWidth = 2; ctx.stroke();
+
+                /* 포인트 */
+                points.forEach(function (p, i) {
+                    ctx.beginPath();
+                    ctx.arc(getX(i), getY(p.value), 3.5, 0, Math.PI * 2);
+                    ctx.fillStyle   = '#3498db'; ctx.fill();
+                    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+                });
+
+                /* X 라벨 */
+                ctx.fillStyle = '#6b7785'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+                var skip = Math.max(1, Math.ceil(points.length / 12));
+                points.forEach(function (p, i) {
+                    if (i % skip !== 0 && i !== points.length - 1) { return; }
+                    ctx.fillText(p.label, getX(i), pad.top + ch + 8);
+                });
+            }
+
+            /* 리사이즈 시 열려 있을 때만 재렌더 */
+            window.addEventListener('resize', function () {
+                if (isOpen) { fetchAndDraw(); }
+            });
+
+        })();
+
+        (function () {
+            var form = document.forms['login_form'];
+            if (!form) {
+            return;
+        }
+
+            var radios = form.querySelectorAll('input[name="speed_profile"]');
+            var hiddenFlag = document.getElementById('update_speed_profile');
+
+            if (!radios.length || !hiddenFlag) {
+            return;
+        }
+
+            var previousValue = '';
+            var checkedRadio = form.querySelector('input[name="speed_profile"]:checked');
+            if (checkedRadio) {
+            previousValue = checkedRadio.value;
+        }
+
+            function setRadioValue(value) {
+            for (var i = 0; i < radios.length; i++) {
+            radios[i].checked = (radios[i].value === value);
+        }
+        }
+
+            for (var i = 0; i < radios.length; i++) {
+            radios[i].addEventListener('change', function () {
+            var newValue = this.value;
+
+            if (newValue === previousValue) {
+            return;
+        }
+
+            var ok = window.confirm('Are you sure you want to change the speed limit?');
+
+            if (!ok) {
+            setRadioValue(previousValue);
+            return;
+        }
+
+            hiddenFlag.value = '1';
+            form.submit();
+        });
+        }
+        })();
+    </script>
+    <?php
+    return ob_get_clean();
+}
+
+
 
 
 ?>

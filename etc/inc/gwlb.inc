@@ -113,6 +113,15 @@ function start_dpinger($gateway) {
     $socket = $prefix . ".sock";
     $alarm_cmd = "{$g['etc_path']}/rc.gateway_alarm";
 
+    // CP 라우팅 즉시화: 게이트웨이 up/down 알람 직후 cp_gw_* pfctl 테이블을 재적재해
+    // 누수창(filter_configure 가 테이블 flush → 고정 사용자 오라우팅/오과금)을 최소화한다.
+    // 래퍼는 표준 핸들러(/etc/rc.gateway_alarm)를 인자 그대로 먼저 실행하므로
+    // 게이트웨이 상태 처리에는 영향이 없다. 래퍼 미배포(부분배포) 시 표준 핸들러로 폴백.
+    $cp_alarm_wrapper = "/usr/local/sbin/cp_gateway_alarm.sh";
+    if (file_exists($cp_alarm_wrapper)) {
+        $alarm_cmd = $cp_alarm_wrapper;
+    }
+
     $params  = "-S ";			/* Log warnings via syslog */
     $params .= "-r 0 ";			/* Disable unused reporting thread */
     $params .= "-i {$gateway['name']} ";	/* Identifier */
@@ -2182,6 +2191,7 @@ function save_gateway($gateway_settings, $realid = "") {
     $gateway['disablecrewinternet'] = $gateway_settings['disablecrewinternet'];
     $gateway['blockall_bydefault'] = $gateway_settings['blockall_bydefault'];
     $gateway['currentusage'] = $gateway_settings['currentusage'];
+    $gateway['cutoff_enable'] = $gateway_settings['cutoff_enable'];
     $filepath="/etc/inc/";
     $cumulative_file = fopen($filepath.$gateway_settings['rootinterface']."_cumulative", "w");
     fwrite($cumulative_file, $gateway_settings['currentusage']);

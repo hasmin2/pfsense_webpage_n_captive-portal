@@ -13,7 +13,7 @@ function toggle_crew_wifi($toggle){
     }
 
     write_config("Portal Change");
-    captiveportal_configure();
+    //captiveportal_configure();
 }
 function terminate_biz_internet($toggle, $ipaddr){
     $serverip = $_SERVER['SERVER_ADDR'];
@@ -145,6 +145,7 @@ function enable_crew_freewifi(){
         }
     }
 }
+
 function disable_crew_freewifi(){
     global $config;
     $interface = get_crewinterface();

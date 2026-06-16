@@ -1648,7 +1648,6 @@ function ldap_backed($username, $passwd, $authcfg, &$attributes = array()) {
 function radius_backed($username, $password, $authcfg, &$attributes = array()) {
     global $debug, $config;
     $ret = false;
-
     require_once("Auth/RADIUS.php");
     require_once("Crypt/CHAP.php");
 
@@ -1981,7 +1980,6 @@ false : authentication failed (invalid login/password, not enough permission, et
 null : error during authentication process (unable to reach remote server, etc...)
 */
 function authenticate_user($username, $password, $authcfg = NULL, &$attributes = array()) {
-
     if (is_array($username) || is_array($password)) {
         return false;
     }
@@ -2023,7 +2021,6 @@ function authenticate_user($username, $password, $authcfg = NULL, &$attributes =
 
 function session_auth() {
     global $config, $_SESSION, $page;
-
     // Handle HTTPS httponly and secure flags
     $currentCookieParams = session_get_cookie_params();
     session_set_cookie_params(
@@ -2402,6 +2399,8 @@ EOD;
             @symlink("/var/etc/pam_ldap.conf", "/usr/local/etc/nss_ldap.conf");
         }
     }
+    $content = $header . $nsswitch;
+    $nsswitch = str_replace(["\r\n", "\r"], "\n", $content);
 
     @file_put_contents("/etc/pam.d/sshd", $header . $pam_sshd);
     @file_put_contents("/etc/pam.d/system", $header . $pam_system);

@@ -61,7 +61,7 @@ function sortAreaStyle(){
     let sidebarHeight = $('#wrapper #sidebar').outerHeight()
     let headlineHeight = $('#wrapper #content .headline-wrap').outerHeight()
     let listHeight = $('.list-top .btn-area').length > 0 ? $('.list-top .btn-area').outerHeight() : 0;
-    console.log($('.list-top').outerHeight)
+    //console.log($('.list-top').outerHeight)
 
     $('.list-top').css('min-height', listHeight)
     $('.list-wrap.v1 .sort-area .inner').css('top', sidebarHeight + headlineHeight + listHeight)

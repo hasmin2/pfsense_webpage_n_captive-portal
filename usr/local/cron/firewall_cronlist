@@ -1,0 +1,258 @@
+{
+"cronlist":
+    [
+        {
+            "minute": "*/1",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/sbin/newsyslog"
+        },
+        {
+            "minute": "1",
+            "hour": "3",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/etc/rc.periodic daily"
+        },
+        {
+            "minute": "15",
+            "hour": "4",
+            "mday": "*",
+            "month": "*",
+            "wday": "6",
+            "who": "root",
+            "command": "/etc/rc.periodic weekly"
+        },
+        {
+            "minute": "30",
+            "hour": "5",
+            "mday": "1",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/etc/rc.periodic monthly"
+        },
+        {
+            "minute": "1,31",
+            "hour": "0-5",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/bin/nice -n20 adjkerntz -a"
+        },
+        {
+            "minute": "1",
+            "hour": "3",
+            "mday": "1",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/bin/nice -n20 /etc/rc.update_bogons.sh"
+        },
+        {
+            "minute": "1",
+            "hour": "1",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/bin/nice -n20 /etc/rc.dyndns.update"
+        },
+        {
+            "minute": "*/60",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/bin/nice -n20 /usr/local/sbin/expiretable -v -t 3600 virusprot"
+        },
+        {
+            "minute": "30",
+            "hour": "12",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/bin/nice -n20 /etc/rc.update_urltables"
+        },
+        {
+            "minute": "1",
+            "hour": "0",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/bin/nice -n20 /etc/rc.update_pkg_metadata"
+        },
+        {
+            "minute": "*",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/bin/nice -n20 /usr/local/share/pfSense-pkg-node_exporter/interface-collector.py"
+        },
+        {
+            "minute": "9,10",
+            "hour": "0",
+            "mday": "1",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/crew_monthlyusage_reset_check.php"
+        },
+        {
+            "minute": "2,3",
+            "hour": "0",
+            "mday": "1,15",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/crew_halfmonthlyusage_reset_check.php"
+        },
+        {
+            "minute": "4,5",
+            "hour": "0",
+            "mday": "*",
+            "month": "*",
+            "wday": "0",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/crew_weeklyusage_reset_check.php"
+        },
+        {
+            "minute": "0,1",
+            "hour": "0",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/crew_dailyusage_reset_check.php"
+        },
+        {
+            "minute": "15,45",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/crew_usage_reset_selfheal.php > /dev/null"
+        },
+        {
+            "minute": "*",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/captive_portal_timeperiod_check.php"
+        },
+        {
+            "minute": "*",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/gps_update.php"
+        },
+        {
+            "minute": "*/5",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/network_usage_timeperiod_check.php > /dev/null"
+        },
+        {
+            "minute": "*/5",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/vlan_state_timeperiod_check.php > /dev/null"
+        },
+        {
+            "minute": "*/10",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/sbin/service radiusd onestart"
+        },
+        {
+            "minute": "0",
+            "hour": "0",
+            "mday": "1",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/terminal_data_monthlyusage_reset_check.php"
+        },
+        {
+            "minute": "0",
+            "hour": "0",
+            "mday": "1",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/crew_prepaidmonthlyusage_reset_check.php"
+        },
+        {
+            "minute": "*",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/openvpn_restart_timeperiod_check.php"
+        },
+        {
+            "minute": "*",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "sleep 5 && /usr/local/bin/php /usr/local/cron/crew_usage_timeperiod_check.php > /dev/null"
+        },
+        {
+            "minute": "*",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/manual_routing_timeperiod_check.php > /dev/null"
+        },
+        {
+            "minute": "*",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/cp_routing_table_resync.php > /dev/null"
+        },
+        {
+            "minute": "7",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/cp_tz_offset_update.php > /dev/null"
+        }
+
+    ]
+}

@@ -18,11 +18,7 @@ if(session_auth()){
         $adminlogin = "";
     }
 }
-else{
-    if (strpos($_SERVER["REMOTE_ADDR"], "10.8.128.1") !== false){
-        $adminlogin = "admin";
-    }
-}
+
 if(session_auth()){
     require_once('guiconfig.inc');
     if (isset($_POST['closenotice'])) {
@@ -79,172 +75,6 @@ function print_css_n_head(){
     $rtnstr .='<link rel="icon" href="img/icon/favicon.png">';
     return $rtnstr;
 }
-
-/*function print_sidebar($inputlink){
-    global $config;
-    $vesselinfo = $config['system']['vesselinfo'];
-    $rtnstr='';
-    $rtnstr.='<div id="sidebar">';
-    $rtnstr.='<div class="brand">';
-    $rtnstr.='<button class="btn-ic btn-menu-open"></button>';
-    if($config['system']['vesselinfo']['logo']==="sktelink"){
-        $rtnstr.='<h1 class="sklogo"><a href="/index.php"></a></h1>';
-    }
-    else if($config['system']['vesselinfo']['logo']==="inmarsat"){
-        $rtnstr.='<h1 class="inmarsatlogo"><a href="/index.php"></a></h1>';
-    }
-    else{
-        $rtnstr.='<h1 class="logo"><a href="/index.php"></a></h1>';
-    }
-    $rtnstr.='<p class="location" id="firewall-login">';
-    $rtnstr.= $vesselinfo["vesselname"];
-    $rtnstr.='</p>';
-    $rtnstr .= '<p class="gmt" id="gmt-modify" style="cursor:pointer;">';
-    $rtnstr .= 'GMT ' . $config['time_offset_enabled']["time_offset"];
-    $rtnstr .= '</p>';
-    $gmtmanualchecked = $config['time_offset_enabled']['gmtcheck']? "checked" : "";
-
-    $rtnstr .= '<div class="gmt-option">';
-    $rtnstr .= '  <label for="gmtcheck">';
-    $rtnstr .= '    <input type="checkbox" name="gmtcheck" id="gmtcheck"'.$gmtmanualchecked.'
-                 style="display:inline-block !important; visibility:visible !important; opacity:1 !important;
-                        -webkit-appearance:checkbox !important; appearance:checkbox !important;">';
-    $rtnstr .= '    <span>Manual Timezone Enable</span>';
-    $rtnstr .= '  </label>';
-    $rtnstr .= '</div>';
-
-
-    $rtnstr.='</div><div id="lnb">';
-    $rtnstr.='<button class="btn-ic btn-menu-close"></button>';
-    $rtnstr.='<div class="depth01"><ul>';
-    if($inputlink=="index.php"){
-        $rtnstr.='<li class="on"><a href="/index.php"><i class="ic-lnb01"></i><p>Main Panel</p></a></li>';
-    }
-    else{
-        $rtnstr.='<li><a href="/index.php"><i class="ic-lnb01"></i><p>Main Panel</p></a></li>';
-    }
-    if($inputlink=="network_control.php"){
-        $rtnstr.='<li class="on"><a href="/network_control.php"><i class="ic-lnb02"></i><p>Network Control</p></a></li>';
-    }
-    else{
-        $rtnstr.='<li><a href="/network_control.php"><i class="ic-lnb02"></i><p>Network Control</p></a></li>';
-    }
-    if($inputlink=="terminal.php"){
-        $rtnstr.='<li class="on"><a href="/terminal.php"><i class="ic-lnb03"></i><p>Antenna</p></a></li>';
-    }
-    else{
-        $rtnstr.='<li><a href="/terminal.php"><i class="ic-lnb03"></i><p>Antenna</p></a></li>';
-    }
-    if($inputlink=="lan_svrstatus.php"){
-        $rtnstr.='<li class="on"><a href="/lan_svrstatus.php"><i class="ic-lnb04"></i><p>LAN</p></a></li>';
-    }
-    else{
-        $rtnstr.='<li><a href="/lan_svrstatus.php"><i class="ic-lnb04"></i><p>LAN</p></a></li>';
-    }
-    if($inputlink=="crew_account.php"){
-        $rtnstr.='<li class="on"><a href="/crew_account.php"><i class="ic-lnb05"></i><p>Crew Account</p></a></li>';
-    }
-    else{
-        $rtnstr.='<li><a href="/crew_account.php"><i class="ic-lnb05"></i><p>Crew Account</p></a></li>';
-    }
-    if($inputlink=="download_center.php"){
-        $rtnstr.='<li class="on"><a href="/download_center.php"><i class="ic-lnb06"></i><p>Download Center</p></a></li>';
-    }
-    else{
-        $rtnstr.='<li><a href="/download_center.php"><i class="ic-lnb06"></i><p>Download Center</p></a></li>';
-    }
-    //$csrf = $_SESSION['csrfMagicToken'] ?? ($_SESSION['token'] ?? '');
-
-
-    $username = htmlspecialchars($_SESSION['Username'] ?? '', ENT_QUOTES);
-    $rtnstr .= '<form id="logoutForm" action="/index.php?logout" method="post" style="display:inline;">
-  <input type="hidden" name="__csrf_magic" id="__csrf_magic" value="">
-  <button type="submit" class="btn btn-link" title="Logout ('. $username.')"
-          style="background:none;border:0;padding:0;cursor:pointer;">
-    <i class="fa fa-sign-out"></i> Logout
-  </button>
-</form>';
-
-
-    $rtnstr.='</ul></div>';
-
-    $rtnstr.='</div></div>';
-
-    $rtnstr .= '<div class="popup layer pop-login">
-        <div class="pop-head">
-            <p class="title">Login</p>
-        </div>
-        <div class="pop-cont">
-        <form name="registerusers" id="#firewall-loginform" method="post" action="./index.php">
-            <div class="form">
-                <div class="form-tit">
-                    <p class="tit">ID</p>
-                </div>
-                <div class="form-cont">
-                    <input type="text" name="usernamefld" id="usernamefld">
-                </div>
-            </div>
-            <div class="form mt20">
-                <div class="form-tit">
-                    <p class="tit">Password</p>
-                </div>
-                <div class="form-cont">
-                    <input type="text" name="passwordfld" id="passwordfld">
-                </div>
-            </div>
-        </div>
-        <div class="pop-foot">
-            <button class="btn md fill-mint" onclick="firewall_login()"><i class="ic-submit"></i>LOGIN</button>
-            <button type=button class="btn md fill-dark" onclick="popClose(\'pop-login\')"><i class="ic-cancel"></i>CANCEL</button>
-        </div>
-        </form>
-        <form id="gmtForm" action="/index.php" method="post" style="display:none;">
-            <input type="hidden" name="gmt" id="gmtVal">
-        </form>
-        <form id="gmtEnabledForm" action="/index.php" method="post" style="display:none;">
-            <input type="hidden" name="manaulgmt" id="manualgmt">
-        </form>
-    </div>';
-    $rtnstr .= '<div class="popup layer pop-message"><div class="pop-head"><p class="title">Message</p></div><div class="pop-cont"><div class="form">';
-    $rtnstr .= '<div class="form-cont" id="message_text"></div></div></div><div class="pop-foot">';
-    $rtnstr .= '<button type="button" class="btn md fill-mint" onclick="popClose(\'pop-message\')"><i class="ic-submit"></i>Close</button></div></div>';
-    $rtnstr .= '<script>
-    document.getElementById("firewall-login").onclick=function(){
-        location.replace("main_dashboard.php");
-        //popOpenAndDim(\'pop-login\', true);
-    }
-    document.getElementById("gmt-modify").onclick=function(){
-        location.replace("/");
-        
-    }
-    function firewall_login(){
-        //alert($(\'#usernamefld\').val());
-        //$(\'#firewall-loginform\').submit();
-        popClose(\'pop-login\');
-    }
-     (function(){
-      var el = document.getElementById("gmtcheck");
-      if (!el) return;
-    
-      el.addEventListener("change", function () {
-        var csrfEl = document.querySelector(\'input[name="__csrf_magic"]\');
-        var csrf = csrfEl ? csrfEl.value : "";
-        var val  = this.checked ? "1" : "0";
-    
-        fetch("/index.php", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: "__csrf_magic=" + encodeURIComponent(csrf) + "&gmtcheck=" + encodeURIComponent(val)
-        })
-        .then(function(){ console.log("gmtcheck POST sent:", val); })
-        .catch(function(e){ console.error("gmtcheck error:", e); });
-      });
-    })();
-    </script>';
-
-
-    return $rtnstr;
-}*/
 
 
 // 공통: csrf_magic()를 문자열로 얻기 위한 헬퍼
@@ -316,6 +146,39 @@ function print_sidebar($inputlink)
     $rtnstr .= $mk("terminal.php", "Antenna", "ic-lnb03");
     $rtnstr .= $mk("lan_svrstatus.php", "LAN", "ic-lnb04");
     $rtnstr .= $mk("crew_account.php", "Crew Account", "ic-lnb05");
+    // prepaid_enabled self-heal: 과거 코드가 captiveportal zone 배열에 플래그를 저장해
+    // CP zone 목록에 '내부가 빈 가짜 zone' 이 생기던 버그를 정리한다.
+    // 구 위치(captiveportal)가 보이면 system 으로 이전하고 구 키를 제거한 뒤 1회 영구화한다.
+    // (이후 요청부터는 구 키가 없어 no-op)
+    // phantom CP zone self-heal: 아래 3가지 비-zone 키가 $config['captiveportal'] 에
+    // 남아있으면 pfSense CP zone 목록에 빈 zone 으로 표시된다.
+    // 수정은 cp_routing_setup.php(배포 시)에서 먼저 처리하므로 여기는 fallback 역할.
+    // write_config() 는 비용이 크므로 변경이 있을 때만 1회만 호출한다.
+    $_cp_sidebar_dirty = false;
+    if (isset($config['captiveportal']['prepaid_enabled'])) {
+        $config['system']['prepaid_enabled'] = "";
+        unset($config['captiveportal']['prepaid_enabled']);
+        $_cp_sidebar_dirty = true;
+    }
+    if (isset($config['captiveportal']['filter'])) {
+        unset($config['captiveportal']['filter']);
+        $_cp_sidebar_dirty = true;
+    }
+    if (isset($config['captiveportal']['shutdown_gateways'])) {
+        if (!isset($config['system']['cp_shutdown_gateways']) ||
+            $config['captiveportal']['shutdown_gateways'] !== '') {
+            $config['system']['cp_shutdown_gateways'] =
+                $config['captiveportal']['shutdown_gateways'];
+        }
+        unset($config['captiveportal']['shutdown_gateways']);
+        $_cp_sidebar_dirty = true;
+    }
+    if ($_cp_sidebar_dirty && function_exists('write_config')) {
+        write_config("phantom CP zone 키 정리(captiveportal→system 이전)");
+    }
+    if (isset($config['system']['prepaid_enabled'])) {
+        $rtnstr .= $mk("prepaid_account.php", "Prepaid Account", "ic-lnb05");
+    }
     $rtnstr .= $mk("download_center.php", "Download Center", "ic-lnb06");
 
 
@@ -326,6 +189,20 @@ function print_sidebar($inputlink)
         . '</a>'
         . '</li>';
     $rtnstr .= '    </ul></div>';
+
+    // 사이드바 하단 푸터 (전 페이지 공통 — print_sidebar 가 모든 커스텀 페이지의 사이드바를 그림).
+    // 다크 사이드바 대비 인라인 스타일(외부 CSS 의존 없음). 링크는 새 탭.
+    $rtnstr .= '    <div class="lnb-footer" style="margin-top:18px; padding:14px 16px 20px; '
+        . 'font-size:11px; line-height:1.65; color:rgba(255,255,255,.45); '
+        . 'border-top:1px solid rgba(255,255,255,.08);">'
+        . 'This Web console is developed and maintained by '
+        . '<a href="https://www.synersat.com" target="_blank" rel="noopener" '
+        . 'style="color:rgba(255,255,255,.72); text-decoration:underline;">SynerSAT Korea</a>. '
+        . '&copy; since 2016 Powered by '
+        . '<a href="https://www.pfsense.org" target="_blank" rel="noopener" '
+        . 'style="color:rgba(255,255,255,.72); text-decoration:underline;">PFSense</a>.'
+        . '</div>';
+
     $rtnstr .= '  </div>'; // lnb
     $rtnstr .= '</div>';   // sidebar
 

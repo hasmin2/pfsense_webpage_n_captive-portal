@@ -34,6 +34,7 @@ function destroy_firewall_preset(){
     unset($config['captiveportal']['crew']['terminate_duration']);
     unset($config['captiveportal']['crew']['terminate_timestamp']);
 }
+
 function build_firewall_preset($defaultgw){
     global $config;
     openlog("logportalauth", LOG_PID, LOG_LOCAL4);

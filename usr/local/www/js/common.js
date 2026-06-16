@@ -48,100 +48,34 @@ function popOpenAndDim(target, isDim){
         dimMaker();
     }
 }
-function safeRenderScheduleRows(input) {
-    const rows = toArray(input);
-    // 진단 로그 (필요시)
-    // console.log('rows(normalized)=', rows);
-    renderScheduleRows(rows); // 이제 rows.map 가능
-}
-function toArray(input) {
-    if (input == null) return [];
-    if (Array.isArray(input)) return input;
 
-    // 문자열 JSON으로 온 경우
-    if (typeof input === 'string') {
-        try { return toArray(JSON.parse(input)); } catch { return []; }
-    }
-
-    // NodeList/HTMLCollection 인 경우
-    if (typeof input.length === 'number' && typeof input.item === 'function') {
-        return Array.from(input);
-    }
-
-    // 단일 객체
-    return [input];
-}
-function popOpenScheduler(target, isDim, data){
+function popOpenScheduler(target, isDim, data) {
     popOpen(target);
-    if(isDim){
+
+    if (isDim) {
         dimMaker();
     }
-    if(data) {
-        const { first, rest } = takeFirstAndRest(data);
-        const el = document.getElementById('userIdHidden');
-        if (el) el.value = first?.id ?? '';
-        safeRenderScheduleRows(rest);
 
-
+    let parsed;
+    try {
+        parsed = JSON.parse(data);
+    } catch (e) {
+        alert('JSON parse error: ' + e.message);
+        return;
     }
-}
 
-function takeFirstAndRest(input) {
-    let arr = input;
-    if (!Array.isArray(arr)) {
-        const t = String(input ?? '').trim();
-        const json = t.startsWith('[') ? t : `[${t}]`;
-        arr = JSON.parse(json);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+        alert('schedule data is invalid');
+        return;
     }
-    const first = arr.shift() ?? null;
-    return { first, rest: arr };
-}
+    const first = parsed[0];
+    const rest  = parsed.slice(1);
 
-    document.addEventListener("DOMContentLoaded", function() {
-    const gmtElem = document.getElementById("gmt-modify");
-
-    gmtElem.addEventListener("click", function() {
-    // 기존 텍스트 값 추출
-    const current = gmtElem.textContent.replace("GMT ","").trim();
-
-    // input 박스로 교체
-    gmtElem.innerHTML = `
-            GMT <input type="text" id="gmt-input" value="${current}" size="5">
-            <button id="gmt-save">저장</button>
-        `;
-
-    // 저장 버튼 이벤트
-    document.getElementById("gmt-save").addEventListener("click", function() {
-    const newValue = document.getElementById("gmt-input").value;
-    gmtElem.innerHTML = "GMT " + newValue;
-});
-});
-});
-
-const pad2 = n => String(n).padStart(2, '0');
-
-// 요일: 0=일 ~ 6=토 (한국어 라벨)
-const DAYS = [
-    { v: 1, t: 'Mon' }, { v: 2, t: 'Tue' },
-    { v: 3, t: 'Wed' }, { v: 4, t: 'Thu' }, { v: 5, t: 'Fri' }, { v: 6, t: 'Sat' },{ v: 7, t: 'Sun' }
-];
-
-// 시간/분 옵션 생성
-function buildHourOptions(selected = null) {
-    let html = '';
-    for (let h = 0; h <= 23; h++) {
-        const vv = pad2(h);
-        html += `<option value="${vv}" ${vv===selected ? 'selected' : ''}>${vv}</option>`;
+    const el = document.getElementById('userIdHidden');
+    if (el) {
+        el.value = first?.id ?? '';
     }
-    return html;
-}
-function buildMinOptions(selected=null){
-    let html='';
-    for(let m=0; m<60; m+=10){
-        const vv=pad2(m);
-        html+=`<option value="${vv}" ${vv===selected?'selected':''}>${vv}</option>`;
-    }
-    return html;
+    buildScheduleRows(rest);
 }
 
 function buildDayOptions(selectedArr = []) {
@@ -161,44 +95,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 혹시라도 csrf-magic.js가 form submit을 XHR로 바꾸는 경우를 피하려면,
     // 명시적으로 기본 submit을 트리거(네이티브 네비게이션)하면 됩니다.
-    document.getElementById('logoutForm').addEventListener('submit', function (e) {
+    /*document.getElementById('logoutForm').addEventListener('submit', function (e) {
         // 여기서는 e.preventDefault() 절대 금지 (네비게이션해야 함)
-    });
+    });*/
 });
-
-function buildRow(data = {}) {
-    const enabled = !!data.enabled;
-    const [fh = '00', fm = '00'] = (data.from || '00:00').split(':');
-    const [th = '00', tm = '00'] = (data.to   || '00:00').split(':');
-    const days = Array.isArray(data.days) ? data.days : [];
-
-    return `
-    <tr>
-      <td style="text-align:center;">
-        <!--input type="checkbox" name="isenabledlist[]" value = "1" ${enabled ? 'checked' : ''}-->
-        <input type="checkbox" class="chk-enable select v1" name="isenabledlist[]" value = "1" ${enabled ? 'checked' : ''} style="appearance:auto;display:inline-block;width:16px;height:16px;opacity:1;visibility:visible;">
-      </td>
-      <td style="text-align:center;">
-        <select class="sel-from-hour select v1">${buildHourOptions(fh)}</select>
-      </td>
-      <td style="text-align:center;">
-        <select class="sel-from-min  select v1">${buildMinOptions(fm)}</select>
-      </td>
-      <td style="text-align:center;">
-        <select class="sel-to-hour   select v1">${buildHourOptions(th)}</select>
-      </td>
-      <td style="text-align:center;">
-        <select class="sel-to-min    select v1">${buildMinOptions(tm)}</select>
-      </td>
-      <td style="text-align:center;">
-        <!-- 멀티 선택 드롭다운 -->
-        <select class="sel-days select v1" multiple size="4" title="Ctrl/⌘로 다중선택">
-          ${buildDayOptions(days)}
-        </select>
-      </td>
-    </tr>
-  `;
-}
 
 document.addEventListener("DOMContentLoaded", function() {
     const gmtText = document.getElementById("gmt-modify");
@@ -220,141 +120,182 @@ document.addEventListener("DOMContentLoaded", function() {
     });
 });
 
-// 표에 행들 추가
-function renderScheduleRows(rows = []) {
+
+const SCHED_DAYS = [
+    { key: 'mon', label: 'Mon' },
+    { key: 'tue', label: 'Tue' },
+    { key: 'wed', label: 'Wed' },
+    { key: 'thu', label: 'Thu' },
+    { key: 'fri', label: 'Fri' },
+    { key: 'sat', label: 'Sat' },
+    { key: 'sun', label: 'Sun' }
+    ];
+
+function buildNumberOptions(max, step = 1) {
+    let html = '';
+    for (let i = 0; i <= max; i += step) {
+        const v = String(i).padStart(2, '0');
+        html += '<option value="' + v + '">' + v + '</option>';
+    }
+    return html;
+}
+
+function buildDayChips(rowIdx) {
+    return SCHED_DAYS.map(day => `
+            <span class="sched-day-chip">
+                <input type="checkbox" id="d${rowIdx}_${day.key}" name="day_${rowIdx}" value="${day.key}">
+                <label for="d${rowIdx}_${day.key}">${day.label}</label>
+            </span>
+        `).join('');
+}
+
+function buildScheduleRows(scheduleRows = []) {
     const tbody = document.getElementById('sched-body');
-    tbody.innerHTML = rows.map(r => buildRow(r)).join('');
-}
+    if (!tbody) return;
 
-// 현재 표의 값을 JSON으로 수집 (서브밋 전에 호출)
-// 반환 예: [{enabled:true, from:"08:00", to:"17:30", days:[1,2,3]} , ...]
-function collectSchedule() {
-    const out = [];
-    const id = document.getElementById('userIdHidden')?.value ?? '';
-    out.push({userid: id});
-    document.querySelectorAll('#sched-body tr').forEach(tr => {
-        const en = tr.querySelector('.chk-enable').checked;
-        const fh = tr.querySelector('.sel-from-hour').value;
-        const fm = tr.querySelector('.sel-from-min').value;
-        const th = tr.querySelector('.sel-to-hour').value;
-        const tm = tr.querySelector('.sel-to-min').value;
-        const sel = tr.querySelector('.sel-days');
-        const days = Array.from(sel.selectedOptions).map(o => Number(o.value));
-        out.push({
-            enabled: en,
-            from: `${fh}:${fm}`,
-            to:   `${th}:${tm}`,
-            days
+    const hourOptions = buildNumberOptions(23,1);
+    const minOptions  = buildNumberOptions(59, 10);
+
+    // 데이터 개수만큼 만들되, 최소 3행은 유지
+    const rowCount = Math.max(3, Array.isArray(scheduleRows) ? scheduleRows.length : 0);
+
+    let html = '';
+    for (let i = 0; i < rowCount; i++) {
+        html += `
+            <tr>
+                <td><span class="sched-row-num">${i + 1}</span></td>
+                    <td>
+                        <div class="check v1" style="display:flex; justify-content:center;">
+                            <input type="checkbox" class="sched-act-checkbox" name="act_${i}" id="act_${i}">
+                            <label for="act_${i}"></label>
+                        </div>
+                    </td>
+                <td>
+                    <div class="sched-time-group">
+                        <select class="sched-time-select" name="from_hour_${i}" id="from_hour_${i}">
+                            ${hourOptions}
+                        </select>
+                        <span class="sched-time-colon">:</span>
+                        <select class="sched-time-select" name="from_min_${i}" id="from_min_${i}">
+                            ${minOptions}
+                        </select>
+                    </div>
+                </td>
+                <td class="sched-arrow-cell">&#8594;</td>
+                <td>
+                    <div class="sched-time-group">
+                        <select class="sched-time-select" name="to_hour_${i}" id="to_hour_${i}">
+                            ${hourOptions}
+                        </select>
+                        <span class="sched-time-colon">:</span>
+                        <select class="sched-time-select" name="to_min_${i}" id="to_min_${i}">
+                            ${minOptions}
+                        </select>
+                    </div>
+                </td>
+                <td>
+                    <div class="sched-day-chips">
+                        ${buildDayChips(i)}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+
+    tbody.innerHTML = html;
+
+    // 기본값 먼저 넣기
+    for (let i = 0; i < rowCount; i++) {
+        document.getElementById(`from_hour_${i}`).value = '00';
+        document.getElementById(`from_min_${i}`).value  = '00';
+        document.getElementById(`to_hour_${i}`).value   = (i === 0 ? '23' : '12');
+        document.getElementById(`to_min_${i}`).value    = '00';
+        document.getElementById(`act_${i}`).checked     = false;
+    }
+
+    // 받은 데이터 적용
+    if (Array.isArray(scheduleRows)) {
+        scheduleRows.forEach((row, i) => {
+            if (!row) return;
+
+            const from = splitTime(row.from);
+            const to   = splitTime(row.to);
+            const days = normalizeDays(row.days);
+
+            const actEl      = document.getElementById(`act_${i}`);
+            const fromHourEl = document.getElementById(`from_hour_${i}`);
+            const fromMinEl  = document.getElementById(`from_min_${i}`);
+            const toHourEl   = document.getElementById(`to_hour_${i}`);
+            const toMinEl    = document.getElementById(`to_min_${i}`);
+
+            if (actEl)      actEl.checked = !!row.enabled;
+            if (fromHourEl) fromHourEl.value = from.hour;
+            if (fromMinEl)  fromMinEl.value  = from.min;
+            if (toHourEl)   toHourEl.value   = to.hour;
+            if (toMinEl)    toMinEl.value    = to.min;
+
+            days.forEach(day => {
+                const dayEl = document.getElementById(`d${i}_${day}`);
+                if (dayEl) dayEl.checked = true;
+            });
         });
-    });
-    return out;
+    }
 }
 
-// (선택) crewscheduler 폼 제출 시 스케줄 값을 숨은 필드에 넣어 전송
-/*function submit_crewscheduler() {
-    const form = document.getElementById('crewscheduler');
-    // hidden input 없으면 생성
-    let hidden = form.querySelector('input[name="schedule_json"]');
-    if (!hidden) {
-        hidden = document.createElement('input');
-        hidden.type = 'hidden';
-        hidden.name = 'schedule_json';
-        form.appendChild(hidden);
-    }
-    const schedule = collectSchedule();
-    hidden.value = JSON.stringify(schedule);
-    const diff = diffMinutes(schedule.value.from, schedule.value.to);
-    if(diff<0){
-        alert ("To time should be greater than from time");
-        return false;
-    }
-    else{
-        form.submit();
+function splitTime(timeStr) {
+    if (!timeStr || typeof timeStr !== 'string' || timeStr.indexOf(':') === -1) {
+        return { hour: '00', min: '00' };
     }
 
+    const parts = timeStr.split(':');
+    let hour = (parts[0] || '00').padStart(2, '0');
+    let min  = (parts[1] || '00').padStart(2, '0');
+
+    if (!/^\d{2}$/.test(hour)) hour = '00';
+    if (!/^\d{2}$/.test(min))  min = '00';
+
+    return { hour, min };
 }
-function diffMinutes(from, to) {
-    const [fh, fm] = from.split(':').map(Number);
-    const [th, tm] = to.split(':').map(Number);
+function normalizeDays(days) {
+    if (!Array.isArray(days)) return [];
 
-    const fromTotal = fh * 60 + fm;
-    const toTotal   = th * 60 + tm;
-
-    if (toTotal <= fromTotal) return null; // 잘못된 시간
-
-    return toTotal - fromTotal;
-}*/
-function extractFromTo(item) {
-    if (!item) return { from: null, to: null };
-
-    if (Array.isArray(item)) {
-        // ["09:00","17:30", ...]
-        return { from: item[0] ?? null, to: item[1] ?? null };
-    }
-
-    // 객체형
-    const from = item.from ?? item.start ?? item.startTime ?? item.fromTime ?? null;
-    const to   = item.to   ?? item.end   ?? item.endTime   ?? item.toTime   ?? null;
-    return { from, to };
+    return days
+        .map(v => String(v || '').toLowerCase().trim())
+        .filter(v => ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].includes(v));
 }
 
-// "HH:MM" 형식 시간 차이를 분으로 반환 (to <= from 이면 null)
-function diffMinutes(from, to) {
-    if (typeof from !== 'string' || typeof to !== 'string') return null;
-
-    const [fh, fm] = from.split(':').map(Number);
-    const [th, tm] = to.split(':').map(Number);
-
-    if (
-        Number.isNaN(fh) || Number.isNaN(fm) || Number.isNaN(th) || Number.isNaN(tm) ||
-        fh < 0 || fh > 23 || th < 0 || th > 23 ||
-        fm < 0 || fm > 59 || tm < 0 || tm > 59
-    ) return null;
-
-    const fromTotal = fh * 60 + fm;
-    const toTotal   = th * 60 + tm;
-    return (toTotal > fromTotal) ? (toTotal - fromTotal) : null; // 동일/역전 → null
-}
-
-// crewscheduler 폼 제출: 스케줄 JSON 저장 + 시간 유효성 검사
 function submit_crewscheduler() {
-    const form = document.getElementById('crewscheduler');
-
-    // hidden input 준비
-    let hidden = form.querySelector('input[name="schedule_json"]');
-    if (!hidden) {
-        hidden = document.createElement('input');
-        hidden.type = 'hidden';
-        hidden.name = 'schedule_json';
-        form.appendChild(hidden);
+    const userid = document.getElementById('userIdHidden').value;
+    if (!userid) {
+        alert('User ID is missing.');
+        return;
     }
 
-    // 스케줄 수집
-    const schedule = collectSchedule();
-    const list = Array.isArray(schedule) ? schedule : [schedule];
+    const results = [ { userid: userid }   // 현재 PHP 구조와 맞추기 위해 첫 항목에 userid 포함
+    ];
 
-    if (!list.length) {
-        alert('Empty schedule');
-        return false;
+    for (let i = 0; i < 3; i++) {
+        const act = document.querySelector('[name="act_' + i + '"]').checked ? 1 : 0;
+        const fromHour = document.getElementById('from_hour_' + i).value;
+        const fromMin  = document.getElementById('from_min_' + i).value;
+        const toHour   = document.getElementById('to_hour_' + i).value;
+        const toMin    = document.getElementById('to_min_' + i).value;
+
+        const days = Array.from(
+        document.querySelectorAll('[name="day_' + i + '"]:checked')
+        ).map(cb => cb.value);
+
+        results.push({
+            active: act,
+            from_hour: fromHour,
+            from_min: fromMin,
+            to_hour: toHour,
+            to_min: toMin,
+            days: days
+        });
     }
-
-    // from < to 검증
-    for (let i = 0; i < list.length; i++) {
-        const { from, to } = extractFromTo(list[i]);
-        if (typeof from !== 'string' || typeof to !== 'string'){
-            continue;
-        }
-        const d = diffMinutes(from, to);
-        if (d === null) {
-            alert("From time is larger than to time, please verify.");
-            return false; // 제출 중단
-        }
-    }
-
-    // 통과 시 JSON 저장 후 제출
-    hidden.value = JSON.stringify(schedule);
-    form.submit();
-    return true;
+    document.getElementById('scheduleJsonHidden').value = JSON.stringify(results);
+    document.getElementById('crewscheduler').submit();
 }
 
 function resizingAct(){

@@ -91,10 +91,10 @@ function freeradius_deinstall_command() {
 	/* Remove package settings from config if 'Keep Settings' is disabled */
 	init_config_arr(array('installedpackages', 'freeradiussettings', 'config', 0));
 	if (isset($config['installedpackages']['freeradiussettings']['config'][0]['keep_settings']) &&
-	    empty($config['installedpackages']['freeradiussettings']['config'][0]['keep_settings'])) {
+		empty($config['installedpackages']['freeradiussettings']['config'][0]['keep_settings'])) {
 		log_error("[freeRADIUS] Removing all FreeRADIUS settings since 'Keep Settings/Data' is disabled...");
 		$uninstall = array('freeradius', 'freeradiusauthorizedmacs', 'freeradiusclients', 'freeradiusinterfaces',
-		'freeradiussettings', 'freeradiuseapconf', 'freeradiussqlconf', 'freeradiusmodulesldap', 'freeradiussync');
+			'freeradiussettings', 'freeradiuseapconf', 'freeradiussqlconf', 'freeradiusmodulesldap', 'freeradiussync');
 		foreach ($uninstall as $unin) {
 			if (is_array($config['installedpackages'][$unin])) {
 				unset($config['installedpackages'][$unin]);
@@ -477,339 +477,1516 @@ EOD;
 	}
 }
 
-function freeradius_users_resync($via_rpc = false) {
-	global $config;
-	$conf = '';
 
-	if (is_array($config['installedpackages']['freeradius']['config'])) {
-		$arrusers = $config['installedpackages']['freeradius']['config'];
-	} else {
-		$arrusers = array();
+if (!function_exists('freeradius_atomic_write_file')) {
+	function freeradius_atomic_write_file($filename, $content, $mode = 0640)
+	{
+		$dir = dirname($filename);
+
+		if (!is_dir($dir)) {
+			if (!@mkdir($dir, 0755, true) && !is_dir($dir)) {
+				throw new RuntimeException("Unable to create directory: {$dir}");
+			}
+		}
+
+		// 같은 디렉토리에 temp 파일 생성 -> rename() 원자성 보장
+		$tmp = @tempnam($dir, basename($filename) . '.tmp.');
+		if ($tmp === false) {
+			throw new RuntimeException("Unable to create temp file for: {$filename}");
+		}
+
+		$fp = @fopen($tmp, 'wb');
+		if ($fp === false) {
+			@unlink($tmp);
+			throw new RuntimeException("Unable to open temp file for write: {$tmp}");
+		}
+
+		try {
+			if (!@flock($fp, LOCK_EX)) {
+				throw new RuntimeException("Unable to lock temp file: {$tmp}");
+			}
+
+			$written = 0;
+			$length = strlen($content);
+
+			while ($written < $length) {
+				$n = fwrite($fp, substr($content, $written));
+				if ($n === false) {
+					throw new RuntimeException("Write failed for temp file: {$tmp}");
+				}
+				$written += $n;
+			}
+
+			fflush($fp);
+			@chmod($tmp, $mode);
+			@flock($fp, LOCK_UN);
+			fclose($fp);
+			$fp = null;
+
+			if (!@rename($tmp, $filename)) {
+				throw new RuntimeException("Atomic rename failed: {$tmp} -> {$filename}");
+			}
+
+			@chmod($filename, $mode);
+		} finally {
+			if (is_resource($fp)) {
+				@flock($fp, LOCK_UN);
+				fclose($fp);
+			}
+			if (file_exists($tmp)) {
+				@unlink($tmp);
+			}
+		}
+
+		return true;
+	}
+}
+
+if (!function_exists('freeradius_glob_unlink')) {
+	function freeradius_glob_unlink($pattern)
+	{
+		$files = glob($pattern);
+		if ($files === false || empty($files)) {
+			return;
+		}
+
+		foreach ($files as $file) {
+			@unlink($file);
+		}
+	}
+}
+
+function freeradius_users_resync($via_rpc = false)
+{
+	global $config;
+
+	$lock_file = '/var/run/freeradius_users_resync.lock';
+	$lock_fp = @fopen($lock_file, 'c');
+
+	if ($lock_fp === false) {
+		log_error("freeradius_users_resync: unable to open lock file {$lock_file}");
+		return false;
 	}
 
-	if (!empty($arrusers)) {
-		foreach ($arrusers as $users) {
-			// Variables for users file defined parameters
-			$varusersusername = $users['varusersusername'];
-			$varuserspassword = $users['varuserspassword'];
+	if (!@flock($lock_fp, LOCK_EX)) {
+		fclose($lock_fp);
+		log_error("freeradius_users_resync: unable to acquire lock {$lock_file}");
+		return false;
+	}
 
-			// Check password encryption
-			$varuserspasswordencryption = ($users['varuserspasswordencryption'] ?: 'Cleartext-Password');
-			switch ($varuserspasswordencryption) {
-				case "MD5-Password":
-					$varuserspassword = md5($varuserspassword);
-					break;
-				case "MD5-Password-hashed":
-					$varuserspassword = $users['varuserspassword']; // use hashed password as-is
-					$varuserspasswordencryption = "MD5-Password";
-					break;
-				case "NT-Password-hashed":
-					$varuserspassword = $users['varuserspassword'];
-					$varuserspasswordencryption = "NT-Password";
-					break;
-				default:
-					$varuserspassword = $users['varuserspassword'];
-			}
+	try {
+		$conf = '';
 
-			$varusersauthmethod = $users['varusersauthmethod'];
-			$varusersmotpinitsecret = $users['varusersmotpinitsecret'];
-			$varusersmotppin = $users['varusersmotppin'];
-			$varusersmotpoffset = ($users['varusersmotpoffset'] ?: '0');
+		if (is_array($config['installedpackages']['freeradius']['config'])) {
+			$arrusers = $config['installedpackages']['freeradius']['config'];
+		} else {
+			$arrusers = array();
+		}
 
-			$varuserssimultaneousconnect = ($users['varuserssimultaneousconnect'] ?: '');
-			$varuserswisprredirectionurl = $users['varuserswisprredirectionurl'];
-			$varusersframedipaddress = $users['varusersframedipaddress'];
-			$varusersframedipnetmask = $users['varusersframedipnetmask'];
-			$varusersframedroute = $users['varusersframedroute'];
-			if (is_ipaddrv6($users['varusersframedip6address'])) {
-				$varusersframedip6address = $users['varusersframedip6address'];
-			} elseif (is_subnetv6($users['varusersframedip6address'])) {
-				$varusersframedip6prefix = $users['varusersframedip6address'];
-			}
-			$varusersframedip6route = $users['varusersframedip6route'];
-			$varusersexpiration = $users['varusersexpiration'];
-			$varuserssessiontimeout = $users['varuserssessiontimeout'];
-			$varuserslogintime = $users['varuserslogintime'];
-			$varusersvlanid = $users['varusersvlanid'];
+		if (!empty($arrusers)) {
+			foreach ($arrusers as $users) {
+				// 반복마다 반드시 초기화
+				$varusersframedip6address = '';
+				$varusersframedip6prefix = '';
 
-			// GUI uses minutes but RADIUS needs seconds so we do a multiplication
-			$varusersamountoftime = ($users['varusersamountoftime'] ?: '');
-			$varusersamountoftime = (int) $varusersamountoftime * 60;
-			$varuserspointoftime = $users['varuserspointoftime'];
+				// Variables for users file defined parameters
+				$varusersusername = $users['varusersusername'];
+				$varuserspassword = $users['varuserspassword'];
 
-			// GUI uses MB but RADIUS needs Bytes so we do a multiplication
-			$varusersmaxtotaloctets = ($users['varusersmaxtotaloctets'] ?: '');
-			$varuserstopupoctets = ($users['$varuserstopupoctets'] ?: '');
-			$varusersmaxtotaloctets = ((int) $varusersmaxtotaloctets * 1024 * 1024)+((int) $varuserstopupoctets * 1024 * 1024);
-			$varusersmaxtotaloctetstimerange = $users['varusersmaxtotaloctetstimerange'];
-
-			// GUI uses Kbit but RADIUS needs bits so we do a multiplication
-			// Use 1000 (Kbit) and not 1024 (Kibibit) to match the division used by Captive Portal
-			$varusersmaxbandwidthup = ($users['varusersmaxbandwidthup'] ?: '');
-			$varusersmaxbandwidthup = (int) $varusersmaxbandwidthup * 1000;
-			$varusersmaxbandwidthdown = ($users['varusersmaxbandwidthdown'] ?: '');
-			$varusersmaxbandwidthdown = (int) $varusersmaxbandwidthdown * 1000;
-
-			// Accounting-Interim-Interval - Must not be smaller than 60 and should be bigger than 600s
-			if (($users['varusersacctinteriminterval'] >= '0') && ($users['varusersacctinteriminterval'] < '60')) {
-				$varusersacctinteriminterval = 60;
-			} else {
-				$varusersacctinteriminterval = $users['varusersacctinteriminterval'];
-			}
-
-			// Clear variables for next user foreach additional options TOP
-			$varuserstopadditionaloptions = '';
-			$varusersadditionaloptionstop = '';
-
-			if (!empty($users['varuserstopadditionaloptions'])) {
-				$varuserstopadditionaloptions = explode("|", ($users['varuserstopadditionaloptions']));
-				foreach ($varuserstopadditionaloptions as $toptmp) {
-					$varusersadditionaloptionstop .= $toptmp . "\n";
+				// Check password encryption
+				$varuserspasswordencryption = ($users['varuserspasswordencryption'] ?: 'Cleartext-Password');
+				switch ($varuserspasswordencryption) {
+					case "MD5-Password":
+						$varuserspassword = md5($varuserspassword);
+						break;
+					case "MD5-Password-hashed":
+						$varuserspassword = $users['varuserspassword']; // use hashed password as-is
+						$varuserspasswordencryption = "MD5-Password";
+						break;
+					case "NT-Password-hashed":
+						$varuserspassword = $users['varuserspassword'];
+						$varuserspasswordencryption = "NT-Password";
+						break;
+					default:
+						$varuserspassword = $users['varuserspassword'];
 				}
-			}
 
-			// Clear variables for next user foreach additional options: CHECK-ITEMS
-			$varuserscheckitemsadditionaloptions = '';
-			$varusersadditionaloptionscheckitems = '';
+				$varusersauthmethod = $users['varusersauthmethod'];
+				$varusersmotpinitsecret = $users['varusersmotpinitsecret'];
+				$varusersmotppin = $users['varusersmotppin'];
+				$varusersmotpoffset = ($users['varusersmotpoffset'] ?: '0');
 
-			if (!empty($users['varuserscheckitemsadditionaloptions'])) {
-				$varuserscheckitemsadditionaloptions = explode("|", ($users['varuserscheckitemsadditionaloptions']));
-				$varusersadditionaloptionscheckitems .= '';
-				foreach ($varuserscheckitemsadditionaloptions as $checkitemtmp) {
-					$varusersadditionaloptionscheckitems .= "{$checkitemtmp}" . " ";
+				$varuserssimultaneousconnect = ($users['varuserssimultaneousconnect'] ?: '');
+				$varuserswisprredirectionurl = $users['varuserswisprredirectionurl'];
+				$varusersframedipaddress = $users['varusersframedipaddress'];
+				$varusersframedipnetmask = $users['varusersframedipnetmask'];
+				$varusersframedroute = $users['varusersframedroute'];
+
+				if (is_ipaddrv6($users['varusersframedip6address'])) {
+					$varusersframedip6address = $users['varusersframedip6address'];
+				} elseif (is_subnetv6($users['varusersframedip6address'])) {
+					$varusersframedip6prefix = $users['varusersframedip6address'];
 				}
-			}
 
-			// Clear variables for next user foreach additional options: REPLY-ITEMS
-			$varusersreplyitemsadditionaloptions = '';
-			$varusersadditionaloptionsreplyitems = '';
+				$varusersframedip6route = $users['varusersframedip6route'];
+				$varusersexpiration = $users['varusersexpiration'];
+				$varuserssessiontimeout = $users['varuserssessiontimeout'];
+				$varuserslogintime = $users['varuserslogintime'];
+				$varusersvlanid = $users['varusersvlanid'];
 
-			if (!empty($users['varusersreplyitemsadditionaloptions'])) {
-				$varusersreplyitemsadditionaloptions = explode("|", ($users['varusersreplyitemsadditionaloptions']));
-				$varusersadditionaloptionsreplyitems .= '';
-				foreach ($varusersreplyitemsadditionaloptions as $replyitemtmp) {
-					$varusersadditionaloptionsreplyitems .= $replyitemtmp . "\n\t";
-				}
-			}
+				// GUI uses minutes but RADIUS needs seconds so we do a multiplication
+				$varusersamountoftime = ($users['varusersamountoftime'] ?: '');
+				$varusersamountoftime = (int)$varusersamountoftime * 60;
+				$varuserspointoftime = $users['varuserspointoftime'];
 
-			// Empty variable
-			$varuserscheckitem = '';
-			$varusersreplyitem = '';
+				// GUI uses MB but RADIUS needs Bytes so we do a multiplication
+				$varusersmaxtotaloctets = ($users['varusersmaxtotaloctets'] ?: '');
 
-			// check if mobile otp is disabled
-			if ($users['varusersmotpenable'] == '') {
-				// If someone does not want to use username/password but entry "DEFAULT" instead then we can disable this
-				if (($users['varusersusername'] == '') && ($users['varuserspassword'] == '')) {
-					$varuserscheckitem = '';
+				// 오타 수정: '$varuserstopupoctets' -> 'varuserstopupoctets'
+				$varuserstopupoctets = ($users['varuserstopupoctets'] ?: '');
+
+				$varusersmaxtotaloctets =
+					((int)$varusersmaxtotaloctets * 1024 * 1024) +
+					((int)$varuserstopupoctets * 1024 * 1024);
+
+				$varusersmaxtotaloctetstimerange = $users['varusersmaxtotaloctetstimerange'];
+
+				// GUI uses Kbit but RADIUS needs bits so we do a multiplication
+				// Use 1000 (Kbit) and not 1024 (Kibibit) to match the division used by Captive Portal
+				$varusersmaxbandwidthup = ($users['varusersmaxbandwidthup'] ?: '');
+				$varusersmaxbandwidthup = (int)$varusersmaxbandwidthup * 1000;
+				$varusersmaxbandwidthdown = ($users['varusersmaxbandwidthdown'] ?: '');
+				$varusersmaxbandwidthdown = (int)$varusersmaxbandwidthdown * 1000;
+
+				// Accounting-Interim-Interval - Must not be smaller than 60 and should be bigger than 600s
+				if (($users['varusersacctinteriminterval'] >= '0') && ($users['varusersacctinteriminterval'] < '60')) {
+					$varusersacctinteriminterval = 60;
 				} else {
-					// Add the user attributes to each user.
-					$varuserscheckitem = '"' . $varusersusername . '"' . " {$varuserspasswordencryption} := " . '"' . $varuserspassword .'"';
+					$varusersacctinteriminterval = $users['varusersacctinteriminterval'];
 				}
-			// end of check if otp is enabled
-			} else {
-				// if otp is enabled we need to set Auth-Type to accept because password will be checked when the otp script gets executed in reply-item list
-				// prevent overwrite with '' on package update
-				if (empty($varusersauthmethod)) {
-					$varusersauthmethod = "motp";
+
+				// Clear variables for next user foreach additional options TOP
+				$varuserstopadditionaloptions = '';
+				$varusersadditionaloptionstop = '';
+
+				if (!empty($users['varuserstopadditionaloptions'])) {
+					$varuserstopadditionaloptions = explode("|", ($users['varuserstopadditionaloptions']));
+					foreach ($varuserstopadditionaloptions as $toptmp) {
+						$varusersadditionaloptionstop .= $toptmp . "\n";
+					}
 				}
-				$varuserscheckitem = "\"{$varusersusername}\" Auth-Type = {$varusersauthmethod}";
-			}
 
-			// Add additional CHECK-ITEMS here. Different formatting in "users" file needed.
-			if ($varuserssimultaneousconnect != '') {
-				$varuserscheckitem .= ", Simultaneous-Use := \"{$varuserssimultaneousconnect}\"";
-			}
-			if ($varusersexpiration != '') {
-				$varuserscheckitem .= ", Expiration := \"{$varusersexpiration}\"";
-			}
-			if ($varuserslogintime != '') {
-				$varuserscheckitem .= ", Login-Time := \"{$varuserslogintime}\"";
-			}
-			if ($varusersamountoftime != '') {
-				$varuserscheckitem .= ", Max-{$varuserspointoftime}-Session := {$varusersamountoftime}";
-			}
-			if ($varusersadditionaloptionscheckitems != '') {
-				$varuserscheckitem .= ", {$varusersadditionaloptionscheckitems}";
-			}
+				// Clear variables for next user foreach additional options: CHECK-ITEMS
+				$varuserscheckitemsadditionaloptions = '';
+				$varusersadditionaloptionscheckitems = '';
 
-			// this is the part for mobile otp
-			if ($users['varusersmotpenable'] == 'on') {
-				$varusersreplyitem .= <<<EOD
+				if (!empty($users['varuserscheckitemsadditionaloptions'])) {
+					$varuserscheckitemsadditionaloptions = explode("|", ($users['varuserscheckitemsadditionaloptions']));
+					$varusersadditionaloptionscheckitems .= '';
+					foreach ($varuserscheckitemsadditionaloptions as $checkitemtmp) {
+						$varusersadditionaloptionscheckitems .= "{$checkitemtmp}" . " ";
+					}
+				}
+
+				// Clear variables for next user foreach additional options: REPLY-ITEMS
+				$varusersreplyitemsadditionaloptions = '';
+				$varusersadditionaloptionsreplyitems = '';
+
+				if (!empty($users['varusersreplyitemsadditionaloptions'])) {
+					$varusersreplyitemsadditionaloptions = explode("|", ($users['varusersreplyitemsadditionaloptions']));
+					$varusersadditionaloptionsreplyitems .= '';
+					foreach ($varusersreplyitemsadditionaloptions as $replyitemtmp) {
+						$varusersadditionaloptionsreplyitems .= $replyitemtmp . "\n\t";
+					}
+				}
+
+				// Empty variable
+				$varuserscheckitem = '';
+				$varusersreplyitem = '';
+
+				// check if mobile otp is disabled
+				if ($users['varusersmotpenable'] == '') {
+					// If someone does not want to use username/password but entry "DEFAULT" instead then we can disable this
+					if (($users['varusersusername'] == '') && ($users['varuserspassword'] == '')) {
+						$varuserscheckitem = '';
+					} else {
+						// Add the user attributes to each user.
+						$varuserscheckitem = '"' . $varusersusername . '"' . " {$varuserspasswordencryption} := " . '"' . $varuserspassword . '"';
+					}
+					// end of check if otp is enabled
+				} else {
+					// if otp is enabled we need to set Auth-Type to accept because password will be checked when the otp script gets executed in reply-item list
+					// prevent overwrite with '' on package update
+					if (empty($varusersauthmethod)) {
+						$varusersauthmethod = "motp";
+					}
+					$varuserscheckitem = "\"{$varusersusername}\" Auth-Type = {$varusersauthmethod}";
+				}
+
+				// Add additional CHECK-ITEMS here. Different formatting in "users" file needed.
+				if ($varuserssimultaneousconnect != '') {
+					$varuserscheckitem .= ", Simultaneous-Use := \"{$varuserssimultaneousconnect}\"";
+				}
+				if ($varusersexpiration != '') {
+					$varuserscheckitem .= ", Expiration := \"{$varusersexpiration}\"";
+				}
+				if ($varuserslogintime != '') {
+					$varuserscheckitem .= ", Login-Time := \"{$varuserslogintime}\"";
+				}
+				if ($varusersamountoftime != '') {
+					$varuserscheckitem .= ", Max-{$varuserspointoftime}-Session := {$varusersamountoftime}";
+				}
+				if ($varusersadditionaloptionscheckitems != '') {
+					$varuserscheckitem .= ", {$varusersadditionaloptionscheckitems}";
+				}
+
+				// this is the part for mobile otp
+				if ($users['varusersmotpenable'] == 'on') {
+					$varusersreplyitem .= <<<EOD
 
 	MOTP-Init-Secret = {$varusersmotpinitsecret},
 	MOTP-PIN = {$varusersmotppin},
 	MOTP-Offset = {$varusersmotpoffset}
 EOD;
-			} else {
-				$varusersreplyitem .= '';
-			}
-
-			// Add additional REPLY-ITEMS here. Different formatting in "users" file needed.
-			if ($varusersframedipaddress != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
+				} else {
+					$varusersreplyitem .= '';
 				}
-				$varusersreplyitem .= <<<EOD
+
+				// Add additional REPLY-ITEMS here. Different formatting in "users" file needed.
+				if ($varusersframedipaddress != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= <<<EOD
 
 	Framed-IP-Address = {$varusersframedipaddress}
 EOD;
-			}
-			if ($varusersframedipnetmask != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
 				}
-				$varusersreplyitem .= <<<EOD
+				if ($varusersframedipnetmask != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= <<<EOD
 
 	Framed-IP-Netmask = {$varusersframedipnetmask}
 EOD;
-			}
-			if ($varusersframedroute != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
 				}
-				$varusersreplyitem .= <<<EOD
+				if ($varusersframedroute != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= <<<EOD
 
 	Framed-Route = "{$varusersframedroute}"
 EOD;
-			}
-			if ($varusersframedip6address != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
 				}
-				$varusersreplyitem .= <<<EOD
+				if ($varusersframedip6address != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= <<<EOD
 
 	Framed-IPv6-Address = {$varusersframedip6address}
 EOD;
-			}
-			if ($varusersframedip6prefix != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
 				}
-				$varusersreplyitem .= <<<EOD
+				if ($varusersframedip6prefix != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= <<<EOD
 
 	Framed-IPv6-Prefix = {$varusersframedip6prefix}
 EOD;
-			}
-			if ($varusersframedip6route != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
 				}
-				$varusersreplyitem .= <<<EOD
+				if ($varusersframedip6route != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= <<<EOD
 
 	Framed-IPv6-Route = "{$varusersframedip6route}"
 EOD;
-			}
-			if ($varuserssessiontimeout != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
 				}
-				$varusersreplyitem .= <<<EOD
+				if ($varuserssessiontimeout != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= <<<EOD
 
 	Session-Timeout := {$varuserssessiontimeout}
 EOD;
-			}
-			if ($varusersvlanid != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
 				}
-				$varusersreplyitem .= <<<EOD
+				if ($varusersvlanid != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= <<<EOD
 
 	Tunnel-Type = VLAN,
 	Tunnel-Medium-Type = IEEE-802,
 	Tunnel-Private-Group-ID = "{$varusersvlanid}"
 EOD;
-			}
-			if ($varusersmaxbandwidthup != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
 				}
-				$varusersreplyitem .= <<<EOD
+				if ($varusersmaxbandwidthup != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= <<<EOD
 
 	WISPr-Bandwidth-Max-Up := {$varusersmaxbandwidthup}
 EOD;
-			}
-			if ($varusersmaxbandwidthdown != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
 				}
-				$varusersreplyitem .= <<<EOD
+				if ($varusersmaxbandwidthdown != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= <<<EOD
 
 	WISPr-Bandwidth-Max-Down := {$varusersmaxbandwidthdown}
 EOD;
-			}
-			if ($varusersacctinteriminterval != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
 				}
-				$varusersreplyitem .= <<<EOD
+				if ($varusersacctinteriminterval != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= <<<EOD
 
 	Acct-Interim-Interval := {$varusersacctinteriminterval}
 EOD;
-			}
-			if ($varuserswisprredirectionurl != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
 				}
-				$varusersreplyitem .= <<<EOD
+				if ($varuserswisprredirectionurl != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= <<<EOD
 
 	WISPr-Redirection-URL := {$varuserswisprredirectionurl}
 EOD;
-			}
-			// If an octet limit is set we create the files for the limit and the counter. Further we call an exec script which checks if the limit is reached or not
-			if ($varusersmaxtotaloctets != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
 				}
-				// create exec script
-				$varFREERADIUS_SCRIPTS = FREERADIUS_SCRIPTS;
-				$varusersreplyitem .= <<<EOD
+
+				// If an octet limit is set we create the files for the limit and the counter.
+				if ($varusersmaxtotaloctets != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+
+					$varFREERADIUS_SCRIPTS = FREERADIUS_SCRIPTS;
+					$varusersreplyitem .= <<<EOD
 
 	pfSense-Max-Total-Octets := {$varusersmaxtotaloctets},
-
 	Exec-Program-Wait = "/bin/sh {$varFREERADIUS_SCRIPTS}/datacounter_auth.sh {$varusersusername} {$varusersmaxtotaloctetstimerange}"
 EOD;
-				// create limit file - will be always overwritten so we can increase limit from GUI
-				file_put_contents("/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}/max-octets-{$varusersusername}", $varusersmaxtotaloctets, LOCK_EX);
-				// if used-octets file exist we do NOT overwrite this file!!!
-				if (!file_exists("/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}/used-octets-{$varusersusername}")) {
-					file_put_contents("/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}/used-octets-{$varusersusername}", "0", LOCK_EX);
-				}
-			} else {
-				// If an octet limit is NOT set we delete the files for the limit and the counter.
-				unlink_if_exists("/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}/max-octets-{$varusersusername}");
-				unlink_if_exists("/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}/used-octets-{$varusersusername}*");
-			}
-			if ($varusersadditionaloptionsreplyitems != '') {
-				if ($varusersreplyitem != '') {
-					$varusersreplyitem .= ",";
-				}
-				$varusersreplyitem .= "\n\t{$varusersadditionaloptionsreplyitems}";
-			}
 
-			// Cosmetic fix - This is just to make a blank new line after each user entry
-			$varusersreplyitem .= "\n\n";
+					$counter_dir = "/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}";
+					$max_file = "{$counter_dir}/max-octets-{$varusersusername}";
+					$used_file = "{$counter_dir}/used-octets-{$varusersusername}";
 
-			$conf .= <<<EOD
+					if (!is_dir($counter_dir)) {
+						@mkdir($counter_dir, 0755, true);
+					}
+
+					// limit file - 항상 원자 교체
+					freeradius_atomic_write_file($max_file, (string)$varusersmaxtotaloctets, 0640);
+
+					// used-octets file - 없을 때만 생성
+					if (!file_exists($used_file)) {
+						freeradius_atomic_write_file($used_file, "0", 0640);
+					}
+				} else {
+					$counter_dir = "/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}";
+					@unlink("{$counter_dir}/max-octets-{$varusersusername}");
+
+					// wildcard 삭제는 glob으로 처리
+					freeradius_glob_unlink("{$counter_dir}/used-octets-{$varusersusername}*");
+				}
+
+				if ($varusersadditionaloptionsreplyitems != '') {
+					if ($varusersreplyitem != '') {
+						$varusersreplyitem .= ",";
+					}
+					$varusersreplyitem .= "\n\t{$varusersadditionaloptionsreplyitems}";
+				}
+
+				// Cosmetic fix - This is just to make a blank new line after each user entry
+				$varusersreplyitem .= "\n\n";
+
+				$conf .= <<<EOD
 {$varusersadditionaloptionstop}
 {$varuserscheckitem}
 {$varusersreplyitem}
 
 EOD;
-		} // endforeach
-	} // endif
+			}
+		}
+		// users 파일 + 실제 활성 파일(mods-config/files/authorize) 모두 원자 교체.
+		// 증분 경로(freeradius_update_user)와 타깃을 일치시켜 런타임 파일 불일치를 제거.
+		foreach (freeradius_get_target_user_files() as $target_file) {
+			freeradius_atomic_write_file($target_file, $conf, 0640);
+		}
 
-	$filename = FREERADIUS_RADDB . '/users';
-	file_put_contents($filename, $conf);
-	chmod($filename, 0640);
+		freeradius_sync_on_changes();
 
-	freeradius_sync_on_changes();
-	// Do not restart on boot
-	// Will get restarted later by freeradius_clients_resync() if called via XMLRPC sync
-	if ($via_rpc === false && !platform_booting()) {
-		restart_service("radiusd");
+		// 락을 잡은 상태에서 reload까지 수행하면 동시 호출 시 reload 도 직렬화됨.
+		// [#23 A] HUP 는 이 박스에서 rlm_files(users/authorize)를 재로딩하지 못한다(실측:
+		// 재시작해야만 비번 변경이 반영됨). 따라서 전체 재생성 후 전체 재시작으로 확실히
+		// 반영한다($allow_hup=false). accounting 단절(수초)은 수용 — 근본 해결은 radcheck(SQL)
+		// 권위화(step3). (resync 는 $changed 가드가 있는 경로에서만 호출되어 불필요 재시작 최소화.)
+		if ($via_rpc === false && !platform_booting()) {
+			freeradius_reload_or_restart_radiusd(false);
+		}
+
+		return true;
+	} catch (Throwable $e) {
+		log_error("freeradius_users_resync failed: " . $e->getMessage());
+		return false;
+	} finally {
+		@flock($lock_fp, LOCK_UN);
+		fclose($lock_fp);
 	}
 }
 
+function freeradius_build_single_user_stanza(array $users): string
+{
+	// 반복마다 반드시 초기화
+	$varusersframedip6address = '';
+	$varusersframedip6prefix = '';
+
+	// Variables for users file defined parameters
+	$varusersusername = $users['varusersusername'] ?? '';
+	$varuserspassword = $users['varuserspassword'] ?? '';
+
+	// Check password encryption
+	$varuserspasswordencryption = ($users['varuserspasswordencryption'] ?? '') ?: 'Cleartext-Password';
+	switch ($varuserspasswordencryption) {
+		case "MD5-Password":
+			$varuserspassword = md5($varuserspassword);
+			break;
+		case "MD5-Password-hashed":
+			$varuserspassword = $users['varuserspassword'] ?? '';
+			$varuserspasswordencryption = "MD5-Password";
+			break;
+		case "NT-Password-hashed":
+			$varuserspassword = $users['varuserspassword'] ?? '';
+			$varuserspasswordencryption = "NT-Password";
+			break;
+		default:
+			$varuserspassword = $users['varuserspassword'] ?? '';
+	}
+
+	$varusersauthmethod = $users['varusersauthmethod'] ?? '';
+	$varusersmotpinitsecret = $users['varusersmotpinitsecret'] ?? '';
+	$varusersmotppin = $users['varusersmotppin'] ?? '';
+	$varusersmotpoffset = ($users['varusersmotpoffset'] ?? '') ?: '0';
+
+	$varuserssimultaneousconnect = ($users['varuserssimultaneousconnect'] ?? '') ?: '';
+	$varuserswisprredirectionurl = $users['varuserswisprredirectionurl'] ?? '';
+	$varusersframedipaddress = $users['varusersframedipaddress'] ?? '';
+	$varusersframedipnetmask = $users['varusersframedipnetmask'] ?? '';
+	$varusersframedroute = $users['varusersframedroute'] ?? '';
+
+	if (!empty($users['varusersframedip6address']) && is_ipaddrv6($users['varusersframedip6address'])) {
+		$varusersframedip6address = $users['varusersframedip6address'];
+	} elseif (!empty($users['varusersframedip6address']) && is_subnetv6($users['varusersframedip6address'])) {
+		$varusersframedip6prefix = $users['varusersframedip6address'];
+	}
+
+	$varusersframedip6route = $users['varusersframedip6route'] ?? '';
+	$varusersexpiration = $users['varusersexpiration'] ?? '';
+	$varuserssessiontimeout = $users['varuserssessiontimeout'] ?? '';
+	$varuserslogintime = $users['varuserslogintime'] ?? '';
+	$varusersvlanid = $users['varusersvlanid'] ?? '';
+
+	// GUI uses minutes but RADIUS needs seconds
+	$varusersamountoftime = ($users['varusersamountoftime'] ?? '') ?: '';
+	$varusersamountoftime = (int)$varusersamountoftime * 60;
+	$varuserspointoftime = $users['varuserspointoftime'] ?? '';
+
+	// GUI uses MB but RADIUS needs Bytes
+	$varusersmaxtotaloctets = ($users['varusersmaxtotaloctets'] ?? '') ?: '';
+	$varuserstopupoctets = ($users['varuserstopupoctets'] ?? '') ?: '';
+
+	$varusersmaxtotaloctets =
+		((int)$varusersmaxtotaloctets * 1024 * 1024) +
+		((int)$varuserstopupoctets * 1024 * 1024);
+
+	$varusersmaxtotaloctetstimerange = $users['varusersmaxtotaloctetstimerange'] ?? '';
+
+	// GUI uses Kbit but RADIUS needs bits
+	$varusersmaxbandwidthup = ($users['varusersmaxbandwidthup'] ?? '') ?: '';
+	$varusersmaxbandwidthup = (int)$varusersmaxbandwidthup * 1000;
+
+	$varusersmaxbandwidthdown = ($users['varusersmaxbandwidthdown'] ?? '') ?: '';
+	$varusersmaxbandwidthdown = (int)$varusersmaxbandwidthdown * 1000;
+
+	// Accounting-Interim-Interval
+	$acct_interim_raw = (string)($users['varusersacctinteriminterval'] ?? '');
+	if ($acct_interim_raw !== '' && (int)$acct_interim_raw >= 0 && (int)$acct_interim_raw < 60) {
+		$varusersacctinteriminterval = 60;
+	} else {
+		$varusersacctinteriminterval = $acct_interim_raw;
+	}
+	// Additional options TOP
+	$varuserstopadditionaloptions = '';
+	$varusersadditionaloptionstop = '';
+
+	if (!empty($users['varuserstopadditionaloptions'])) {
+		$varuserstopadditionaloptions = explode("|", $users['varuserstopadditionaloptions']);
+		foreach ($varuserstopadditionaloptions as $toptmp) {
+			$varusersadditionaloptionstop .= $toptmp . "\n";
+		}
+	}
+
+	// Additional options CHECK-ITEMS
+	$varuserscheckitemsadditionaloptions = '';
+	$varusersadditionaloptionscheckitems = '';
+
+	if (!empty($users['varuserscheckitemsadditionaloptions'])) {
+		$varuserscheckitemsadditionaloptions = explode("|", $users['varuserscheckitemsadditionaloptions']);
+		foreach ($varuserscheckitemsadditionaloptions as $checkitemtmp) {
+			$varusersadditionaloptionscheckitems .= "{$checkitemtmp} ";
+		}
+		$varusersadditionaloptionscheckitems = rtrim($varusersadditionaloptionscheckitems);
+	}
+
+	// Additional options REPLY-ITEMS
+	$varusersreplyitemsadditionaloptions = '';
+	$varusersadditionaloptionsreplyitems = '';
+
+	if (!empty($users['varusersreplyitemsadditionaloptions'])) {
+		$varusersreplyitemsadditionaloptions = explode("|", $users['varusersreplyitemsadditionaloptions']);
+		foreach ($varusersreplyitemsadditionaloptions as $replyitemtmp) {
+			$varusersadditionaloptionsreplyitems .= $replyitemtmp . "\n\t";
+		}
+		$varusersadditionaloptionsreplyitems = rtrim($varusersadditionaloptionsreplyitems);
+	}
+
+	// Empty variable
+	$varuserscheckitem = '';
+	$varusersreplyitem = '';
+
+	// check if mobile otp is disabled
+	if (($users['varusersmotpenable'] ?? '') == '') {
+		// DEFAULT entry support
+		if (($users['varusersusername'] ?? '') == '' && ($users['varuserspassword'] ?? '') == '') {
+			$varuserscheckitem = '';
+		} else {
+			$varuserscheckitem = '"' . $varusersusername . '"' . " {$varuserspasswordencryption} := " . '"' . $varuserspassword . '"';
+		}
+	} else {
+		if (empty($varusersauthmethod)) {
+			$varusersauthmethod = "motp";
+		}
+		$varuserscheckitem = "\"{$varusersusername}\" Auth-Type = {$varusersauthmethod}";
+	}
+
+	// CHECK-ITEMS
+	if ($varuserssimultaneousconnect != '') {
+		$varuserscheckitem .= ", Simultaneous-Use := \"{$varuserssimultaneousconnect}\"";
+	}
+	if ($varusersexpiration != '') {
+		$varuserscheckitem .= ", Expiration := \"{$varusersexpiration}\"";
+	}
+	if ($varuserslogintime != '') {
+		$varuserscheckitem .= ", Login-Time := \"{$varuserslogintime}\"";
+	}
+	if ($varusersamountoftime != '') {
+		$varuserscheckitem .= ", Max-{$varuserspointoftime}-Session := {$varusersamountoftime}";
+	}
+	if ($varusersadditionaloptionscheckitems != '') {
+		$varuserscheckitem .= ", {$varusersadditionaloptionscheckitems}";
+	}
+
+	// MOTP reply items
+	if (($users['varusersmotpenable'] ?? '') == 'on') {
+		$varusersreplyitem .= <<<EOD
+
+	MOTP-Init-Secret = {$varusersmotpinitsecret},
+	MOTP-PIN = {$varusersmotppin},
+	MOTP-Offset = {$varusersmotpoffset}
+EOD;
+	}
+
+	// REPLY-ITEMS
+	if ($varusersframedipaddress != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= <<<EOD
+
+	Framed-IP-Address = {$varusersframedipaddress}
+EOD;
+	}
+	if ($varusersframedipnetmask != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= <<<EOD
+
+	Framed-IP-Netmask = {$varusersframedipnetmask}
+EOD;
+	}
+	if ($varusersframedroute != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= <<<EOD
+
+	Framed-Route = "{$varusersframedroute}"
+EOD;
+	}
+	if ($varusersframedip6address != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= <<<EOD
+
+	Framed-IPv6-Address = {$varusersframedip6address}
+EOD;
+	}
+	if ($varusersframedip6prefix != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= <<<EOD
+
+	Framed-IPv6-Prefix = {$varusersframedip6prefix}
+EOD;
+	}
+	if ($varusersframedip6route != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= <<<EOD
+
+	Framed-IPv6-Route = "{$varusersframedip6route}"
+EOD;
+	}
+	if ($varuserssessiontimeout != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= <<<EOD
+
+	Session-Timeout := {$varuserssessiontimeout}
+EOD;
+	}
+	if ($varusersvlanid != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= <<<EOD
+
+	Tunnel-Type = VLAN,
+	Tunnel-Medium-Type = IEEE-802,
+	Tunnel-Private-Group-ID = "{$varusersvlanid}"
+EOD;
+	}
+	if ($varusersmaxbandwidthup != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= <<<EOD
+
+	WISPr-Bandwidth-Max-Up := {$varusersmaxbandwidthup}
+EOD;
+	}
+	if ($varusersmaxbandwidthdown != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= <<<EOD
+
+	WISPr-Bandwidth-Max-Down := {$varusersmaxbandwidthdown}
+EOD;
+	}
+	if ($varusersacctinteriminterval != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= <<<EOD
+
+	Acct-Interim-Interval := {$varusersacctinteriminterval}
+EOD;
+	}
+	if ($varuserswisprredirectionurl != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= <<<EOD
+
+	WISPr-Redirection-URL := {$varuserswisprredirectionurl}
+EOD;
+	}
+
+	// Octet limit 관련 reply item은 유지
+	if ($varusersmaxtotaloctets != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+
+		$varFREERADIUS_SCRIPTS = FREERADIUS_SCRIPTS;
+		$varusersreplyitem .= <<<EOD
+
+	pfSense-Max-Total-Octets := {$varusersmaxtotaloctets},
+	Exec-Program-Wait = "/bin/sh {$varFREERADIUS_SCRIPTS}/datacounter_auth.sh {$varusersusername} {$varusersmaxtotaloctetstimerange}"
+EOD;
+
+		$counter_dir = "/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}";
+		$max_file = "{$counter_dir}/max-octets-{$varusersusername}";
+		$used_file = "{$counter_dir}/used-octets-{$varusersusername}";
+
+		if (!is_dir($counter_dir)) {
+			@mkdir($counter_dir, 0755, true);
+		}
+
+		// limit file - 항상 원자 교체
+		freeradius_atomic_write_file($max_file, (string)$varusersmaxtotaloctets, 0640);
+
+		// used-octets file - 없을 때만 생성
+		if (!file_exists($used_file)) {
+			freeradius_atomic_write_file($used_file, "0", 0640);
+		}
+	} else {
+		$counter_dir = "/var/log/radacct/datacounter/{$varusersmaxtotaloctetstimerange}";
+		@unlink("{$counter_dir}/max-octets-{$varusersusername}");
+
+		// wildcard 삭제는 glob으로 처리
+		freeradius_glob_unlink("{$counter_dir}/used-octets-{$varusersusername}*");
+	}
+	if ($varusersadditionaloptionsreplyitems != '') {
+		if ($varusersreplyitem != '') {
+			$varusersreplyitem .= ",";
+		}
+		$varusersreplyitem .= "\n\t{$varusersadditionaloptionsreplyitems}";
+	}
+
+	// Cosmetic fix
+	$varusersreplyitem .= "\n\n";
+
+	return <<<EOD
+{$varusersadditionaloptionstop}
+{$varuserscheckitem}
+{$varusersreplyitem}
+
+EOD;
+}
+
+if (!defined('FREERADIUS_RADDB')) {
+	define('FREERADIUS_RADDB', '/usr/local/etc/raddb');
+}
+
+/**
+ * ${confdir}, ${moddir} 형태를 실제 경로로 풀어준다.
+ */
+function freeradius_expand_raddb_path(string $path): string
+{
+	$map = [
+		'${confdir}' => FREERADIUS_RADDB,
+		'${moddir}' => FREERADIUS_RADDB . '/mods-config/files',
+	];
+
+	return strtr($path, $map);
+}
+
+/**
+ * mods-enabled/files 에서 active usersfile 을 찾는다.
+ * usersfile 이 명시되지 않으면 FreeRADIUS files 모듈 기본값(authorize)을 사용한다.
+ */
+function freeradius_detect_active_usersfile(): string
+{
+	$files_module = FREERADIUS_RADDB . '/mods-enabled/files';
+	$default_file = FREERADIUS_RADDB . '/mods-config/files/authorize';
+
+	if (!is_file($files_module)) {
+		return $default_file;
+	}
+
+	$lines = @file($files_module, FILE_IGNORE_NEW_LINES);
+	if (!is_array($lines)) {
+		return $default_file;
+	}
+
+	foreach ($lines as $line) {
+		// 주석 무시
+		if (preg_match('/^\s*#/', $line)) {
+			continue;
+		}
+
+		if (preg_match('/^\s*usersfile\s*=\s*(.+?)\s*$/', $line, $m)) {
+			$raw = trim($m[1], " \t\"'");
+			if ($raw !== '') {
+				return freeradius_expand_raddb_path($raw);
+			}
+		}
+	}
+
+	return $default_file;
+}
+
+/**
+ * 동기화 대상 파일 목록 반환
+ * - GUI 쪽에서 기대하는 users
+ * - 실제 인증에 쓰이는 active usersfile
+ */
+function freeradius_get_target_user_files(): array
+{
+	$targets = [
+		FREERADIUS_RADDB . '/users',
+		freeradius_detect_active_usersfile(),
+	];
+
+	$targets = array_values(array_unique($targets));
+
+	return $targets;
+}
+
+/**
+ * 줄바꿈 정규화 + 마지막 newline 보장
+ */
+function freeradius_normalize_text(string $text): string
+{
+	$text = str_replace(["\r\n", "\r"], "\n", $text);
+	$text = rtrim($text, "\n") . "\n";
+	return $text;
+}
+
+/**
+ * 파일 백업 생성
+ */
+function freeradius_backup_file(string $filename): bool
+{
+	if (!is_file($filename)) {
+		return false;
+	}
+
+	$backup = $filename . '.bak.' . date('Ymd-His');
+	return @copy($filename, $backup);
+}
+
+/**
+ * temp 파일에 쓴 뒤 rename 하는 원자적 저장
+ */
+function freeradius_atomic_write_file(string $filename, string $contents): bool
+{
+	$dir = dirname($filename);
+	$base = basename($filename);
+	$tmp = @tempnam($dir, $base . '.tmp.');
+
+	if ($tmp === false) {
+		log_error("freeradius_atomic_write_file: tempnam failed for {$filename}");
+		return false;
+	}
+
+	$contents = freeradius_normalize_text($contents);
+
+	if (@file_put_contents($tmp, $contents) === false) {
+		@unlink($tmp);
+		log_error("freeradius_atomic_write_file: failed to write temp file for {$filename}");
+		return false;
+	}
+
+	$perms = @fileperms($filename);
+	if ($perms !== false) {
+		@chmod($tmp, $perms & 0777);
+	}
+
+
+	if (!@rename($tmp, $filename)) {
+		@unlink($tmp);
+		log_error("freeradius_atomic_write_file: rename failed for {$filename}");
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * stanza 텍스트를 line 배열로 변환
+ */
+function freeradius_stanza_to_lines(string $stanza): array
+{
+	$stanza = freeradius_normalize_text($stanza);
+	$stanza = trim($stanza, "\n");
+
+	if ($stanza === '') {
+		return [];
+	}
+
+	return preg_split('/\n/', $stanza);
+}
+
+/**
+ * 파일 내에서 특정 username stanza의 [start, end] 범위를 찾는다.
+ * 규칙:
+ * - 헤더 줄은 "user" 또는 user 로 시작 가능
+ * - 뒤의 빈 줄 / 들여쓴 줄은 같은 stanza 로 간주
+ */
+function freeradius_find_user_stanza_ranges(array $lines, string $username): array
+{
+	$ranges = [];
+	$pattern = '/^\s*"?' . preg_quote($username, '/') . '"?\s+/';
+
+	$count = count($lines);
+
+	for ($i = 0; $i < $count; $i++) {
+		if (!preg_match($pattern, $lines[$i])) {
+			continue;
+		}
+
+		$start = $i;
+		$end = $i;
+
+		for ($j = $i + 1; $j < $count; $j++) {
+			$line = $lines[$j];
+
+			// 빈 줄은 stanza 일부로 허용
+			if (trim($line) === '') {
+				$end = $j;
+				continue;
+			}
+
+			// 들여쓴 continuation line
+			if (preg_match('/^[ \t]+/', $line)) {
+				$end = $j;
+				continue;
+			}
+
+			// 다음 stanza 시작
+			break;
+		}
+
+		$ranges[] = [$start, $end];
+		$i = $end;
+	}
+
+	return $ranges;
+}
+
+/**
+ * 지정한 파일에서 특정 user stanza를 교체한다.
+ * - 정확히 1개면 교체
+ * - 0개면 append
+ * - 2개 이상이면 중복으로 간주하고 실패
+ */
+function freeradius_replace_single_user_stanza(string $filename, string $username, string $new_stanza): bool
+{
+	if (!is_file($filename)) {
+		log_error("freeradius_replace_single_user_stanza: file not found: {$filename}");
+		return false;
+	}
+
+	$lines = @file($filename, FILE_IGNORE_NEW_LINES);
+	if (!is_array($lines)) {
+		log_error("freeradius_replace_single_user_stanza: unable to read {$filename}");
+		return false;
+	}
+
+	$ranges = freeradius_find_user_stanza_ranges($lines, $username);
+	$new_lines = freeradius_stanza_to_lines($new_stanza);
+
+	if (empty($new_lines)) {
+		log_error("freeradius_replace_single_user_stanza: empty stanza for {$username}");
+		return false;
+	}
+
+	if (count($ranges) > 1) {
+		log_error("freeradius_replace_single_user_stanza: duplicate stanza found for {$username} in {$filename}");
+		return false;
+	}
+
+	if (count($ranges) === 1) {
+		$start = $ranges[0][0];
+		$end = $ranges[0][1];
+		$length = $end - $start + 1;
+
+		array_splice($lines, $start, $length, $new_lines);
+	} else {
+		// 없으면 append
+		if (!empty($lines) && trim(end($lines)) !== '') {
+			$lines[] = '';
+		}
+		foreach ($new_lines as $line) {
+			$lines[] = $line;
+		}
+	}
+
+	$new_contents = implode("\n", $lines) . "\n";
+
+	if (!freeradius_atomic_write_file($filename, $new_contents)) {
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * radiusd 설정 검사
+ */
+function freeradius_validate_radiusd_config(): bool
+{
+	$out = [];
+	$ret = 1;
+
+	@exec('/usr/local/sbin/radiusd -C 2>&1', $out, $ret);
+
+	if ($ret !== 0) {
+		log_error("freeradius_validate_radiusd_config: radiusd -C failed: " . implode(' | ', $out));
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * radiusd 에 변경을 반영한다.
+ *
+ * [#23 중요] 이 박스에서 kill -HUP 은 rlm_files(users/authorize)를 재로딩하지 못한다(실측).
+ *   HUP 는 listener(1812/1813)를 닫지 않아 accounting 무중단이지만, 사용자 파일 변경
+ *   (비밀번호/계정)은 HUP 로 런타임 반영되지 않는다. 게다가 kill 이 시그널 전달에만 성공해도
+ *   ($ret==0) success 로 반환되어, 호출측(자가/관리자 PW 변경)은 "성공"으로 오인하지만 live
+ *   데몬은 옛 비번을 유지하는 silent-fail 이 발생한다. → 사용자 파일 변경을 반영하려면 반드시
+ *   $allow_hup=false 로 호출해 전체 재시작할 것.
+ *
+ * 전체 재시작(service radiusd onerestart)은 재시작 창 동안 1813 listener 가 닫혀
+ * Accounting Start/Interim/Stop 이 유실될 수 있으나(수초), NAS 재전송 + 누적카운터 자가복구
+ * (#7)로 대부분 흡수된다. (근본 해결은 인증 소스를 radcheck(SQL)로 옮겨 reload 자체를
+ *  없애는 것 — step3.)
+ *
+ * @param bool $allow_hup  true  : HUP 우선(전달 불가 시에만 재시작). 단 이 박스에서는 HUP 가
+ *                                 rlm_files 를 재로딩하지 않으므로 사용자 파일 변경엔 부적합.
+ *                         false : 곧바로 전체 재시작. 사용자 파일(비번/계정) 변경엔 이 값을 쓸 것.
+ */
+function freeradius_reload_or_restart_radiusd(bool $allow_hup = true): bool
+{
+	if (function_exists('platform_booting') && platform_booting()) {
+		return true;
+	}
+
+	if (!freeradius_validate_radiusd_config()) {
+		return false;
+	}
+
+	/*
+     * HUP 는 명시적으로 허용된 경우에만 시도한다.
+     * 사용자 파일(users/authorize) 변경은 HUP 로 반영되지 않으므로
+     * 기본값($allow_hup=false)에서는 곧바로 전체 재시작으로 넘어간다.
+     */
+	if ($allow_hup) {
+		/*
+	     * PID 파일 우선
+	     */
+		$pid = '';
+
+		if (is_file('/var/run/radiusd.pid')) {
+			$pid = trim((string)@file_get_contents('/var/run/radiusd.pid'));
+		}
+
+		/*
+	     * PID 파일 없으면 pgrep
+	     */
+		if ($pid === '') {
+			$out = [];
+			$ret = 1;
+
+			@exec("/bin/pgrep -f 'radiusd' 2>/dev/null | head -n 1", $out, $ret);
+
+			if ($ret === 0 && !empty($out[0])) {
+				$pid = trim($out[0]);
+			}
+		}
+
+		/*
+	     * HUP reload
+	     */
+		if ($pid !== '' && ctype_digit($pid)) {
+			$out = [];
+			$ret = 1;
+
+			@exec('/bin/kill -HUP ' . escapeshellarg($pid) . ' 2>&1', $out, $ret);
+
+			fr_debug_log("radiusd HUP pid={$pid}, ret={$ret}, out=" . implode(' | ', $out));
+
+			if ($ret === 0) {
+				return true;
+			}
+		}
+	}
+
+	/*
+     * 전체 재시작 — 사용자 파일(users/authorize) 변경을 확실히 반영한다.
+     */
+	$out = [];
+	$ret = 1;
+
+	@exec('/usr/sbin/service radiusd onerestart 2>&1', $out, $ret);
+
+	fr_debug_log("radiusd onerestart ret={$ret}, out=" . implode(' | ', $out));
+
+	return ($ret === 0);
+}
+
+function freeradius_update_runtime_user_files(string $username, string $new_stanza): bool
+{
+	$targets = freeradius_get_target_user_files();
+
+	foreach ($targets as $filename) {
+		if (!freeradius_replace_single_user_stanza($filename, $username, $new_stanza)) {
+			log_error("freeradius_update_runtime_user_files: failed updating {$filename} for {$username}");
+			return false;
+		}
+	}
+
+	return true;
+}
+
+function fr_debug_log(string $msg): void
+{
+	$logfile = '/tmp/freeradius_update_debug.log';
+
+	$line = date('Y-m-d H:i:s') . ' ' . $msg . PHP_EOL;
+
+	@file_put_contents($logfile, $line, FILE_APPEND | LOCK_EX);
+}
+
+function freeradius_update_user(
+	?string $username,
+	bool    $persist_config = true,
+	bool    $reload_radiusd = true,   // true=HUP 리로드, false=리로드 보류(호출측 일괄 리로드용)
+	bool    $sync_changes = false
+) {
+	global $config;
+
+	// null/빈 username 은 치명적 TypeError 대신 조용히 false 반환
+	if ($username === null || $username === '') {
+		fr_debug_log("freeradius_update_user: SKIP empty/null username");
+		return false;
+	}
+
+	fr_debug_log("freeradius_update_user: START username={$username}");
+
+	$lock_file = '/var/run/freeradius_users_resync.lock';
+	$lock_fp = @fopen($lock_file, 'c');
+
+	if ($lock_fp === false) {
+		fr_debug_log("freeradius_update_user: FAIL unable to open lock file {$lock_file}");
+		return false;
+	}
+
+	fr_debug_log("freeradius_update_user: lock file opened");
+
+	if (!@flock($lock_fp, LOCK_EX)) {
+		fclose($lock_fp);
+		fr_debug_log("freeradius_update_user: FAIL unable to acquire lock {$lock_file}");
+		return false;
+	}
+
+	fr_debug_log("freeradius_update_user: lock acquired");
+
+	try {
+		if (!is_array($config['installedpackages']['freeradius']['config'] ?? null)) {
+			fr_debug_log("freeradius_update_user: freeradius user config is empty");
+			return true;
+		}
+
+		fr_debug_log(
+			"freeradius_update_user: user config count=" .
+			count($config['installedpackages']['freeradius']['config'])
+		);
+
+		$target_index = null;
+
+		foreach ($config['installedpackages']['freeradius']['config'] as $idx => $user) {
+			$cfg_username = $user['varusersusername'] ?? '';
+
+			fr_debug_log("freeradius_update_user: scan idx={$idx}, username={$cfg_username}");
+
+			if ($cfg_username === $username) {
+				$target_index = $idx;
+				break;
+			}
+		}
+
+		if ($target_index === null) {
+			fr_debug_log("freeradius_update_user: FAIL user not found username={$username}");
+			return false;
+		}
+
+		fr_debug_log("freeradius_update_user: user found index={$target_index}");
+
+		if ($persist_config && function_exists('write_config')) {
+			fr_debug_log("freeradius_update_user: write_config start");
+
+			write_config("FreeRADIUS: update user attributes for {$username}");
+
+			fr_debug_log("freeradius_update_user: write_config done");
+		} else {
+			fr_debug_log(
+				"freeradius_update_user: write_config skipped persist_config=" .
+				var_export($persist_config, true) .
+				", function_exists=" .
+				var_export(function_exists('write_config'), true)
+			);
+		}
+
+		if ($sync_changes && function_exists('freeradius_sync_on_changes')) {
+			fr_debug_log("freeradius_update_user: freeradius_sync_on_changes start");
+
+			freeradius_sync_on_changes();
+
+			fr_debug_log("freeradius_update_user: freeradius_sync_on_changes done");
+		} else {
+			fr_debug_log(
+				"freeradius_update_user: sync skipped sync_changes=" .
+				var_export($sync_changes, true) .
+				", function_exists=" .
+				var_export(function_exists('freeradius_sync_on_changes'), true)
+			);
+		}
+
+		if (!isset($config['installedpackages']['freeradius']['config'][$target_index]) ||
+			!is_array($config['installedpackages']['freeradius']['config'][$target_index])) {
+			fr_debug_log("freeradius_update_user: FAIL target user missing after sync index={$target_index}");
+			return false;
+		}
+
+		$target_user = $config['installedpackages']['freeradius']['config'][$target_index];
+
+		fr_debug_log("freeradius_update_user: build stanza start username={$username}");
+
+		$new_stanza = freeradius_build_single_user_stanza($target_user);
+
+		fr_debug_log("freeradius_update_user: new_stanza length=" . strlen($new_stanza));
+		fr_debug_log(
+			"freeradius_update_user: new_stanza preview=" .
+			str_replace("\n", " | ", substr($new_stanza, 0, 800))
+		);
+
+		if (trim($new_stanza) === '') {
+			fr_debug_log("freeradius_update_user: FAIL empty stanza username={$username}");
+			return false;
+		}
+
+		fr_debug_log("freeradius_update_user: update runtime user files start username={$username}");
+
+		$runtime_result = freeradius_update_runtime_user_files($username, $new_stanza);
+
+		fr_debug_log(
+			"freeradius_update_user: freeradius_update_runtime_user_files result=" .
+			var_export($runtime_result, true)
+		);
+
+		if (!$runtime_result) {
+			fr_debug_log("freeradius_update_user: FAIL update runtime user files username={$username}");
+			return false;
+		}
+
+		fr_debug_log("freeradius_update_user: radius reload/restart start username={$username}");
+
+		// [#23 A] rlm_files(users/authorize) 변경은 이 박스에서 HUP 로 런타임 반영되지
+		// 않는다(실측: 비밀번호 변경 후 radiusd 재시작해야만 새 비번이 먹음). HUP 는 시그널
+		// 전달만 성공("ret=0")해도 success 로 처리되어, 사용자에겐 "변경 성공"이 뜨지만 live
+		// 데몬은 옛 비번을 유지하는 silent-fail 이 발생했다. 따라서 변경이 즉시 먹도록 전체
+		// 재시작으로 적용한다($allow_hup=false). 재시작 창에서 accounting(1813) 이 잠깐 닫히나
+		// (수초) NAS 재전송 + 누적카운터 자가복구(#7)로 대부분 흡수된다. 근본 해결은 인증
+		// 소스를 radcheck(SQL) 로 옮겨 reload 자체를 없애는 것(step3).
+		// $reload_radiusd=false 면 호출측이 일괄 리로드하므로 여기서는 건너뛴다(배치용).
+		if ($reload_radiusd) {
+			$radius_result = freeradius_reload_or_restart_radiusd(false);
+		} else {
+			$radius_result = true;
+		}
+
+		fr_debug_log(
+			"freeradius_update_user: freeradius_reload_or_restart_radiusd result=" .
+			var_export($radius_result, true)
+		);
+
+		if (!$radius_result) {
+			fr_debug_log("freeradius_update_user: FAIL radiusd apply username={$username}");
+			return false;
+		}
+
+		fr_debug_log("freeradius_update_user: SUCCESS username={$username}");
+
+		return true;
+
+	} catch (Throwable $e) {
+		fr_debug_log(
+			"freeradius_update_user: EXCEPTION username={$username}, message=" .
+			$e->getMessage() .
+			", file=" .
+			$e->getFile() .
+			", line=" .
+			$e->getLine()
+		);
+
+		return false;
+
+	} finally {
+		@flock($lock_fp, LOCK_UN);
+		fclose($lock_fp);
+
+		fr_debug_log("freeradius_update_user: lock released username={$username}");
+	}
+}
+
+/**
+ * ── #23 step3-A: radcheck(SQL) dual-write 헬퍼 ────────────────────────────────
+ * PW writer 가 config.xml/files 와 함께 radcheck 도 갱신하게 해, 인증 권위를
+ * radcheck 로 옮기는 컷오버(3b: authorize 에서 sql override)의 토대를 만든다.
+ * 이 단계만으론 동작 변화 없음(files 가 여전히 권위) — radcheck 를 항상 최신으로 유지할 뿐.
+ *
+ * - 접속 파라미터는 freeradiussqlconf 에서 읽음(하드코딩 없음).
+ * - mysql CLI + 임시 defaults-extra-file(비번 argv 노출 방지) + --connect-timeout 로 bounded.
+ * - 실패해도 throw 하지 않고 false 반환(기존 PW 흐름을 깨지 않음 — degrade).
+ * - 배치(sync_users/delete_users)는 단일 SQL 트랜잭션으로 한 번에 실행(락 밖 호출 권장).
+ */
+function freeradius_radcheck_conn_params() {
+	global $config;
+	if (!is_array($config['installedpackages']['freeradiussqlconf']['config'][0] ?? null)) {
+		return null;
+	}
+	$s = $config['installedpackages']['freeradiussqlconf']['config'][0];
+	return array(
+		'server' => ($s['varsqlconfserver']        ?? '') ?: 'localhost',
+		'port'   => ($s['varsqlconfport']          ?? '') ?: '3306',
+		'login'  => ($s['varsqlconflogin']         ?? '') ?: 'radius',
+		'pass'   => ($s['varsqlconfpassword']      ?? '') ?: 'radpass',
+		'db'     => ($s['varsqlconfradiusdb']      ?? '') ?: 'radius',
+		'table'  => ($s['varsqlconfauthchecktable'] ?? '') ?: 'radcheck',
+	);
+}
+
+/* 암호화 방식 → radcheck (attribute, value). build_single_user_stanza 의 switch 와 동일. */
+function freeradius_radcheck_password_item($encryption, $rawpassword) {
+	$enc = ($encryption !== '' && $encryption !== null) ? $encryption : 'Cleartext-Password';
+	switch ($enc) {
+		case 'MD5-Password':        return array('MD5-Password', md5((string)$rawpassword));
+		case 'MD5-Password-hashed': return array('MD5-Password', (string)$rawpassword);
+		case 'NT-Password-hashed':  return array('NT-Password', (string)$rawpassword);
+		default:                    return array($enc, (string)$rawpassword);
+	}
+}
+
+function freeradius_radcheck_sql_str($s) {
+	return str_replace(array('\\', "'"), array('\\\\', "\\'"), (string)$s);
+}
+
+function freeradius_radcheck_mysql_bin() {
+	foreach (array('mysql', 'mariadb') as $name) {
+		$out = array(); $ret = 1;
+		@exec('command -v ' . escapeshellarg($name) . ' 2>/dev/null', $out, $ret);
+		if ($ret === 0 && !empty($out[0]) && is_executable(trim($out[0]))) {
+			return trim($out[0]);
+		}
+	}
+	foreach (array('/usr/local/bin/mysql', '/usr/local/bin/mariadb') as $p) {
+		if (is_executable($p)) { return $p; }
+	}
+	return '';
+}
+
+function freeradius_radcheck_exec_sql($sql) {
+	$c = freeradius_radcheck_conn_params();
+	if ($c === null) { return false; }
+	$mysql = freeradius_radcheck_mysql_bin();
+	if ($mysql === '') {
+		log_error('freeradius_radcheck_exec_sql: mysql client not found');
+		return false;
+	}
+	$cnf = @tempnam('/tmp', 'frrc');
+	$sqlfile = @tempnam('/tmp', 'frrcsql');
+	if ($cnf === false || $sqlfile === false) {
+		if ($cnf !== false) { @unlink($cnf); }
+		if ($sqlfile !== false) { @unlink($sqlfile); }
+		return false;
+	}
+	@file_put_contents($cnf,
+		"[client]\nhost={$c['server']}\nport={$c['port']}\nuser={$c['login']}\n"
+		. 'password="' . str_replace('"', '\\"', $c['pass']) . "\"\n");
+	@chmod($cnf, 0600);
+	@file_put_contents($sqlfile, $sql);
+	@chmod($sqlfile, 0600);
+
+	$cmd = escapeshellarg($mysql)
+		. ' --defaults-extra-file=' . escapeshellarg($cnf)
+		. ' --connect-timeout=4 '
+		. escapeshellarg($c['db'])
+		. ' < ' . escapeshellarg($sqlfile) . ' 2>&1';
+	$out = array(); $ret = 1;
+	@exec($cmd, $out, $ret);
+	@unlink($cnf);
+	@unlink($sqlfile);
+	if ($ret !== 0) {
+		log_error('freeradius_radcheck_exec_sql failed: ' . implode(' | ', $out));
+		return false;
+	}
+	return true;
+}
+
+/* 사용자 1명의 비번 check-item 을 radcheck 에 멱등 갱신(DELETE 후 INSERT). */
+function freeradius_radcheck_sync_password($username, $rawpassword, $encryption = 'Cleartext-Password') {
+	$username = trim((string)$username);
+	if ($username === '') { return false; }
+	$c = freeradius_radcheck_conn_params();
+	if ($c === null) { return false; }
+	list($attr, $val) = freeradius_radcheck_password_item($encryption, $rawpassword);
+	if ($val === '' || $attr === '') { return false; }
+	$t = $c['table'];
+	$u = freeradius_radcheck_sql_str($username);
+	$a = freeradius_radcheck_sql_str($attr);
+	$v = freeradius_radcheck_sql_str($val);
+	$sql = "START TRANSACTION;\n"
+		. "DELETE FROM `{$t}` WHERE username='{$u}' AND attribute IN ('Cleartext-Password','NT-Password','MD5-Password');\n"
+		. "INSERT INTO `{$t}` (username, attribute, op, value) VALUES ('{$u}', '{$a}', ':=', '{$v}');\n"
+		. "COMMIT;\n";
+	return freeradius_radcheck_exec_sql($sql);
+}
+
+/* 여러 사용자 비번을 단일 SQL 트랜잭션으로 일괄 동기화. $entries[] = ['user'=>,'pass'=>,'enc'=>]. */
+function freeradius_radcheck_sync_users(array $entries) {
+	if (empty($entries)) { return true; }
+	$c = freeradius_radcheck_conn_params();
+	if ($c === null) { return false; }
+	$t = $c['table'];
+	$sql = "START TRANSACTION;\n";
+	$n = 0;
+	foreach ($entries as $e) {
+		$username = trim((string)($e['user'] ?? ''));
+		if ($username === '') { continue; }
+		list($attr, $val) = freeradius_radcheck_password_item($e['enc'] ?? 'Cleartext-Password', $e['pass'] ?? '');
+		if ($val === '' || $attr === '') { continue; }
+		$u = freeradius_radcheck_sql_str($username);
+		$a = freeradius_radcheck_sql_str($attr);
+		$v = freeradius_radcheck_sql_str($val);
+		$sql .= "DELETE FROM `{$t}` WHERE username='{$u}' AND attribute IN ('Cleartext-Password','NT-Password','MD5-Password');\n";
+		$sql .= "INSERT INTO `{$t}` (username, attribute, op, value) VALUES ('{$u}', '{$a}', ':=', '{$v}');\n";
+		$n++;
+	}
+	$sql .= "COMMIT;\n";
+	if ($n === 0) { return true; }
+	return freeradius_radcheck_exec_sql($sql);
+}
+
+/* 여러 사용자의 radcheck 행을 일괄 삭제(계정 삭제 시). */
+function freeradius_radcheck_delete_users(array $usernames) {
+	$names = array();
+	foreach ($usernames as $nm) {
+		$nm = trim((string)$nm);
+		if ($nm !== '') { $names[] = $nm; }
+	}
+	if (empty($names)) { return true; }
+	$c = freeradius_radcheck_conn_params();
+	if ($c === null) { return false; }
+	$t = $c['table'];
+	$sql = "START TRANSACTION;\n";
+	foreach ($names as $nm) {
+		$u = freeradius_radcheck_sql_str($nm);
+		$sql .= "DELETE FROM `{$t}` WHERE username='{$u}';\n";
+	}
+	$sql .= "COMMIT;\n";
+	return freeradius_radcheck_exec_sql($sql);
+}
 
 function freeradius_authorizedmacs_resync($restart_svc = true, $via_rpc = false) {
 	global $config;
@@ -861,7 +2038,7 @@ function freeradius_authorizedmacs_resync($restart_svc = true, $via_rpc = false)
 			$varmacsmaxbandwidthdown = (int) $varmacsmaxbandwidthdown * 1024;
 
 			// Accounting-Interim-Interval
-			if (($users['varmacsacctinteriminterval'] >= '0') && ($users['varmacsacctinteriminterval'] < '60')) {
+			if (($macs['varmacsacctinteriminterval'] >= '0') && ($macs['varmacsacctinteriminterval'] < '60')) {
 				$varmacsacctinteriminterval = 60;
 			} else {
 				$varmacsacctinteriminterval = $users['varmacsacctinteriminterval'];
@@ -1325,7 +2502,7 @@ EOD;
 				file_put_contents(FREERADIUS_CERTS . "/server_key.pem", base64_decode($svr_cert['prv']));
 			}
 			if (base64_decode($svr_cert['crt'])) {
-				file_put_contents(FREERADIUS_CERTS . "/server_cert.pem", 
+				file_put_contents(FREERADIUS_CERTS . "/server_cert.pem",
 					base64_decode($svr_cert['crt']) . "\n" .
 					ca_chain($svr_cert));
 			}
@@ -1354,8 +2531,8 @@ EOD;
 	if ($eapconf['vareapconfenablecheckcertissuer'] == 'on') {
 		$ca_subject = "";
 		if (empty($eapconf['vareapconfcasubject'] &&
-		    ($ca_cert != false) &&
-		    !$cert_error)) {
+			($ca_cert != false) &&
+			!$cert_error)) {
 			$ca_details = openssl_x509_parse(base64_decode($ca_cert['crt']));
 			if (is_array($ca_details) && !empty($ca_details['name'])) {
 				$ca_subject = $ca_details['name'];
@@ -1928,7 +3105,7 @@ EOD;
 
 	/* Only write this out if accounting is enabled on one of the SQL instances */
 	if ((($sqlconf['varsqlconfincludeenable'] == 'on') && ($sqlconf['varsqlconfenableaccounting'] == 'Enable')) ||
-	    (($sqlconf['varsqlconf2includeenable'] == 'on') && ($sqlconf['varsqlconf2enableaccounting'] == 'Enable'))) {
+		(($sqlconf['varsqlconf2includeenable'] == 'on') && ($sqlconf['varsqlconf2enableaccounting'] == 'Enable'))) {
 		safe_mkdir(FREERADIUS_MODSENABLED);
 		file_put_contents($filename, $conf);
 		chmod($filename, 0640);
@@ -2010,7 +3187,7 @@ EOD;
 
 	/* If neither LDAP mode or server is configured, do not activate the LDAP module */
 	if (!$arrmodulesldap['varmodulesldapenableauthorize'] && !$arrmodulesldap['varmodulesldapenableauthenticate'] &&
-	    !$arrmodulesldap['varmodulesldap2enableauthorize'] && !$arrmodulesldap['varmodulesldap2enableauthenticate']) {
+		!$arrmodulesldap['varmodulesldap2enableauthorize'] && !$arrmodulesldap['varmodulesldap2enableauthenticate']) {
 		/* Deactivate LDAP module if it is not enabled */
 		@unlink_if_exists(FREERADIUS_MODSENABLED . '/ldap');
 	}
@@ -2072,7 +3249,7 @@ EOD;
 	if (notfound || noop) {
 
 EOD;
-	$varsqlconfauthcounters = <<<EOD
+		$varsqlconfauthcounters = <<<EOD
 
 	dailycounter
 	monthlycounter
@@ -2086,12 +3263,75 @@ EOD;
 	if (true) {
 
 EOD;
-	$varsqlconfauthcounters = <<<EOD
+		$varsqlconfauthcounters = <<<EOD
 
 	-daily
 	-weekly
 	-monthly
 	-forever
+EOD;
+	}
+
+	// ── #23 step3-B: radcheck(SQL) 비번 권위화 (플래그 게이트, 기본 off) ─────────────
+	// 켜지면 files 가 사용자를 찾아도 sql1(radcheck)을 항상 실행해, radcheck 의 ':=' 비번
+	// check-item 이 files 비번을 덮어쓴다 → 비번 변경이 radiusd reload/재시작 없이 즉시 반영
+	// (재시작으로 인한 accounting(1813) 단절도 소멸). 전제: step1(SQL authorize=Enable) +
+	// step2/3-A(radcheck 적재·dual-write) 선행.
+	// 플래그가 꺼져 있으면 else 가 기존과 바이트 동일한 블록을 생성 → 코드 배포만으론 동작 무변경.
+	// 토글: /usr/local/sbin/freeradius_enable_radcheck_override.php (radiusd -C 검증 + 자동 롤백).
+	// 플래그를 freeradiussqlconf 가 아닌 $config['system'] 에 두는 이유: GUI 패키지 페이지 저장이
+	// XML 미정의 키를 떨굴 수 있어서(#8/#15 와 같은 원칙 — 전역 플래그는 system). 떨궈져도
+	// 안전한 방향(기존 files 권위로 복귀)으로만 강등된다(3-A dual-write 가 files 를 최신 유지).
+	$radcheck_override_on = ((($config['system']['freeradius_radcheck_override'] ?? '') === 'on')
+		&& ($sqlconf['varsqlconfincludeenable'] == 'on')
+		&& ($sqlconf['varsqlconfenableauthorize'] == 'Enable'));
+	if ($radcheck_override_on) {
+		// 상태별 동작: files O/radcheck O/DB up → radcheck 비번(즉시 반영, 목적) |
+		// files O/radcheck X → files 비번(안전 강등) | files O/DB down → files 비번(graceful
+		// fallback) | files X/radcheck O → radcheck 비번 | files X/radcheck X → reject(기존 동일).
+		// 'sql1 { fail = 1 }' : fail(DB 불통)의 기본 액션(return=섹션 중단)을 우선순위 1 로 바꿔
+		// 다음 줄로 계속 진행하게 한다. 바로 뒤 'if (fail) { ok }' 가 rcode 를 ok 로 회복시켜
+		// files 비번으로 인증이 이어진다(DB 불통이 전면 거부로 번지는 것을 차단).
+		$varauthorizeuserlookup = <<<EOD
+	files
+	if (ok || updated) {
+		# mark "user exists in files" (used by the final reject decision below)
+		update control {
+			&Tmp-Integer-0 := 1
+		}
+	}
+	if ("%{%{Control:Auth-Type}:-No-Accept}" != "Accept") {
+		# radcheck(SQL) is the password authority: its ':=' check-items override
+		# the files password. No radcheck row -> notfound (files password kept).
+		sql1 {
+			fail = 1
+		}
+		if (fail) {
+			# MySQL unreachable -> keep files password (graceful fallback)
+			ok
+		}
+		elsif ((notfound || noop) && ("%{%{control:Tmp-Integer-0}:-0}" != "1")) {
+			# user in neither files nor radcheck -> same as before: ldap fallback, then reject
+			{$varmodulesldapenableauthorize}
+			if (notfound || noop) {
+				reject
+			}
+		}
+	}
+EOD;
+	} else {
+		// 기존 경로(기본): files 우선, 못 찾은 경우에만 sql/ldap 폴백.
+		// (step3-B 도입 전 출력과 바이트 동일해야 한다 — 들여쓰기 포함 수정 금지)
+		$varauthorizeuserlookup = <<<EOD
+	files
+	if ((notfound || noop) && ("%{%{Control:Auth-Type}:-No-Accept}" != "Accept")) {
+		{$varsqlconfauthorize}
+			{$varmodulesldapenableauthorize}
+			if (notfound || noop) {
+				reject
+			}
+		}
+	}
 EOD;
 	}
 
@@ -2229,7 +3469,7 @@ EOD;
 
 			// if interface-type = coa
 			if ($item['varinterfacetype'] == 'coa') {
-			// Enables virtual-server coa because interface-type is coa
+				// Enables virtual-server coa because interface-type is coa
 				symlink(FREERADIUS_SITESAVAIL . "/coa", FREERADIUS_SITESENABLED);
 				$conf .= <<<EOD
 listen {
@@ -2279,15 +3519,7 @@ authorize {
 #		updated = return
 	}
 #	unix
-	files
-	if ((notfound || noop) && ("%{%{Control:Auth-Type}:-No-Accept}" != "Accept")) {
-		{$varsqlconfauthorize}
-			{$varmodulesldapenableauthorize}
-			if (notfound || noop) {
-				reject
-			}
-		}
-	}
+{$varauthorizeuserlookup}
 	{$varsqlconfauthcounters}
 	# Formerly checkval
 	if (&request:Calling-Station-Id == &control:Calling-Station-Id) {
@@ -2574,7 +3806,7 @@ function freeradius_do_xmlrpc_sync($sync_to_ip, $username, $password, $varsyncpo
 	$xml = array();
 
 	$syncsections = array('freeradius', 'freeradiusauthorizedmacs', 'freeradiusclients', 'freeradiusinterfaces',
-	'freeradiussettings', 'freeradiuseapconf', 'freeradiussqlconf', 'freeradiusmodulesldap');
+		'freeradiussettings', 'freeradiuseapconf', 'freeradiussqlconf', 'freeradiusmodulesldap');
 	foreach ($syncsections as $section) {
 		if (is_array($config['installedpackages'][$section])) {
 			$xml[$section] = $config['installedpackages'][$section];
@@ -3584,9 +4816,9 @@ exit 11
 
 EOD;
 
-	$filename = FREERADIUS_SCRIPTS . '/otpverify.sh';
-	file_put_contents($filename, $conf);
-	chmod($filename, 0750);
+		$filename = FREERADIUS_SCRIPTS . '/otpverify.sh';
+		file_put_contents($filename, $conf);
+		chmod($filename, 0750);
 	}
 }
 
@@ -3697,36 +4929,85 @@ EOD;
 
 function freeradius_datacounter_auth_resync() {
 	global $config;
-	$conf = '';
 
-	$conf .= <<<EOD
+	$conf = <<<'DATACOUNTER_AUTH_SH'
 #!/bin/sh
 ### USAGE: datacounter_auth.sh USERNAME TIMERANGE
-### We need this parameters from freeradius users file and ../raddb/modules/datacounter_acct
-USERNAME=`echo -n "\\$1" | sed 's/[^0-9a-zA-Z._:-]/X/g' `
-TIMERANGE=`echo -n "\\$2" | sed 's/[^a-z]//g' `
+### Example: datacounter_auth.sh crewpay-crust01 monthly
 
+LOGFILE="/var/log/wireless.log"
 
-### This is to make sure there is a used-octets file after the cronjob resetted the counter
-if [ -e "/var/log/radacct/datacounter/\$TIMERANGE/max-octets-\$USERNAME" ] && [ ! -e "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME" ]; then
-	echo 0 > "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME"
-	rm "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\$USERNAME-"*
+log() {
+	printf '%s datacounter_auth: %s\n' "$(date '+%b %e %H:%M:%S')" "$*" >> "$LOGFILE" 2>/dev/null
+}
+
+# 로그 파일 없으면 생성 시도
+: >> "$LOGFILE" 2>/dev/null || true
+
+USERNAME=`echo -n "$1" | sed 's/[^0-9a-zA-Z._:-]/X/g'`
+TIMERANGE=`echo -n "$2" | sed 's/[^a-z]//g'`
+
+BASE_DIR="/var/log/radacct/datacounter/$TIMERANGE"
+MAX_FILE="$BASE_DIR/max-octets-$USERNAME"
+USED_FILE="$BASE_DIR/used-octets-$USERNAME"
+
+### Invalid argument guard
+if [ -z "$USERNAME" ] || [ -z "$TIMERANGE" ]; then
+	log "FreeRADIUS: datacounter_auth.sh invalid arguments. USERNAME='$USERNAME', TIMERANGE='$TIMERANGE'"
+	exit 1
 fi
 
-### The next two lines are just for getting values for logging output
-MAXOCTETSUSERNAMEMB=$((`/bin/cat "/var/log/radacct/datacounter/\$TIMERANGE/max-octets-\$USERNAME"`/1024/1024))
-USEDOCTETSUSERNAMEMB=`/bin/cat "/var/log/radacct/datacounter/\$TIMERANGE/used-octets-\${USERNAME}"-* | /usr/bin/awk '{ SUM += \$1; } END { print int(SUM/1024/1024); }'`
+### If user has no max-octets file, do not block login
+if [ ! -e "$MAX_FILE" ]; then
+	exit 0
+fi
 
-### We check if MAX-OCTETS-USERNAME is greater than USED-OCTETS-USERNAME and accept or reject the user
-if [ \$MAXOCTETSUSERNAMEMB -gt \$USEDOCTETSUSERNAMEMB ]; then
-	logger -f /var/log/system.log "FreeRADIUS: User \$USERNAME has used \$USEDOCTETSUSERNAMEMB MB of \$MAXOCTETSUSERNAMEMB MB \$TIMERANGE allotted traffic. The login request was accepted."
+### Make sure base used-octets file exists after cron reset
+if [ ! -e "$USED_FILE" ]; then
+	echo 0 > "$USED_FILE"
+	rm -f "$USED_FILE-"*
+fi
+
+### Read max bytes
+MAXOCTETSUSERNAME=`/bin/cat "$MAX_FILE" 2>/dev/null | sed 's/[^0-9]//g'`
+
+if [ -z "$MAXOCTETSUSERNAME" ]; then
+	log "FreeRADIUS: User $USERNAME has invalid max-octets value. Login request was denied."
+	exit 1
+fi
+
+### Sum used bytes
+### Important:
+### Do NOT use: cat used-octets-* | awk ...
+### Because files without newline can be concatenated like 3374670277 + 371347344 => 3374670277371347344
+### Glob 은 base 파일 + "-*" 세션 파일만 합산한다. "$USED_FILE"* (대시 없음) 는
+### 같은 prefix 의 다른 사용자(예: crust1 ↔ crust10)까지 합산해 과다계상되므로 쓰지 않는다.
+USEDOCTETSUSERNAME=`/usr/bin/awk '
+	/^[0-9]+$/ {
+		SUM += $1
+	}
+	END {
+		printf "%.0f\n", SUM
+	}
+' "$USED_FILE" "$USED_FILE"-* 2>/dev/null`
+
+if [ -z "$USEDOCTETSUSERNAME" ]; then
+	USEDOCTETSUSERNAME=0
+fi
+
+### Convert bytes to MB only for log output
+MAXOCTETSUSERNAMEMB=`/usr/bin/awk -v v="$MAXOCTETSUSERNAME" 'BEGIN { printf "%.2f\n", v / 1048576 }'`
+USEDOCTETSUSERNAMEMB=`/usr/bin/awk -v v="$USEDOCTETSUSERNAME" 'BEGIN { printf "%.2f\n", v / 1048576 }'`
+
+### Compare bytes, not MB
+if [ "$MAXOCTETSUSERNAME" -gt "$USEDOCTETSUSERNAME" ]; then
+	log "FreeRADIUS: User $USERNAME has used $USEDOCTETSUSERNAMEMB MB of $MAXOCTETSUSERNAMEMB MB $TIMERANGE allotted traffic. The login request was accepted."
 	exit 0
 else
-	logger -f /var/log/system.log "FreeRADIUS: User \$USERNAME has reached the \$TIMERANGE amount of upload and download traffic (\$USEDOCTETSUSERNAMEMB MB of \$MAXOCTETSUSERNAMEMB MB). The login request was denied."
-	exit 99
+	log "FreeRADIUS: User $USERNAME has reached the $TIMERANGE amount of upload and download traffic ($USEDOCTETSUSERNAMEMB MB of $MAXOCTETSUSERNAMEMB MB). The login request was denied."
+	exit 1
 fi
-
-EOD;
+DATACOUNTER_AUTH_SH;
 
 	$filename = FREERADIUS_SCRIPTS . '/datacounter_auth.sh';
 	file_put_contents($filename, $conf);
@@ -3735,9 +5016,8 @@ EOD;
 
 function freeradius_datacounter_acct_resync() {
 	global $config;
-	$conf = '';
 
-	$conf .= <<<EOD
+	$conf = <<<'DATACOUNTER_ACCT_SH'
 #!/bin/sh
 #
 # datacounter_acct.sh
@@ -3749,15 +5029,23 @@ function freeradius_datacounter_acct_resync() {
 # - Uses 64-bit value = (GW << 32) + OCTETS
 # - Adds per-interim session file (SESSFILE) and accumulates on Stop.
 # - Includes strong sanity guards to prevent overflow/garbage attributes from corrupting totals.
-# - Logs are unified with logger -t datacounter (and include range/status/sid).
+# - Logs are written to /var/log/wireless.log (and include range/status/sid).
+# - state 파일은 /var/run 아래로 이동: 리부트 시 자동 청소됨.
+# - Stop이 안 오는 세션 대비로 /var/run state TTL 청소(가볍게, 1시간에 1번) 포함.
+# - InfluxDB에는 현재 세션 누적값이 아니라 직전 Interim 대비 delta 값을 저장.
+# - 세션 변경/카운터 감소 시 reset으로 판단하고 현재값을 delta로 저장.
 #
 
 # ---------- helpers ----------
 numonly() { echo -n "$1" | tr -cd '0-9'; }
 
+# All datacounter logs generated by this script are written here.
+LOGFILE="/var/log/wireless.log"
+: >> "$LOGFILE" 2>/dev/null || true
+
 log() {
   # Usage: log "message..."
-  logger -t datacounter "$*"
+  printf '%s datacounter: %s\n' "$(date '+%b %e %H:%M:%S')" "$*" >> "$LOGFILE" 2>/dev/null
 }
 
 # Influx line protocol tag escape (space, comma, equal, backslash)
@@ -3788,8 +5076,6 @@ INFLUX_QUERY_URL="${INFLUX_BASE}/query"
 INFLUX_READY_MARK="/tmp/influx_ready_${INFLUX_DB}.stamp"
 
 curl_influx() {
-  # Usage: curl_influx [curl args...]
-  # 공통 타임아웃/조용한 옵션 + (필요시) 인증 옵션을 통일
   if [ -n "$INFLUX_USER" ] && [ -n "$INFLUX_PASS" ]; then
     curl -sS -m "$INFLUX_TIMEOUT" --connect-timeout "$INFLUX_TIMEOUT" -u "${INFLUX_USER}:${INFLUX_PASS}" "$@"
   else
@@ -3798,14 +5084,12 @@ curl_influx() {
 }
 
 influx_healthcheck() {
-  # /ping 우선, 실패하면 /health 시도
   curl_influx -I "${INFLUX_BASE}/ping" >/dev/null 2>&1 && return 0
   curl_influx "${INFLUX_BASE}/health" >/dev/null 2>&1 && return 0
   return 1
 }
 
 influx_db_exists() {
-  # SHOW DATABASES 응답에 "name":"<db>"가 있는지 확인
   resp="$(curl_influx -G "${INFLUX_QUERY_URL}" --data-urlencode "q=SHOW DATABASES" 2>/dev/null)"
   echo "$resp" | grep -q "\"name\":\"${INFLUX_DB}\""
 }
@@ -3815,7 +5099,6 @@ influx_create_db() {
 }
 
 influx_prepare() {
-  # 캐시: 최근에 준비 완료면 바로 OK
   now="$(date +%s)"
   if [ -f "$INFLUX_READY_MARK" ]; then
     last="$(cat "$INFLUX_READY_MARK" 2>/dev/null)"
@@ -3826,12 +5109,10 @@ influx_prepare() {
     fi
   fi
 
-  # 헬스체크 실패면 포기(스크립트 흐름은 유지)
   if ! influx_healthcheck; then
     return 1
   fi
 
-  # DB 없으면 생성
   if ! influx_db_exists; then
     influx_create_db
     influx_db_exists || return 1
@@ -3841,17 +5122,8 @@ influx_prepare() {
   return 0
 }
 
-#influx_write_line() {
-  # Usage: influx_write_line "line protocol..."
-  #line="$1"
-  # -f: HTTP 4xx/5xx면 실패로 처리. 실패해도 상위에서 || true로 무시 가능
-  #curl_influx -f -H 'Content-Type: text/plain' --data-binary "$line" "${INFLUX_WRITE_URL}" >/dev/null 2>&1
-
-#}
 influx_write_line() {
   line="$1"
-
-  # 응답/에러를 잠깐이라도 잡아서 원인을 남김
   resp="$(curl_influx -i -H 'Content-Type: text/plain' --data-binary "$line" "${INFLUX_WRITE_URL}" 2>&1)"
   rc=$?
 
@@ -3860,13 +5132,170 @@ influx_write_line() {
     return 1
   fi
 
-  # 성공이면 보통 HTTP/1.1 204 No Content
   echo "$resp" | grep -q " 204 " || {
     log "INFLUX WRITE NON-204 url=${INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '\n' ' ' | cut -c1-300)"
     return 1
   }
 
   return 0
+}
+
+# ---------- Central InfluxDB export helpers (1.8.x) ----------
+# 중앙/가상 서버용. 여러 선박의 동일 USER ID가 중복될 수 있으므로
+# measurement를 선박별로 나누지 않고 vessel_imo/user tag로 구분한다.
+# DB는 이미 생성되어 있다고 가정하므로 CREATE DATABASE 방어 코드는 넣지 않는다.
+CENTRAL_INFLUX_HOST="10.8.128.1"
+CENTRAL_INFLUX_PORT="8086"
+CENTRAL_INFLUX_DB="wifiusage"
+CENTRAL_INFLUX_PRECISION="m"
+CENTRAL_INFLUX_TIMEOUT="10"   # 중앙은 위성회선 너머(원격)라 1초로는 잦은 드롭 → 10초
+CENTRAL_INFLUX_CACHE_SEC="600"
+CENTRAL_MEASUREMENT="wifi_usage"
+
+# 인증이 켜져 있으면 채우세요 (비우면 인증 없이 동작)
+CENTRAL_INFLUX_USER=""
+CENTRAL_INFLUX_PASS=""
+
+CENTRAL_INFLUX_BASE="http://${CENTRAL_INFLUX_HOST}:${CENTRAL_INFLUX_PORT}"
+CENTRAL_INFLUX_WRITE_URL="${CENTRAL_INFLUX_BASE}/write?db=${CENTRAL_INFLUX_DB}&precision=${CENTRAL_INFLUX_PRECISION}"
+CENTRAL_INFLUX_READY_MARK="/tmp/influx_ready_central_${CENTRAL_INFLUX_DB}.stamp"
+
+# vessel_imo 조회용 DB 정보
+VESSEL_DB_HOST="192.168.209.210"
+VESSEL_DB_PORT="3306"
+VESSEL_DB_NAME="radius"
+VESSEL_DB_USER="radius"
+VESSEL_DB_PASS="radius"
+VESSEL_TABLE="vesselinfo"
+VESSEL_COLUMN="vessel_imo"
+VESSEL_CACHE="/tmp/datacounter_vessel_imo.cache"
+VESSEL_FAIL_MARK="/tmp/datacounter_vessel_imo.fail"
+VESSEL_CACHE_SEC="3600"
+VESSEL_FAIL_CACHE_SEC="300"
+
+mysql_client_bin() {
+  command -v mysql 2>/dev/null && return 0
+  command -v mariadb 2>/dev/null && return 0
+  return 1
+}
+
+get_vessel_imo() {
+  now="$(date +%s)"
+
+  # 성공 캐시 사용
+  if [ -f "$VESSEL_CACHE" ]; then
+    cache_ts="$(sed -n '1p' "$VESSEL_CACHE" 2>/dev/null | tr -cd '0-9')"
+    cache_val="$(sed -n '2p' "$VESSEL_CACHE" 2>/dev/null | sed 's/[^0-9a-zA-Z.:_-]/X/g')"
+    [ -z "$cache_ts" ] && cache_ts=0
+    age=$(( now - cache_ts ))
+    if [ -n "$cache_val" ] && [ "$age" -ge 0 ] && [ "$age" -lt "$VESSEL_CACHE_SEC" ]; then
+      printf '%s' "$cache_val"
+      return 0
+    fi
+  fi
+
+  # 실패 캐시 사용: DB 장애 시 Interim마다 DB 접속 시도하지 않도록 함
+  if [ -f "$VESSEL_FAIL_MARK" ]; then
+    fail_ts="$(cat "$VESSEL_FAIL_MARK" 2>/dev/null | tr -cd '0-9')"
+    [ -z "$fail_ts" ] && fail_ts=0
+    age=$(( now - fail_ts ))
+    if [ "$age" -ge 0 ] && [ "$age" -lt "$VESSEL_FAIL_CACHE_SEC" ]; then
+      return 1
+    fi
+  fi
+
+  MYSQL_BIN="$(mysql_client_bin)" || {
+    echo "$now" > "$VESSEL_FAIL_MARK" 2>/dev/null || true
+    log "CENTRAL INFLUX SKIP reason=mysql_client_not_found"
+    return 1
+  }
+
+  # vesselinfo에는 이 클라이언트 선박의 고유 vessel_imo가 들어 있다고 가정한다.
+  vessel_raw="$($MYSQL_BIN \
+    -N -B \
+    -h "$VESSEL_DB_HOST" \
+    -P "$VESSEL_DB_PORT" \
+    -u "$VESSEL_DB_USER" \
+    --password="$VESSEL_DB_PASS" \
+    --connect-timeout=2 \
+    "$VESSEL_DB_NAME" \
+    -e "SELECT ${VESSEL_COLUMN} FROM ${VESSEL_TABLE} WHERE ${VESSEL_COLUMN} IS NOT NULL AND ${VESSEL_COLUMN} <> '' LIMIT 1;" \
+    2>/dev/null | head -n 1)"
+
+  vessel_imo="$(printf '%s' "$vessel_raw" | sed 's/[^0-9a-zA-Z.:_-]/X/g')"
+
+  if [ -z "$vessel_imo" ]; then
+    echo "$now" > "$VESSEL_FAIL_MARK" 2>/dev/null || true
+    log "CENTRAL INFLUX SKIP reason=vessel_imo_not_found db=${VESSEL_DB_HOST}:${VESSEL_DB_PORT}/${VESSEL_DB_NAME}/${VESSEL_TABLE}"
+    return 1
+  fi
+
+  {
+    echo "$now"
+    echo "$vessel_imo"
+  } > "${VESSEL_CACHE}.$$" 2>/dev/null && mv -f "${VESSEL_CACHE}.$$" "$VESSEL_CACHE" 2>/dev/null || true
+
+  rm -f "$VESSEL_FAIL_MARK" 2>/dev/null || true
+  printf '%s' "$vessel_imo"
+  return 0
+}
+
+curl_central_influx() {
+  if [ -n "$CENTRAL_INFLUX_USER" ] && [ -n "$CENTRAL_INFLUX_PASS" ]; then
+    curl -sS -m "$CENTRAL_INFLUX_TIMEOUT" --connect-timeout "$CENTRAL_INFLUX_TIMEOUT" -u "${CENTRAL_INFLUX_USER}:${CENTRAL_INFLUX_PASS}" "$@"
+  else
+    curl -sS -m "$CENTRAL_INFLUX_TIMEOUT" --connect-timeout "$CENTRAL_INFLUX_TIMEOUT" "$@"
+  fi
+}
+
+central_influx_prepare() {
+  now="$(date +%s)"
+  if [ -f "$CENTRAL_INFLUX_READY_MARK" ]; then
+    last="$(cat "$CENTRAL_INFLUX_READY_MARK" 2>/dev/null)"
+    [ -z "$last" ] && last=0
+    age=$(( now - last ))
+    if [ "$age" -ge 0 ] && [ "$age" -lt "$CENTRAL_INFLUX_CACHE_SEC" ]; then
+      return 0
+    fi
+  fi
+
+  # 중앙 DB는 이미 생성되어 있다고 가정. health/ping만 확인한다.
+  curl_central_influx -I "${CENTRAL_INFLUX_BASE}/ping" >/dev/null 2>&1 || return 1
+
+  echo "$now" > "$CENTRAL_INFLUX_READY_MARK" 2>/dev/null || true
+  return 0
+}
+
+central_influx_write_line() {
+  line="$1"
+  resp="$(curl_central_influx -i -H 'Content-Type: text/plain' --data-binary "$line" "${CENTRAL_INFLUX_WRITE_URL}" 2>&1)"
+  rc=$?
+
+  if [ $rc -ne 0 ]; then
+    log "CENTRAL INFLUX WRITE FAIL rc=$rc url=${CENTRAL_INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '\n' ' ' | cut -c1-300)"
+    return 1
+  fi
+
+  echo "$resp" | grep -q " 204 " || {
+    log "CENTRAL INFLUX WRITE NON-204 url=${CENTRAL_INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '\n' ' ' | cut -c1-300)"
+    return 1
+  }
+
+  return 0
+}
+
+central_influx_export_usage() {
+  vessel_imo="$(get_vessel_imo)" || return 1
+
+  # 필수 구분자 외 sid/debug 문자열은 넣지 않는다.
+  # 중앙 저장 구조:
+  #   measurement: wifi_usage
+  #   tags: vessel_imo, user
+  #   fields: in_bytes, out_bytes, total_bytes (숫자 only)
+  line="${CENTRAL_MEASUREMENT},vessel_imo=$(esc_tag "$vessel_imo"),user=$(esc_tag "$USERNAME") in_bytes=${in_bytes}i,out_bytes=${out_bytes}i,total_bytes=${total_bytes}i ${ts_m}"
+
+  central_influx_prepare >/dev/null 2>&1 || return 1
+  central_influx_write_line "$line"
 }
 
 # ---------- args (raw) ----------
@@ -3893,21 +5322,24 @@ STATUS="$RAW_STATUS"
 SESSIONID="$RAW_SID"
 [ -z "$SESSIONID" ] && SESSIONID="nosession"
 
-# ---------- paths ----------
+# ---------- paths (log/base) ----------
 BASE="/var/log/radacct/datacounter/$TIMERANGE"
 MAXFILE="$BASE/max-octets-$USERNAME"
 USEDFILE="$BASE/used-octets-$USERNAME"
 SESSFILE="$BASE/used-octets-$USERNAME-$SESSIONID"
-# ---------- kick/health tracking ----------
-KICKDIR="/var/run/datacounter-kick"
-STATEFILE="$BASE/state-$USERNAME-$SESSIONID"   # per session tracking
-mkdir -p "$KICKDIR" 2>/dev/null || true
+
+# ---------- state (in /var/run => reboot clears) ----------
+# InfluxDB delta 계산용 직전 Interim 값 저장 디렉터리.
+STATE_ROOT="/var/run/datacounter-state"
+STATE_DIR="${STATE_ROOT}/${TIMERANGE}"
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+# 사용자/range 기준 직전 Interim 값 저장 파일.
+# SESSIONID를 일부러 빼서 세션 재시작 후 카운터가 작아지는 상황도 감지한다.
+PREVFILE="${STATE_DIR}/prev-${USERNAME}"
 
 # Ensure base dir exists
 [ -d "$BASE" ] || mkdir -p "$BASE" 2>/dev/null
-
-# ---------- debug: RAW (always) ----------
-#log "RAW user=[$USERNAME] range=[$TIMERANGE] in_oct=[$IN_OCTETS] out_oct=[$OUT_OCTETS] in_gw=[$IN_GW] out_gw=[$OUT_GW] status=[$STATUS] sid=[$SESSIONID]"
 
 # ---------- quota not enabled ----------
 [ ! -f "$MAXFILE" ] && exit 0
@@ -3915,6 +5347,20 @@ mkdir -p "$KICKDIR" 2>/dev/null || true
 # ---------- init total file ----------
 if [ ! -f "$USEDFILE" ]; then
   echo 0 > "$USEDFILE"
+fi
+
+# ---------- state TTL cleanup (lightweight) ----------
+CLEAN_STAMP="${STATE_ROOT}/.cleanup_stamp"
+NOW_TS="$(date +%s)"
+last_clean=0
+if [ -f "$CLEAN_STAMP" ]; then
+  last_clean="$(cat "$CLEAN_STAMP" 2>/dev/null)"
+  [ -z "$last_clean" ] && last_clean=0
+fi
+
+if [ $((NOW_TS - last_clean)) -ge 3600 ] 2>/dev/null; then
+  echo "$NOW_TS" > "$CLEAN_STAMP" 2>/dev/null || true
+  find "$STATE_ROOT" -type f -name "prev-*" -mmin +720 -delete >/dev/null 2>&1 || true
 fi
 
 # ---------- sanity guards ----------
@@ -3938,125 +5384,214 @@ if [ "$CUR_IN" -lt 0 ] || [ "$CUR_OUT" -lt 0 ] || [ "$CUR_TOTAL" -lt 0 ]; then
   exit 0
 fi
 
-# ---------- debug: CALC ----------
-#log "CALC user=$USERNAME range=$TIMERANGE status=$STATUS sid=$SESSIONID IN_GW=$IN_GW OUT_GW=$OUT_GW IN_O=$IN_OCTETS OUT_O=$OUT_OCTETS CUR_IN=$CUR_IN CUR_OUT=$CUR_OUT CUR_TOTAL=$CUR_TOTAL"
-
 # ---------- STOP zero-guard ----------
+# CUR_TOTAL=0 으로 Stop 이 오는 경우(로그아웃 없이 WiFi/LAN 절단 등):
+# NAS 가 최종 사용량을 0 으로 보고하므로, 아래 lockf STOP 섹션의 누적 로직을
+# 그대로 타면 마지막 SESSFILE 값이 USEDFILE 에 반영되지 않고 사라진다.
+# 따라서 여기서 SESSFILE 값을 USEDFILE 에 누적한 뒤 정리하고 종료한다.
 if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
-  NOW_TS="$(date +%s)"
-  tmp="${STATEFILE}.$$"
-  {
-    echo "last_seen_ts=$NOW_TS"
-    echo "last_stop_zero_ts=$NOW_TS"
-    echo "username=$USERNAME"
-    echo "timerange=$TIMERANGE"
-    echo "sessionid=$SESSIONID"
-  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATEFILE" 2>/dev/null || true
+  # PREVFILE 정리: 세션 종료이므로 다음 세션의 delta 오염 방지
+  rm -f "$PREVFILE" 2>/dev/null || true
 
-  # 선택: stop_zero도 kick 요청 남겨두기(오탐 가능성은 낮음)
-  KICKFILE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick"
-  if [ ! -f "$KICKFILE" ]; then
-    {
-      echo "ts=$NOW_TS"
-      echo "reason=stop_zero"
-      echo "username=$USERNAME"
-      echo "timerange=$TIMERANGE"
-      echo "acctsessionid=$SESSIONID"
-    } > "${KICKFILE}.$$" 2>/dev/null && mv -f "${KICKFILE}.$$" "$KICKFILE" 2>/dev/null || true
+  # SESSFILE 정리: 마지막 Interim 이 non-zero 였다면 SESSFILE 이 남아있다.
+  # 이 파일을 삭제하지 않으면 다음 인증 시 datacounter_auth.sh 의 glob 이
+  # 구 세션 bytes 를 합산해 quota 합계가 부풀려지는 버그가 발생한다.
+  # 단, USEDFILE 에 반영되지 않은 bytes 이므로 먼저 USEDFILE 에 누적한 후 삭제한다.
+  if [ -f "$SESSFILE" ]; then
+    LAST_SESS=$(head -n1 "$SESSFILE" 2>/dev/null | tr -cd '0-9')
+    [ -z "$LAST_SESS" ] && LAST_SESS=0
+    if [ "$LAST_SESS" -gt 0 ]; then
+      # USEDFILE 에 마지막 세션 bytes 반영 (atomic)
+      lockf -t 10 "/tmp/datacounter_${TIMERANGE}_${USERNAME}.lock" sh -c '
+        USEDFILE="$1"; LAST_SESS="$2"
+        OLD=$(head -n1 "$USEDFILE" 2>/dev/null | tr -cd "0-9")
+        [ -z "$OLD" ] && OLD=0
+        NEW=$(( OLD + LAST_SESS ))
+        printf "%s\n" "$NEW" > "$USEDFILE"
+      ' sh "$USEDFILE" "$LAST_SESS" 2>/dev/null || true
+    fi
+    rm -f "$SESSFILE" 2>/dev/null || true
   fi
 
-  log "DATACOUNTER IGNORE STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets)"
+  log "DATACOUNTER STOP-ZERO user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets; session usage preserved)"
   exit 0
 fi
 
 # ---------- INTERIM ----------
 if [ "$STATUS" = "Interim-Update" ]; then
-  NOW_TS="$(date +%s)"
-
-  # ---- load previous state (best-effort) ----
-  last_nonzero_ts=0
-  zero_streak=0
-  if [ -f "$STATEFILE" ]; then
-    last_nonzero_ts="$(grep -E '^last_nonzero_ts=' "$STATEFILE" 2>/dev/null | tail -n1 | cut -d= -f2)"
-    zero_streak="$(grep -E '^zero_streak=' "$STATEFILE" 2>/dev/null | tail -n1 | cut -d= -f2)"
-    [ -z "$last_nonzero_ts" ] && last_nonzero_ts=0
-    [ -z "$zero_streak" ] && zero_streak=0
-  fi
-
-  # ---- update streak ----
-  if [ "$CUR_TOTAL" -eq 0 ]; then
-    zero_streak=$((zero_streak + 1))
-  else
-    zero_streak=0
-    last_nonzero_ts="$NOW_TS"
-  fi
-
-  # ---- persist state (atomic) ----
-  tmp="${STATEFILE}.$$"
-  {
-    echo "last_seen_ts=$NOW_TS"
-    echo "last_nonzero_ts=$last_nonzero_ts"
-    echo "zero_streak=$zero_streak"
-    echo "username=$USERNAME"
-    echo "timerange=$TIMERANGE"
-    echo "sessionid=$SESSIONID"
-  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATEFILE" 2>/dev/null || true
 
   # ---- if zero, do NOT overwrite SESSFILE, do NOT export influx ----
-  # 대신 로그만 남기고(너무 시끄러우면 주석), 조건 만족 시 kick 요청 생성
-  ZERO_STREAK_KICK=2
-  ZERO_MIN_AGE_KICK=1200  # 20min
-
+  # CUR_TOTAL=0 인 Interim 은 사용량 0 으로 보고된 것이므로 SESSFILE(세션 누적값)을
+  # 덮어쓰지 않는다. (덮어쓰면 quota 가 초기화되어 무제한 사용 가능해짐)
+  # 사용자를 강제 disconnect 하지 않고 그대로 둔다.
   if [ "$CUR_TOTAL" -eq 0 ]; then
-    # 필요하면 주석 해제해서 관측
-    log "DATACOUNTER INTERIM ZERO user=$USERNAME range=$TIMERANGE sid=$SESSIONID streak=$zero_streak"
+    log "DATACOUNTER INTERIM ZERO user=$USERNAME range=$TIMERANGE sid=$SESSIONID"
 
-    age=$(( NOW_TS - last_nonzero_ts ))
-    if [ "$zero_streak" -ge "$ZERO_STREAK_KICK" ] || { [ "$last_nonzero_ts" -gt 0 ] && [ "$age" -ge "$ZERO_MIN_AGE_KICK" ]; }; then
-      KICKFILE="${KICKDIR}/${USERNAME}.${SESSIONID}.${TIMERANGE}.kick"
-      # 중복 생성 방지
-      if [ ! -f "$KICKFILE" ]; then
-        {
-          echo "ts=$NOW_TS"
-          echo "reason=interim_zero"
-          echo "zero_streak=$zero_streak"
-          echo "last_nonzero_age_sec=$age"
-          echo "username=$USERNAME"
-          echo "timerange=$TIMERANGE"
-          echo "acctsessionid=$SESSIONID"
-        } > "${KICKFILE}.$$" 2>/dev/null && mv -f "${KICKFILE}.$$" "$KICKFILE" 2>/dev/null || true
-        log "DATACOUNTER KICK-REQUEST user=$USERNAME range=$TIMERANGE sid=$SESSIONID reason=interim_zero streak=$zero_streak age=${age}s"
-      fi
+    # PREVFILE의 ts/sid를 현재 시각으로 갱신한다.
+    # in/out/total은 직전 정상값을 그대로 유지해야 다음 정상 Interim에서
+    # delta = CUR - PREV_정상값 으로 올바르게 계산된다.
+    # (ts만 밀어주지 않으면 zero 구간이 끝난 뒤 delta가 과소 집계됨)
+    if [ -f "$PREVFILE" ]; then
+      # 기존 in/out/total을 읽어서 ts/sid만 교체한다.
+      _p_in="$(grep -E '^in=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      _p_out="$(grep -E '^out=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      _p_total="$(grep -E '^total=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      [ -z "$_p_in" ]    && _p_in=0
+      [ -z "$_p_out" ]   && _p_out=0
+      [ -z "$_p_total" ] && _p_total=0
+      tmp="${PREVFILE}.$$"
+      {
+        echo "ts=$NOW_TS"
+        echo "sid=$SESSIONID"
+        echo "in=$_p_in"
+        echo "out=$_p_out"
+        echo "total=$_p_total"
+      } > "$tmp" 2>/dev/null && mv -f "$tmp" "$PREVFILE" 2>/dev/null || true
     fi
+    # PREVFILE이 없는 경우(세션 첫 Interim이 zero): 갱신할 기준값이 없으므로 그냥 둔다.
+    # 다음 정상 Interim에서 HAS_PREV=0 → FIRST_POINT=1 로 현재값 전체를 delta로 사용한다.
+
     exit 0
   fi
 
   # ---- 정상(non-zero) 처리: SESSFILE 기록 + 로그 + Influx export ----
-  echo "$CUR_TOTAL" > "$SESSFILE"
+  # 단조성(high-water-mark) 보장: 같은 세션(SID)에서 카운터가 역행(0<cur<기존)하면
+  # 더 작은 값으로 덮어쓰지 않는다. ipfw 카운터 리셋/룰 리로드/IP 마이그레이션 등으로
+  # SESSFILE 이 줄면 그 차액은 USEDFILE 에 접힌 적이 없어 영구 손실되기 때문이다.
+  # (zero-guard 가 CUR_TOTAL==0 을 막는 것과 동일 철학의 일반화.)
+  if [ -f "$SESSFILE" ]; then
+    OLD_SESS=$(head -n1 "$SESSFILE" 2>/dev/null | tr -cd '0-9')
+    [ -z "$OLD_SESS" ] && OLD_SESS=0
+  else
+    OLD_SESS=0
+  fi
+  if [ "$CUR_TOTAL" -lt "$OLD_SESS" ] 2>/dev/null; then
+    log "DATACOUNTER INTERIM REGRESS-KEEP user=$USERNAME range=$TIMERANGE sid=$SESSIONID old=$OLD_SESS cur=$CUR_TOTAL (kept high-water)"
+  else
+    echo "$CUR_TOTAL" > "$SESSFILE"
+  fi
 
   log "DATACOUNTER INTERIM user=$USERNAME range=$TIMERANGE sid=$SESSIONID in=$((CUR_IN/1048576))MB out=$((CUR_OUT/1048576))MB total=$((CUR_TOTAL/1048576))MB"
 
-  # ===== InfluxDB 1.8 export =====
-  MEASUREMENT="datacounter_interim"
+  # ===== InfluxDB 1.8 export - previous Interim delta =====
+  # 기존 CUR_IN / CUR_OUT / CUR_TOTAL 값은 변경하지 않고,
+  # Influx 전송용 DELTA_IN / DELTA_OUT / DELTA_TOTAL만 계산한다.
+  MEASUREMENT="datacounter_interim_delta"
 
-  now_s="$NOW_TS"
-  bucket_s=$(( (now_s / 600) * 600 ))
-  ts_m=$(( bucket_s / 60 ))
+  # precision=m 이므로 timestamp는 epoch minute.
+  # 기존 10분 bucket은 같은 tag/timestamp 포인트를 overwrite할 수 있어 현재 minute로 저장한다.
+  ts_m=$(( NOW_TS / 60 ))
 
-  in_bytes=$(( CUR_IN ))
-  out_bytes=$(( CUR_OUT ))
-  total_bytes=$(( CUR_TOTAL ))
+  PREV_TS=0
+  PREV_IN=0
+  PREV_OUT=0
+  PREV_TOTAL=0
+  PREV_SID=""
+  HAS_PREV=0
 
-  line="${MEASUREMENT},user=$(esc_tag "$USERNAME"),range=$(esc_tag "$TIMERANGE") in_bytes=${in_bytes}i,out_bytes=${out_bytes}i,total_bytes=${total_bytes}i ${ts_m}"
+  if [ -f "$PREVFILE" ]; then
+    PREV_TS="$(grep -E '^ts=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+    PREV_IN="$(grep -E '^in=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+    PREV_OUT="$(grep -E '^out=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+    PREV_TOTAL="$(grep -E '^total=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+    PREV_SID="$(grep -E '^sid=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2)"
 
-  influx_prepare >/dev/null 2>&1 || true
-  influx_write_line "$line" || true
+    [ -z "$PREV_TS" ] && PREV_TS=0
+    [ -z "$PREV_IN" ] && PREV_IN=0
+    [ -z "$PREV_OUT" ] && PREV_OUT=0
+    [ -z "$PREV_TOTAL" ] && PREV_TOTAL=0
+
+    HAS_PREV=1
+  fi
+
+  FIRST_POINT=0
+  SESSION_CHANGED=0
+  RESET_IN=0
+  RESET_OUT=0
+  RESET_TOTAL=0
+  RESET_DETECTED=0
+
+  if [ "$HAS_PREV" -eq 0 ]; then
+    # 처음 보는 Interim이면 현재값을 첫 구간 사용량으로 저장한다.
+    DELTA_IN=$(( CUR_IN ))
+    DELTA_OUT=$(( CUR_OUT ))
+    DELTA_TOTAL=$(( CUR_TOTAL ))
+    FIRST_POINT=1
+  else
+    if [ -n "$PREV_SID" ] && [ "$PREV_SID" != "$SESSIONID" ]; then
+      SESSION_CHANGED=1
+      RESET_DETECTED=1
+
+      # 세션이 바뀌면 RADIUS 카운터도 새로 시작한 것으로 보고 현재값을 이번 구간 사용량으로 저장.
+      DELTA_IN=$(( CUR_IN ))
+      DELTA_OUT=$(( CUR_OUT ))
+      DELTA_TOTAL=$(( CUR_TOTAL ))
+    else
+      # 같은 세션이면 직전 Interim과 차이 계산.
+      # 값이 줄어들면 카운터 리셋으로 보고 현재값을 delta로 사용.
+      if [ "$CUR_IN" -ge "$PREV_IN" ]; then
+        DELTA_IN=$(( CUR_IN - PREV_IN ))
+      else
+        DELTA_IN=$(( CUR_IN ))
+        RESET_IN=1
+        RESET_DETECTED=1
+      fi
+
+      if [ "$CUR_OUT" -ge "$PREV_OUT" ]; then
+        DELTA_OUT=$(( CUR_OUT - PREV_OUT ))
+      else
+        DELTA_OUT=$(( CUR_OUT ))
+        RESET_OUT=1
+        RESET_DETECTED=1
+      fi
+
+      if [ "$CUR_TOTAL" -ge "$PREV_TOTAL" ]; then
+        DELTA_TOTAL=$(( CUR_TOTAL - PREV_TOTAL ))
+      else
+        DELTA_TOTAL=$(( CUR_TOTAL ))
+        RESET_TOTAL=1
+        RESET_DETECTED=1
+      fi
+    fi
+  fi
+
+  # 안전장치: delta 음수 방지
+  [ "$DELTA_IN" -lt 0 ] 2>/dev/null && DELTA_IN=0
+  [ "$DELTA_OUT" -lt 0 ] 2>/dev/null && DELTA_OUT=0
+  [ "$DELTA_TOTAL" -lt 0 ] 2>/dev/null && DELTA_TOTAL=0
+
+  # 다음 Interim 비교를 위해 현재값 저장
+  tmp="${PREVFILE}.$$"
+  {
+    echo "ts=$NOW_TS"
+    echo "sid=$SESSIONID"
+    echo "in=$CUR_IN"
+    echo "out=$CUR_OUT"
+    echo "total=$CUR_TOTAL"
+  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$PREVFILE" 2>/dev/null || true
+
+  # Influx에는 delta만 기본 필드로 저장하고,
+  # 검증/디버깅용으로 current/prev/reset 정보도 함께 저장한다.
+  in_bytes=$(( DELTA_IN ))
+  out_bytes=$(( DELTA_OUT ))
+  total_bytes=$(( DELTA_TOTAL ))
+
+  line="${MEASUREMENT},user=$(esc_tag "$USERNAME"),sid=$(esc_tag "$SESSIONID") in_bytes=${in_bytes}i,out_bytes=${out_bytes}i,total_bytes=${total_bytes}i,current_in_bytes=${CUR_IN}i,current_out_bytes=${CUR_OUT}i,current_total_bytes=${CUR_TOTAL}i,prev_in_bytes=${PREV_IN}i,prev_out_bytes=${PREV_OUT}i,prev_total_bytes=${PREV_TOTAL}i,first_point=${FIRST_POINT}i,session_changed=${SESSION_CHANGED}i,reset=${RESET_DETECTED}i,reset_in=${RESET_IN}i,reset_out=${RESET_OUT}i,reset_total=${RESET_TOTAL}i ${ts_m}"
+
+  # InfluxDB/MySQL export 는 RADIUS 응답 경로에서 분리(fire-and-forget)한다.
+  # wait=yes 라도 스크립트가 즉시 반환하도록 백그라운드 서브셸로 보낸다.
+  # 쿼터(SESSFILE/PREVFILE)는 위에서 이미 동기 기록되었으므로 손실되지 않으며,
+  # export 의 지연/블로킹이 Accounting-Response 지연 → NAS 재전송 폭주로 번져
+  # 다른 세션의 회계까지 무너뜨리는 연쇄장애를 차단한다.
+  (
+    influx_prepare >/dev/null 2>&1 || true
+    influx_write_line "$line" || true
+    central_influx_export_usage || true
+  ) >/dev/null 2>&1 &
   # ===== /Influx export =====
 
   exit 0
 fi
-
-
 
 # ---------- STOP / others ----------
 LOCK="/tmp/datacounter_${TIMERANGE}_${USERNAME}.lock"
@@ -4070,32 +5605,53 @@ lockf -t 10 "$LOCK" sh -c '
   CUR_TOTAL="$6"
   IN_GW="$7"
   OUT_GW="$8"
+  LOGFILE="$9"
+  STATE_DIR="${10}"
 
   BASE="/var/log/radacct/datacounter/$TIMERANGE"
   USEDFILE="$BASE/used-octets-$USERNAME"
   SESSFILE="$BASE/used-octets-$USERNAME-$SESSIONID"
 
-  OLD_TOTAL=$(cat "$USEDFILE" 2>/dev/null)
-  [ -z "$OLD_TOTAL" ] && OLD_TOTAL=0
+  # PREVFILE 정리: Stop 수신 시 다음 세션의 첫 Interim이 잘못된 prev 값을
+  # 참조하지 않도록 반드시 삭제한다.
+  PREVFILE="${STATE_DIR}/prev-${USERNAME}"
+  rm -f "$PREVFILE" 2>/dev/null || true
 
-  NEW_TOTAL=$(( OLD_TOTAL + CUR_TOTAL ))
+  OLD_TOTAL=$(head -n 1 "$USEDFILE" 2>/dev/null | tr -d "\r" | tr -cd "0-9")
+  CUR_TOTAL=$(printf "%s" "$CUR_TOTAL" | tr -cd "0-9")
+  CUR_IN=$(printf "%s" "$CUR_IN" | tr -cd "0-9")
+  CUR_OUT=$(printf "%s" "$CUR_OUT" | tr -cd "0-9")
+
+  [ -z "$OLD_TOTAL" ] && OLD_TOTAL=0
+  [ -z "$CUR_TOTAL" ] && CUR_TOTAL=0
+  [ -z "$CUR_IN" ] && CUR_IN=0
+  [ -z "$CUR_OUT" ] && CUR_OUT=0
+
+  NEW_TOTAL=$(( ${OLD_TOTAL:-0} + ${CUR_TOTAL:-0} ))
 
   [ -f "$SESSFILE" ] && rm -f "$SESSFILE"
+  printf "%s\n" "$NEW_TOTAL" > "$USEDFILE"
 
-  echo "$NEW_TOTAL" > "$USEDFILE"
-
-  logger -t datacounter \
+  printf "%s datacounter: %s\n" "$(date "+%b %e %H:%M:%S")" \
 "DATACOUNTER STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID \
 in=$((CUR_IN/1048576))MB out=$((CUR_OUT/1048576))MB \
-total=$((CUR_TOTAL/1048576))MB accum=$((NEW_TOTAL/1048576))MB"
+total=$((CUR_TOTAL/1048576))MB accum=$((NEW_TOTAL/1048576))MB" >> "$LOGFILE" 2>/dev/null
+
+  exit 0
 ' sh \
 "$USERNAME" "$TIMERANGE" "$SESSIONID" \
 "$CUR_IN" "$CUR_OUT" "$CUR_TOTAL" \
-"$IN_GW" "$OUT_GW"
+"$IN_GW" "$OUT_GW" "$LOGFILE" "$STATE_DIR"
 
-exit $?
+RC=$?
 
-EOD;
+if [ "$RC" -ne 0 ]; then
+  log "DATACOUNTER SCRIPT FAIL user=$USERNAME range=$TIMERANGE sid=$SESSIONID rc=$RC"
+fi
+
+# FreeRADIUS Accounting-Response 지연/미응답 방지를 위해 항상 0 종료.
+exit 0
+DATACOUNTER_ACCT_SH;
 
 	$filename = FREERADIUS_SCRIPTS . '/datacounter_acct.sh';
 	file_put_contents($filename, $conf);
@@ -4250,7 +5806,7 @@ function freeradius_validate_users($post, &$input_errors) {
 
 	// IPv6 Address
 	if ($post['varusersframedip6address'] && !is_subnetv6($post['varusersframedip6address']) &&
-	    !is_ipaddrv6($post['varusersframedip6address'])) {
+		!is_ipaddrv6($post['varusersframedip6address'])) {
 		$input_errors[] = "The 'IPv6 Address' field must contain a valid IPv6 address or IPv6 prefix.";
 	}
 
@@ -4280,8 +5836,8 @@ function freeradius_validate_users($post, &$input_errors) {
 		$expires = date_parse_from_format("M d Y", $post['varusersexpiration']);
 		if ($expires['error_count'] > 0 || $expires['warning_count'] > 0) {
 			$input_errors[] = "The 'Expiration Date' format is invalid. | Error(s): " .
-			    implode('. ', $expires['errors']) . " | Warning(s): " .
-			    implode('. ', $expires['warnings']);
+				implode('. ', $expires['errors']) . " | Warning(s): " .
+				implode('. ', $expires['warnings']);
 		}
 		// Hack around date_parse_from_format() bugs, such as expanding "Jan 199" to "Jan 1 99"
 		if ($expires['year'] < 1970) {
@@ -4404,7 +5960,7 @@ function freeradius_validate_macs($post, &$input_errors) {
 
 	// IPv6 Address
 	if ($post['varmacsframedip6address'] && !is_subnetv6($post['varmacsframedip6address']) &&
-	    !is_ipaddrv6($post['varmacsframedip6address'])) {
+		!is_ipaddrv6($post['varmacsframedip6address'])) {
 		$input_errors[] = "The 'IPv6 Address' field must contain a valid IPv6 address or IPv6 prefix.";
 	}
 
@@ -4443,8 +5999,8 @@ function freeradius_validate_macs($post, &$input_errors) {
 		$expires = date_parse_from_format("M d Y", $post['varmacsexpiration']);
 		if ($expires['error_count'] > 0 || $expires['warning_count'] > 0) {
 			$input_errors[] = "The 'Expiration Date' format is invalid. | Error(s): " .
-			    implode('. ', $expires['errors']) . " | Warning(s): " .
-			    implode('. ', $expires['warnings']);
+				implode('. ', $expires['errors']) . " | Warning(s): " .
+				implode('. ', $expires['warnings']);
 		}
 		// Hack around date_parse_from_format() bugs, such as expanding "Jan 199" to "Jan 1 99"
 		if ($expires['year'] < 1970) {
@@ -4504,11 +6060,11 @@ function freeradius_validate_clients($post, &$input_errors) {
 	if ($post['varclientip'] != '*') {
 		if (preg_match('/^(.+)\/(\d+)$/',$post['varclientip'], $matches)) {
 			if ($post['varclientipversion'] == 'ipaddr' && (!is_ipaddrv4($matches[1]) ||
-			    !is_numeric($matches[2]) || ($matches[2] > 32) || ($matches[2] < 1))) {
+					!is_numeric($matches[2]) || ($matches[2] > 32) || ($matches[2] < 1))) {
 				$input_errors[] = "The 'Client IP Address' field must contain a valid IPv4 address and CIDR prefix when IPv4 is selected under 'Client IP Version'.";
 			}
 			if ($post['varclientipversion'] == 'ipv6addr' && (!is_ipaddrv6($matches[1]) ||
-			    !is_numeric($matches[2]) || ($matches[2] > 128) || ($matches[2] < 1))) {
+					!is_numeric($matches[2]) || ($matches[2] > 128) || ($matches[2] < 1))) {
 				$input_errors[] = "The 'Client IP Address' field must contain a valid IPv6 address and prefix when IPv6 is selected under 'Client IP Version'.";
 			}
 		} else {
@@ -4691,15 +6247,15 @@ function freeradius_validate_eap($post, &$input_errors) {
 		$input_errors[] = "The 'Maximum Sessions Tracking Per Server' field must contain an integer value.";
 	}
 
-/*
-	// Certificates for TLS
-	if ($post['ssl_ca_cert'] == 'none') {
-		$input_errors[] = "SSL CA Certificate must not be set to 'none'. Create a CA certificate if needed and select it here.";
-	}
-	if ($post['ssl_server_cert'] == 'none') {
-		$input_errors[] = "SSL Server Certificate must not be set to 'none'. Create a server certificate if needed and select it here.";
-	}
-*/
+	/*
+        // Certificates for TLS
+        if ($post['ssl_ca_cert'] == 'none') {
+            $input_errors[] = "SSL CA Certificate must not be set to 'none'. Create a CA certificate if needed and select it here.";
+        }
+        if ($post['ssl_server_cert'] == 'none') {
+            $input_errors[] = "SSL Server Certificate must not be set to 'none'. Create a server certificate if needed and select it here.";
+        }
+    */
 
 	// EAP-TLS Fragment Size
 	if ($post['vareapconffragmentsize'] != '') {

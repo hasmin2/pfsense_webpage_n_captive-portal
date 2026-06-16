@@ -30,13 +30,13 @@ class APIServicesUpdatePortalWeb extends APIModel {
         }
 
         else{
-            if($isset($this->initial_data['htmltext']) && isset($this->initial_data['zone'])){
+            if(isset($this->initial_data['htmltext']) && isset($this->initial_data['zone'])){
             	$this->config["captiveportal"][$this->initial_data['zone']]['page']['htmltext']=$this->initial_data['htmltext'];
 	        }
-			if($isset($this->initial_data['errtext']) && isset($this->initial_data['zone'])){
+			if(isset($this->initial_data['errtext']) && isset($this->initial_data['zone'])){
             	$this->config["captiveportal"][$this->initial_data['zone']]['page']['errtext']=$this->initial_data['errtext'];
 	        }
-	        if($isset($this->initial_data['logouttext']) && isset($this->initial_data['zone'])){
+	        if(isset($this->initial_data['logouttext']) && isset($this->initial_data['zone'])){
 				$this->config["captiveportal"][$this->initial_data['zone']]['page']['logouttext']=$this->initial_data['logouttext'];
 			}
             write_config("CaptivePortal Toggle by landline Active");

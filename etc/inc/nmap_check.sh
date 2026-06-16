@@ -1,4 +1,4 @@
-#/bin/sh
+#!/bin/sh
 ## $1 => gateway_timeout
 # $2 => source_ip (nic ip)
 # $3 => destination (8.8.8.8, 168,126 or etc)

@@ -45,11 +45,21 @@ function return_terminal_state(){
     } else if($fbb_status[0] =="-2"){
         $fbbstring = "FBB info not available";
     } else {
-        $fbb_signal_string="";
-        if ($vsat_status[1]==0 || $vsat_status==""){$fbb_signal_string="No Signal";}
-        else{$fbb_signal_string= "Signal: ".$fbb_status[1];}
-        if($fbb_drawing_color!==""){$fbbstring = "<span style=\"color: ".$fbb_drawing_color."; \">Tracking: ".$fbb_status[0]."<br>".$fbb_signal_string."</span>";}
-        else{$fbbstring = "Tracking: ".$fbb_status[0]."<br>".$fbb_signal_string;}
+        // 표시 규약: "FBB : 143.5E (Signal : 61)" — 위성 이름은 매핑된 궤도경도로
+        // 표시(미매핑 시 단말 보고 이름 그대로), 신호는 정수 반올림.
+        $fbb_label = $fbb_status[0];
+        if (function_exists('cp_fbb_satlon_from_name') && function_exists('cp_format_satlon')) {
+            $mapped = cp_fbb_satlon_from_name($fbb_status[0]);
+            if ($mapped !== null) {
+                $fbb_label = cp_format_satlon($mapped);
+            }
+        }
+        // (버그 교정: 기존엔 No Signal 판정이 $vsat_status[1] 를 보고 있었음)
+        if ($fbb_status[1]==0 || $fbb_status[1]==""){$fbb_signal_string="No Signal";}
+        else{$fbb_signal_string= "Signal : ".$fbb_status[1];}
+        $fbb_core = "FBB : ".$fbb_label." (".$fbb_signal_string.")";
+        if($fbb_drawing_color!==""){$fbbstring = "<span style=\"color: ".$fbb_drawing_color."; \">".$fbb_core."</span>";}
+        else{$fbbstring = $fbb_core;}
     }
     return array($vsatstring, $vsatgpsstring, $fbbstring);
 }
@@ -415,7 +425,7 @@ function get_speed($gateway){
     return $speedstring;
 }
 
-function get_datausage_from_db($dataMetric) {
+function get_datausage_from_db($dataMetric, $timeout = 1) {
     global $config;
     $ch = curl_init();
     $dataMetric_rx = $dataMetric."_rx";
@@ -426,7 +436,7 @@ function get_datausage_from_db($dataMetric) {
     $elaspedminutes = ($interval->days * 24 * 60) + ($interval->h * 60) + $interval->i;
     curl_setopt_array($ch, array(
         CURLOPT_URL => "http://192.168.209.210:8086/query?q=select%20sum%28%22".$dataMetric_rx."%22%29,sum%28%22".$dataMetric_tx."%22%29from%20traffic%20where%20time%20%3E%20now()%20-".$elaspedminutes."m&db=acustatus",
-        CURLOPT_TIMEOUT => 1,
+        CURLOPT_TIMEOUT => $timeout,
         CURLOPT_MAXREDIRS => 10,
         CURLOPT_CUSTOMREQUEST => "GET",
         CURLOPT_RETURNTRANSFER => TRUE,
@@ -434,10 +444,28 @@ function get_datausage_from_db($dataMetric) {
     ));
     $response = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlerr = curl_error($ch);
     curl_close($ch);
+
+    // InfluxDB 하드 실패(타임아웃/연결오류/비200)는 false 를 반환한다.
+    // 실패를 0(사용량 미달)으로 오독하면 게이트웨이 shutdown 목록이 토글되어
+    // crew zone 이 강제 disconnect 되는 flapping(전원 로그아웃 + ipfw 카운터 리셋
+    // → 계측 오차)이 발생하기 때문이다. 호출측은 false 를 받으면 상태를 변경하지
+    // 말고 이전 상태를 유지해야 한다.
+    if ($curlerr !== '' || (int)$code !== 200) {
+        return false;
+    }
+
     $responsejson = json_decode($response, true);
-    $totaldata = $responsejson['results'][0]['series'][0]['values'][0][1]+$responsejson['results'][0]['series'][0]['values'][0][2];
-    $totaldata = round($totaldata/1073741824, 2);
+    // 쿼리는 성공했으나 데이터 포인트가 없는 경우(예: 월초)는 influx 사용량 0 으로
+    // 간주하고 basedata(currentusage)만 가산한다. (이는 정상이며 실패가 아니다.)
+    $influxbytes = 0;
+    if (isset($responsejson['results'][0]['series'][0]['values'][0][1]) &&
+        isset($responsejson['results'][0]['series'][0]['values'][0][2])) {
+        $influxbytes = $responsejson['results'][0]['series'][0]['values'][0][1] +
+                       $responsejson['results'][0]['series'][0]['values'][0][2];
+    }
+    $totaldata = round($influxbytes/1073741824, 2);
     $basedata=0;
     foreach($config['gateways']['gateway_item'] as $gateway){
         if($gateway['rootinterface'] == $dataMetric){
@@ -448,6 +476,132 @@ function get_datausage_from_db($dataMetric) {
     $totaldata = $totaldata + $basedata;
 
     return $totaldata;
+}
+
+// ---------------------------------------------------------------------------
+// 게이트웨이 월 사용량 소스(로컬 vnstat) — "불씨" 제거용.
+//
+// 기존 get_datausage_from_db() 는 원격 InfluxDB 에 "월초~현재" 한 달치 sum 을
+// 매번 질의했다. 이 쿼리는 (1) 논리 LAN 의 원격 호출이라 지연/실패 가능,
+// (2) 조회창이 월 진행에 따라 단조 증가해 월말로 갈수록 무거워져 1~수초를
+// 넘김 → 실패를 0(미달)으로 오독 → shutdown flapping → 전원 로그아웃의 발화점.
+//
+// 그런데 InfluxDB 의 traffic 데이터는 애초에 이 박스의 vnstat 5분 표본을
+// 이 크론이 밀어넣은 "원격 사본"이다. 따라서 로컬 vnstat 의 이번달 누계를
+// 직접 읽으면 원격 의존이 사라지고(불씨 제거) 정확도도 더 높다(틱 누락 무관).
+// ---------------------------------------------------------------------------
+
+// vnstat 의 "이번 달" 누계를 인터페이스명 => bytes(rx+tx) 맵으로 1회 조회한다.
+// 루프에서 게이트웨이마다 vnstat 를 호출하지 않도록 호출측이 1회만 부르고 재사용.
+// 실패(미설치/오류/파싱불가)면 false 를 반환한다.
+// vnstat --json 을 재시도 포함으로 실행한다.
+// vnstat SQLite DB 가 vnstatd 쓰기와 겹치면 "database is locked"(SQLITE_BUSY) 나
+// "Database version 0 ..." 등으로 일시 실패한다(선상에서 하루 수십 회 관측). lock 은
+// 보통 수십~수백 ms 만 유지되므로 즉시 skip 하지 말고 짧게 대기 후 재시도해 대부분의
+// 일시적 실패를 성공으로 흡수한다. 성공 시 JSON 문자열, 끝까지 실패하면 false.
+// (stderr 는 버리고, 유효한 interfaces JSON 인지로 성공을 판정 → Error/빈/부분출력 모두 재시도.)
+if (!function_exists('cp_vnstat_json_exec')) {
+    function cp_vnstat_json_exec($modeargs = '', $maxtries = 4, $sleep_us = 500000) {
+        $args = trim((string)$modeargs);
+        $cmd  = '/usr/local/bin/vnstat --json' . ($args !== '' ? ' ' . $args : '') . ' 2>/dev/null';
+        for ($i = 0; $i < $maxtries; $i++) {
+            $out = shell_exec($cmd);
+            if (is_string($out) && $out !== '' && strncmp($out, 'Error', 5) !== 0) {
+                $decoded = json_decode($out, true);
+                if (is_array($decoded) && isset($decoded['interfaces'])) {
+                    return $out;
+                }
+            }
+            if ($i < $maxtries - 1) {
+                usleep($sleep_us);
+            }
+        }
+        return false;
+    }
+}
+
+function get_vnstat_month_to_date_map() {
+    $json = cp_vnstat_json_exec('m');
+    if ($json === false) {
+        return false;
+    }
+    $data = json_decode($json, true);
+    if (!isset($data['interfaces']) || !is_array($data['interfaces'])) {
+        return false;
+    }
+
+    $now = new DateTime();
+    $cy  = (int)$now->format('Y');
+    $cm  = (int)$now->format('n');
+
+    $out = array();
+    foreach ($data['interfaces'] as $iface) {
+        $name = $iface['name'] ?? '';
+        if ($name === '' ||
+            !isset($iface['traffic']['month']) ||
+            !is_array($iface['traffic']['month'])) {
+            continue;
+        }
+        $months = $iface['traffic']['month'];
+
+        // 달력상 이번 달 버킷을 우선 매칭, 없으면 가장 최신(마지막) 버킷.
+        $picked = null;
+        foreach ($months as $m) {
+            if ((int)($m['date']['year'] ?? 0) === $cy &&
+                (int)($m['date']['month'] ?? 0) === $cm) {
+                $picked = $m;
+                break;
+            }
+        }
+        if ($picked === null && !empty($months)) {
+            $picked = $months[count($months) - 1];
+        }
+        if ($picked === null) {
+            continue;
+        }
+
+        $rx = (float)($picked['rx'] ?? 0);
+        $tx = (float)($picked['tx'] ?? 0);
+        $out[$name] = $rx + $tx;   // vnstat 2.x JSON 은 bytes 단위
+    }
+
+    return $out;
+}
+
+// 게이트웨이(루트 인터페이스) 월 사용량(GB) = vnstat 이번달 누계 + currentusage baseline.
+// vnstat 맵에서 인터페이스를 찾으면 vnstat GB 를 로컬 캐시에 기록한다.
+// 소스가 없거나(맵 false/미발견) 하면 캐시 직전값(stale)을 사용해 항상 안정값을
+// 돌려준다. 소스도 캐시도 없을 때만 false → 호출측이 상태를 바꾸지 말고 유지(Fix#1).
+// baseline 은 캐시에 넣지 않고 매번 새로 더해 관리자 수정이 즉시 반영되게 한다.
+function get_gateway_monthly_usage_local($rootIf, $vnstatMap) {
+    global $config;
+
+    $cachefile = "/var/db/gwusage-" .
+        preg_replace('/[^0-9a-zA-Z._:-]/', '_', (string)$rootIf);
+
+    $basedata = 0;
+    foreach ($config['gateways']['gateway_item'] as $gateway) {
+        if (($gateway['rootinterface'] ?? '') == $rootIf) {
+            $basedata = intval($gateway['currentusage'] ?? 0);
+            break;
+        }
+    }
+
+    $vnstatGb = null;
+    if (is_array($vnstatMap) && isset($vnstatMap[$rootIf])) {
+        $vnstatGb = round($vnstatMap[$rootIf] / 1073741824, 2);
+        @file_put_contents($cachefile, (string)$vnstatGb, LOCK_EX);
+    } elseif (is_file($cachefile)) {
+        $cached = trim((string)@file_get_contents($cachefile));
+        if ($cached !== '' && is_numeric($cached)) {
+            $vnstatGb = (float)$cached;   // stale-on-failure
+        }
+    }
+
+    if ($vnstatGb === null) {
+        return false;
+    }
+    return $vnstatGb + $basedata;
 }
 
 function get_speed_from_db($dataMetric){
