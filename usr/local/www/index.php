@@ -1164,7 +1164,7 @@ if($_POST['data_update']){
         if (!cv || !ov) { return; }
         var ctx = cv.getContext('2d');
         var W = 0, H = 0, dpr = Math.min(window.devicePixelRatio || 1, 2);
-        var yaw = -0.5, pitch = 0.74, dragging = false, lastX = 0, raf = null, isOpen = false;
+        var yaw = 0, pitch = -0.74, dragging = false, lastX = 0, raf = null, isOpen = false;
         function size() {
             var r = cv.getBoundingClientRect();
             W = r.width || 480; H = r.height || 360;
