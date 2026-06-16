@@ -30,6 +30,11 @@ class APIFreeRADIUSUserCreate extends APIModel {
     public function action() {
         if (!$this->bulk_create_mode) {
             $this->write_config();
+            # 단건 생성도 웹(create_wifi_user)처럼 실행 중 radiusd 에 즉시 전파.
+            # (bulk 는 create_wifi_user 가 내부에서 이미 resync 하므로 단건만 — 중복 방지.)
+            if (function_exists('freeradius_users_resync')) {
+                freeradius_users_resync();
+            }
         }
         return APIResponse\get(0, $this->validated_data);
     }
@@ -54,13 +59,39 @@ class APIFreeRADIUSUserCreate extends APIModel {
                 isset($this->initial_data['freeradius_terminaltype']) &&
                 isset($this->initial_data['israndompw'])
             ) {
+                # issimplefied: crew_account.php "Create Voucher" 폼의 6번째 인자(체크박스)와 정합.
+                #   create_wifi_user 의 6번째 인자는 기본값 없는 "필수" 파라미터라 누락 시
+                #   ArgumentCountError fatal → 반드시 전달. 방어적으로 "기본 false(비단순화)"로 두고,
+                #   명시적 true 신호일 때만 true. (PHP 함정: 문자열 "false"/"0" 은 truthy 이므로
+                #   문자열 falsy 표현을 명시 처리 → 의도치 않게 단순 ID 가 생성되는 것 차단.)
+                $issimplefied = false;
+                if (isset($this->initial_data['issimplefied'])) {
+                    $raw = $this->initial_data['issimplefied'];
+                    if (is_bool($raw)) {
+                        $issimplefied = $raw;
+                    } elseif (is_string($raw)) {
+                        $issimplefied = !in_array(strtolower(trim($raw)), ['', '0', 'false', 'no', 'off'], true);
+                    } else {
+                        $issimplefied = (bool)$raw;   // 숫자 등은 표준 truthy 판정
+                    }
+                }
+                # 방어 정규화(#32): bulk timeperiod("half-Monthly"/"Monthly"/...) 를 웹 표준 케이스로
+                #   캐논화한 뒤 전달. create_wifi_user 가 내부에서 '-' 분해하므로 분해 전에 표기 통일
+                #   (입력 케이스 무관 → varusershalftimeperiod 가 "Half" 처럼 저장되는 것 방지).
+                $tp_seg  = explode('-', (string)$this->initial_data['freeradius_maxtotaloctetstimerange']);
+                $tp_norm = (count($tp_seg) == 2)
+                    ? strtolower(trim($tp_seg[0])) . '-' . ucfirst(strtolower(trim($tp_seg[1])))
+                    : ucfirst(strtolower(trim($tp_seg[0])));
                 $returnarray = create_wifi_user(
                     $this->initial_data['freeradius_maxtotaloctets'],
                     $this->initial_data['userquantity'],
                     $this->initial_data['israndompw'],
                     $this->initial_data['freeradius_terminaltype'],
-                    $this->initial_data['freeradius_maxtotaloctetstimerange']
+                    $tp_norm,
+                    $issimplefied
                 );
+                $this->validated_data['freeradius_maxtotaloctetstimerange'] = $tp_norm;
+                $this->validated_data['issimplefied'] = $issimplefied;
                 $this->bulk_create_mode = true;
                 $this->validated_data['created_count'] = count($returnarray);
                 $this->validated_data['users'] = $returnarray;
@@ -218,6 +249,23 @@ class APIFreeRADIUSUserCreate extends APIModel {
                     }
                 }
             }
+        }
+
+        # 방어 정규화(#32): 단건 생성의 timeperiod 관련 3필드를 웹 UI 표준 케이스로 캐논화.
+        #   generic 복사 루프는 raw 저장 → timerange 가 대문자면 datacounter 디렉터리(.../monthly/) 불일치.
+        $result['varusershalftimeperiod'] = ($result['varusershalftimeperiod'] === '')
+            ? '' : strtolower(trim((string)$result['varusershalftimeperiod']));
+        $result['varuserspointoftime'] = ucfirst(strtolower(trim((string)$result['varuserspointoftime'])));
+        $result['varusersmaxtotaloctetstimerange'] = strtolower(trim((string)$result['varusersmaxtotaloctetstimerange']));
+        # 응답(validated_data) 도 캐논값으로 동기화(해당 필드가 전송된 경우).
+        if (isset($this->validated_data['freeradius_halftimeperiod'])) {
+            $this->validated_data['freeradius_halftimeperiod'] = $result['varusershalftimeperiod'];
+        }
+        if (isset($this->validated_data['freeradius_pointoftime'])) {
+            $this->validated_data['freeradius_pointoftime'] = $result['varuserspointoftime'];
+        }
+        if (isset($this->validated_data['freeradius_maxtotaloctetstimerange'])) {
+            $this->validated_data['freeradius_maxtotaloctetstimerange'] = $result['varusersmaxtotaloctetstimerange'];
         }
 
         $result['varuserscreatedate'] = date('Y/m/d H:i:s');

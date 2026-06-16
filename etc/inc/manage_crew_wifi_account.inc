@@ -45,22 +45,22 @@ function draw_wifi_userid_search_box() {
     }
 
     $html = '';
-    $html .= '<form method="get" action="' . $action . '" style="display:flex; align-items:flex-end; justify-content:flex-start; gap:8px; flex-wrap:nowrap; margin:0;">';
+    $html .= '<form method="get" action="' . $action . '" style="display:flex; align-items:flex-end; justify-content:flex-start; gap:8px; flex-wrap:nowrap; margin:0; width:100%; min-width:0;">';
 
     if ($order !== '') {
         $html .= '<input type="hidden" name="order" value="' . h($order) . '">';
     }
 
-    $html .= '<div style="display:flex; flex-direction:column; gap:6px; width:370px;">';
+    $html .= '<div style="display:flex; flex-direction:column; gap:6px; flex:1 1 auto; min-width:120px; max-width:420px;">';
     //$html .= '  <label for="userid_search" style="font-weight:600; color:#333; line-height:1;">USERID</label>';
     $html .= '  <input type="text" id="userid_search" name="userid_search" value="' . h($q) . '" placeholder="User ID" ';
     $html .= '         style="height:34px; width:100%; padding:0 10px; border:1px solid #ccc; border-radius:6px; outline:none; box-sizing:border-box;">';
     $html .= '</div>';
 
-    $html .= '<button type="submit" style="height:34px; padding:0 12px; border:1px solid #1976d2; background:#1976d2; color:#fff; border-radius:6px; cursor:pointer; white-space:nowrap;">Search</button>';
+    $html .= '<button type="submit" style="height:34px; padding:0 12px; border:1px solid #1976d2; background:#1976d2; color:#fff; border-radius:6px; cursor:pointer; white-space:nowrap; flex:0 0 auto;">Search</button>';
 
     if ($q !== '') {
-        $html .= '<a href="' . h($clearUrl) . '" style="display:inline-flex; align-items:center; justify-content:center; height:34px; padding:0 12px; border:1px solid #bbb; background:#fff; color:#333; border-radius:6px; text-decoration:none; white-space:nowrap;">Clear</a>';
+        $html .= '<a href="' . h($clearUrl) . '" style="display:inline-flex; align-items:center; justify-content:center; height:34px; padding:0 12px; border:1px solid #bbb; background:#fff; color:#333; border-radius:6px; text-decoration:none; white-space:nowrap; flex:0 0 auto;">Clear</a>';
     }
 
     $html .= '</form>';
@@ -915,8 +915,8 @@ function del_wifi_user($userlist){
                 $deleted_users[] = $user;
                 unlink_if_exists("/var/log/radacct/datacounter/daily/used-octets-$user*");
                 unlink_if_exists("/var/log/radacct/datacounter/daily/max-octets-$user");
-                unlink_if_exists("/var/log/radacct/datacounter/weekiy/used-octets-$user*");
-                unlink_if_exists("/var/log/radacct/datacounter/weekiy/max-octets-$user");
+                unlink_if_exists("/var/log/radacct/datacounter/weekly/used-octets-$user*");
+                unlink_if_exists("/var/log/radacct/datacounter/weekly/max-octets-$user");
                 unlink_if_exists("/var/log/radacct/datacounter/monthly/used-octets-$user*");
                 unlink_if_exists("/var/log/radacct/datacounter/monthly/max-octets-$user");
                 unlink_if_exists("/var/log/radacct/datacounter/forever/used-octets-$user*");
@@ -1078,7 +1078,6 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
     if (!isset($config['installedpackages']['freeradius']['config']) || !is_array($config['installedpackages']['freeradius']['config'])) {
         $config['installedpackages']['freeradius']['config'] = array();
     }
-    echo($issimplefied);
     if($issimplefied){
         if ($terminaltype == "") {
             $userprefix = 'usr';

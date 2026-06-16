@@ -943,8 +943,66 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **배포 정합성**: `manage_freeradiususer.widget.php` + `crew_usage_timeperiod_check.php` +
   `captiveportal.inc` 3파일 일괄 배포.
 
+### 32. 원격 voucher API ↔ crew_account.php 정합 (create/update/delete) — 미커밋
+- **배경**: 원격 REST API(`/api/v1/freeradiususer`: **PUT=create / POST=update / DELETE=delete**)가
+  웹 admin(crew_account.php)의 `create_wifi_user`/`modify_wifi_user`/`del_wifi_user` 와 시그니처·동작이
+  어긋남(파라미터 누락 / 로직 누락 / 단건만 지원).
+- **Create** (`etc/inc/api/models/APIFreeRadiusUserCreate.inc`): `create_wifi_user` 6번째 **필수** 인자
+  `issimplefied` 누락 → ArgumentCountError fatal. 추가 + **기본 false 방어 정규화**(문자열 `"false"`/`"0"`
+  등 PHP truthy 함정 차단). 단건 생성 경로에 `freeradius_users_resync()` 추가(bulk 는 create_wifi_user 내부).
+- **Update** (`APIFreeRadiusUserUpdate.inc`): ① `timeperiod` 분해(modify_wifi_user 와 동일:
+  `half-Monthly`→halftimeperiod/pointoftime/maxtotaloctetstimerange) ② `userlist`(배열/콤마문자열) +
+  `freeradius_username`(단일/배열) **다건 수신·루프**(단일 하위호환), `varusersusername` 키 보호,
+  used-octets 파일경로 per-user ③ `action()` 에 resync(+`require_once("freeradius.inc")`).
+- **Delete** (`APIFreeRadiusUserDelete.inc`): **다건 수신** + 캐논 함수 `del_wifi_user($userlist)` **재사용**
+  (다건+파일정리+resync+radcheck(#23)+로그 자동 정합; `delete_done` 플래그로 action 중복 write 방지).
+- **`weekiy`→`weekly` 오타 수정**(`del_wifi_user` + API delete): 주간 datacounter 파일이 삭제 안 되던 버그.
+- **`manage_crew_wifi_account.inc` 디버그 `echo($issimplefied)` 제거**(API JSON 응답 오염 차단).
+- **timeperiod 대소문자 방어 정규화(입력 단계, Update+Create 양쪽)**: API 입력은 케이스 정규화 없이
+  `explode('-')` 후 세그먼트를 **verbatim 저장**(timerange 만 소문자)이라, `Half-Monthly`/`HALF-MONTHLY`
+  를 보내면 config.xml·관리테이블 표기가 웹(`half`/`Monthly`)과 어긋나고, **단건(create_userinfo) raw 복사
+  경로는 timerange 도 소문자화 안 해** `Monthly` 저장 시 datacounter 디렉터리(`.../monthly/`) 불일치
+  잠재버그. → 입력 단계에서 **half=소문자·pointoftime=`ucfirst(strtolower())`·timerange=소문자**로 캐논화:
+  Update(분해 직후), Create-bulk(결합문자열 pre-norm 후 `create_wifi_user` 전달; 공유 함수 무수정),
+  Create-single(`create_userinfo` 3필드 + validated_data 동기화). **기능은 원래도 정상**(소비측 전부
+  `strtolower` 비교) — 미관/일관성 + 단건 timerange 잠재버그 차단. explode 의 `-` 분해 의미는 불변(회귀 0).
+- 검증: php -l + 단위/런타임 하네스(다건 수집·키보호·방어정규화·timeperiod 분해/케이스수렴·del 재사용·폴백) 통과.
+- **배포 정합성**: 5파일 일괄(APIFreeRadiusUser{Create,Update,Delete}.inc + manage_crew_wifi_account.inc + crew_account.php).
+
+### 33. 관리/Main Panel UI 보강 — 미커밋
+- **crew_account.php 툴바 1줄(A안)**: `.list-top` nowrap + 검색박스 가변(`flex:1 1 auto; min-width:0`,
+  입력 max 420px) + 버튼군 고정(`flex:0 0 auto`) + Search/Clear `flex:0 0 auto`(찌그러짐·겹침 차단,
+  S20 실측 후 수정). Modify Voucher 폼에서 **미구현 `timelimit` 필드 제거**(`draw_wifi_userid_search_box` 포함).
+- **common_ui.inc `print_sidebar`**: 사이드바 하단 푸터 — "This Web console is developed and maintained by
+  [SynerSAT Korea](https://www.synersat.com). © since 2016 Powered by [PFSense](https://www.pfsense.org)."
+  (다크 인라인 스타일, 전 커스텀 페이지 공통). main_dashboard.php 는 stock pfSense 대시보드라 무관.
+- **index.php(Main Panel) #28 미니맵 반응형(B+D)**: 고정 220px → `width:100%; max-width:248px; aspect-ratio:1`
+  + 디스크 인셋% + SVG 100%(viewBox 자동스케일) + **배경 패닝 px→% (px-독립; 검증: 5크기×5줌×8좌표 =
+  200조합 동일)** + 배지(clock/zoom) 안쪽(`right:-12px`→`7%`). 좁은 타일(크롬100%) 우측 넘침 해소.
+- **index.php 3D 안테나 스카이돔**(Satellite 나침반 클릭→모달, `⤢ 3D` 배지): **Canvas 2D 자체투영(외부
+  라이브러리 0)**. 반구 와이어(수평선/el30·60/자오선/NESW/천정) + VSAT/FBB 위성 점·지향선(status 색,
+  el<0·blocked 빨강) + **중앙 배**(heading 회전) + 드래그회전/idle 자동궤도. **바닥 = `world_minimap.jpg`**
+  (el=0 평면은 (E,N)→화면이 아핀 → `setTransform` 1회 텍스처, 본선 중심·수평선 타원 클립). 데이터는
+  `acuLastVsat`/`acuLastFbb`(az·el·heading) 재사용(백엔드 0). **GPS 없으면 바닥 흐린 채움(현재)**.
+- **index.php 위성 커버리지 맵**(Position 미니맵 클릭→모달, `⤢ MAP` 배지): **인터넷 데이터 경고 게이트**
+  (동의 세션 기억) → Leaflet(cdnjs, 동의 후 로드) + OSM 타일 + 선박 위치 마커. 커버리지 = **운영사
+  이미지(B) 우선**(`../img/coverage_{oneweb,gx,fbb}.png`, `L.imageOverlay`) + **이미지 없으면 근사 위도대
+  밴드 폴백**(±70/76/88° 점선+라벨, "approx"). **APPROXIMATE/INDICATIVE 경고 배너**(오해 방지). ⚠️ 이
+  코드베이스 **최초의 인터넷 의존 기능**(동의 후에만 cdnjs/OSM 접속).
+- 검증: php -l + 런타임 하네스(투영 좌표 유한 / 바닥 텍스처 setTransform·drawImage / 경고게이트→동의→
+  지도초기화 / 이미지오버레이 우선·error 시 밴드폴백 / covBand 토글) 전부 통과.
+
 ## 다음 작업 대기 중
 
+- [ ] **이번 세션 미커밋 (커밋 대기)**: #32(voucher API 5파일) + #33(UI: crew_account.php·
+  manage_crew_wifi_account.inc·common_ui.inc·index.php). 지시 시 develop 일괄 커밋.
+- [ ] #32 검증(선상): 원격 API 로 voucher **다건** create(PUT)/update(POST)/delete(DELETE) → 웹과 동일
+  결과 / `weekly` 사용량 파일 삭제 확인 / **배포 정합성 5파일 일괄**(버전 섞임 시 ArgumentCountError 등).
+- [ ] #33 커버리지 맵: **운영사 이미지 필요(B)** — `usr/local/www/img/coverage_{oneweb,gx,fbb}.png`
+  (등장방형/Mercator, 투명배경 + 커버리지 색). 넣기 전엔 근사 밴드 폴백. **cdnjs/OSM outbound 도달성**
+  (선박 방화벽) 확인 필요 — 막히면 지도 안 뜸(이 코드베이스 최초 인터넷 의존).
+- [ ] #33 3D 돔: GPS 없을 때 바닥 처리 결정(현재=흐린 채움 / B안=전세계지도+배숨김 미적용) / 패치 범위
+  `FLOOR_SPAN_HALF`(현재 ±16°) 체감 조정.
 - [x] **#31**: CNA 로그인 창 — 로그인 폼 유지(원래 동작). **자동닫힘 기계장치(guide/ack/probe/
   done/게이트)는 index.php 에서 전부 삭제**. 로그인 폼의 "Copy address" 블록은 `captiveportal.inc`
   `renderLoginPortalHtml` 에 코드 보존하되 `$cpShowCopyAddr=false` 로 **기본 미표시(이 스레드 이전

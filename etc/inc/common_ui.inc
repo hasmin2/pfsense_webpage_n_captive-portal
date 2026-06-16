@@ -189,6 +189,20 @@ function print_sidebar($inputlink)
         . '</a>'
         . '</li>';
     $rtnstr .= '    </ul></div>';
+
+    // 사이드바 하단 푸터 (전 페이지 공통 — print_sidebar 가 모든 커스텀 페이지의 사이드바를 그림).
+    // 다크 사이드바 대비 인라인 스타일(외부 CSS 의존 없음). 링크는 새 탭.
+    $rtnstr .= '    <div class="lnb-footer" style="margin-top:18px; padding:14px 16px 20px; '
+        . 'font-size:11px; line-height:1.65; color:rgba(255,255,255,.45); '
+        . 'border-top:1px solid rgba(255,255,255,.08);">'
+        . 'This Web console is developed and maintained by '
+        . '<a href="https://www.synersat.com" target="_blank" rel="noopener" '
+        . 'style="color:rgba(255,255,255,.72); text-decoration:underline;">SynerSAT Korea</a>. '
+        . '&copy; since 2016 Powered by '
+        . '<a href="https://www.pfsense.org" target="_blank" rel="noopener" '
+        . 'style="color:rgba(255,255,255,.72); text-decoration:underline;">PFSense</a>.'
+        . '</div>';
+
     $rtnstr .= '  </div>'; // lnb
     $rtnstr .= '</div>';   // sidebar
 
