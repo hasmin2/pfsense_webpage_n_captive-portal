@@ -35,6 +35,16 @@ class APIFreeRADIUSUserCreate extends APIModel {
             if (function_exists('freeradius_users_resync')) {
                 freeradius_users_resync();
             }
+            # #23 step3-A: 단건 생성 radcheck 동기화(비밀번호가 있을 때).
+            if (function_exists('freeradius_radcheck_sync_users') &&
+                !empty($this->validated_data['freeradius_username']) &&
+                !empty($this->validated_data['freeradius_password'])) {
+                $enc = 'Cleartext-Password';
+                if (isset($this->id) && isset($this->config["installedpackages"]["freeradius"]["config"][$this->id]['varuserspasswordencryption'])) {
+                    $enc = $this->config["installedpackages"]["freeradius"]["config"][$this->id]['varuserspasswordencryption'];
+                }
+                freeradius_radcheck_sync_users(array(array('user' => $this->validated_data['freeradius_username'], 'pass' => $this->validated_data['freeradius_password'], 'enc' => $enc)));
+            }
         }
         return APIResponse\get(0, $this->validated_data);
     }
@@ -115,6 +125,19 @@ class APIFreeRADIUSUserCreate extends APIModel {
 			if (!$this->is_username_reserved($this->initial_data["freeradius_username"])) {
 			# Ensure username is not longer that 32 characters
 				if (strlen($this->initial_data["freeradius_username"]) <= 32) {
+					# israndompw = true/"true" 시 자동 생성 비밀번호를 freeradius_password 에 주입(create_wifi_user 동일 로직).
+					$_rp_c = $this->initial_data['israndompw'] ?? null;
+					$_do_randpw_c = ($_rp_c === true) || (is_string($_rp_c) && !in_array(strtolower(trim($_rp_c)), array('', '0', 'false', 'no', 'off'), true));
+					if (!isset($this->initial_data['freeradius_password']) && $_do_randpw_c) {
+					    $alphabet = '1234567890';
+					    $pass = array();
+					    $alphaLength = strlen($alphabet) - 1;
+					    for ($passwordchar = 0; $passwordchar < 6; $passwordchar++) {
+					        $n = rand(0, $alphaLength);
+					        $pass[] = $alphabet[$n];
+					    }
+					    $this->initial_data['freeradius_password'] = implode($pass);
+					}
 					if (isset($this->initial_data['freeradius_password'])) {
 					    if(!isset($this->id)){
 					        $this->id = 0;

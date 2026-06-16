@@ -76,13 +76,15 @@ class TopUp extends APIModel {
                         $this->performTopup($item);
                         $this->config["installedpackages"]["freeradius"]["config"][$item]["varusersmodified"] = "update";
 
-                        cp_wireless_log(
-                            "Topup successful:".$userentry['varusersusername']." current " .
-                            $userentry['varusersmaxtotaloctets'] .
-                            "MBytes, added " .
-                            $this->initial_data['freeradius_maxtotaloctets'] .
-                            "MBytes"
-                        );
+                        $logparts = array("Topup:" . $userentry['varusersusername']);
+                        if (isset($this->initial_data['freeradius_maxtotaloctets']) && (int)$this->initial_data['freeradius_maxtotaloctets'] !== 0) {
+                            $logparts[] = "quota+" . (int)$this->initial_data['freeradius_maxtotaloctets'] . "MB";
+                        }
+                        if (isset($this->initial_data['freeradius_lastbasedata']) && (int)$this->initial_data['freeradius_lastbasedata'] !== 0) {
+                            $adj = (int)$this->initial_data['freeradius_lastbasedata'];
+                            $logparts[] = "usage" . ($adj >= 0 ? '+' : '') . $adj . "MB";
+                        }
+                        cp_wireless_log(implode(' ', $logparts));
 
                         /*
                          * 요청사항:
@@ -112,10 +114,28 @@ class TopUp extends APIModel {
         $timerange = $this->config["installedpackages"]["freeradius"]["config"][$index]['varusersmaxtotaloctetstimerange'];
         $username = $this->config["installedpackages"]["freeradius"]["config"][$index]['varusersusername'];
 
-        if (isset($this->initial_data['freeradius_maxtotaloctets'])) {
+        if (isset($this->initial_data['freeradius_maxtotaloctets']) && (int)$this->initial_data['freeradius_maxtotaloctets'] !== 0) {
             $this->config["installedpackages"]["freeradius"]["config"][$index]['varusersmaxtotaloctets'] =
                 (int)$this->config["installedpackages"]["freeradius"]["config"][$index]['varusersmaxtotaloctets']
                 + (int)$this->initial_data['freeradius_maxtotaloctets'];
+        }
+
+        // freeradius_lastbasedata: MB 단위 delta 가감 → used-octets 베이스 파일에 직접 반영.
+        //   양수(+50) = 현재 누적값 +50MB, 음수(-50) = -50MB (0 하한).
+        //   세션 파일(used-octets-{user}-{SID})은 건드리지 않음 — 베이스 파일만 수정.
+        //   quota 검사(datacounter_auth.sh)는 베이스+세션 합산이므로 효과 = delta 그대로 반영.
+        if (isset($this->initial_data['freeradius_lastbasedata']) && (int)$this->initial_data['freeradius_lastbasedata'] !== 0) {
+            $delta_bytes = (int)$this->initial_data['freeradius_lastbasedata'] * 1048576;
+            $basefile = "/var/log/radacct/datacounter/{$timerange}/used-octets-{$username}";
+            $current_base = 0;
+            if (is_file($basefile) && is_readable($basefile)) {
+                $raw = trim((string)@file_get_contents($basefile));
+                if (preg_match('/^\d+$/', $raw)) {
+                    $current_base = (int)$raw;
+                }
+            }
+            $new_base = max(0, $current_base + $delta_bytes);
+            @file_put_contents($basefile, (string)$new_base);
         }
     }
 
