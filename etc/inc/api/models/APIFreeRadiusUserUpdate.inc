@@ -34,6 +34,10 @@ class APIFreeRADIUSUserUpdate extends APIModel {
         if (function_exists('freeradius_users_resync')) {
             freeradius_users_resync();
         }
+        # #23 step3-A: random PW 변경 시 radcheck 동기화(락 밖).
+        if (!empty($this->_radcheck_entries) && function_exists('freeradius_radcheck_sync_users')) {
+            freeradius_radcheck_sync_users($this->_radcheck_entries);
+        }
         return APIResponse\get(0, $this->validated_data);
     }
 
@@ -199,6 +203,28 @@ class APIFreeRADIUSUserUpdate extends APIModel {
     # 단일 사용자(index) 의 필드 갱신. $username = 루프에서 전달된 "현재 사용자"
     #   (다건 루프 정합 — used-octets 파일경로가 initial_data 의 단일 freeradius_username 에 의존하지 않게).
     public function update_userinfo($index, $username) {
+        # israndompw = true/"true" 시 사용자마다 독립 생성 비밀번호를 freeradius_password 에 주입(reset_random_wifi_user_pw 동일 로직).
+        $_rp_u = $this->initial_data['israndompw'] ?? null;
+        $_do_randpw_u = ($_rp_u === true) || (is_string($_rp_u) && !in_array(strtolower(trim($_rp_u)), array('', '0', 'false', 'no', 'off'), true));
+        if ($_do_randpw_u) {
+            $alphabet = '1234567890';
+            $pass = array();
+            $alphaLength = strlen($alphabet) - 1;
+            for ($passwordchar = 0; $passwordchar < 6; $passwordchar++) {
+                $n = rand(0, $alphaLength);
+                $pass[] = $alphabet[$n];
+            }
+            $this->initial_data['freeradius_password'] = implode($pass);
+        } elseif ($_rp_u !== null) {
+            # israndompw 명시적 false/"false" → 비밀번호를 "1111" 로 초기화.
+            $this->initial_data['freeradius_password'] = "1111";
+        }
+        # #23 step3-A: israndompw 가 명시적으로 설정됐을 때(true→난수/false→1111) radcheck 동기화.
+        if ($_rp_u !== null) {
+            if (!isset($this->_radcheck_entries)) { $this->_radcheck_entries = array(); }
+            $enc = $this->config["installedpackages"]["freeradius"]["config"][$index]['varuserspasswordencryption'] ?? 'Cleartext-Password';
+            $this->_radcheck_entries[] = array('user' => $username, 'pass' => $this->initial_data['freeradius_password'], 'enc' => $enc);
+        }
         foreach ($this->config["installedpackages"]["freeradius"]["config"][$index] as $item => $value) {
             # varusersusername(키)은 update 로 변경하지 않는다(이름 변경은 update 대상 아님).
             #   다건 루프에서 freeradius_username 이 페이로드에 있어도 각 사용자 키를 덮어쓰지 않게.
@@ -215,8 +241,14 @@ class APIFreeRADIUSUserUpdate extends APIModel {
                 $this->validated_data["freeradius_" . $postfix] = $this->initial_data["freeradius_" . $postfix];
             }
 
-            if (isset($this->initial_data["freeradius_maxtotaloctetstimerange"]) && isset($this->initial_data["freeradius_lastbasedata"])) {
-                $timerange = $this->initial_data["freeradius_maxtotaloctetstimerange"];
+        }
+
+        # lastbasedata: freeradius_maxtotaloctetstimerange 미전송 시 config 기존값 폴백.
+        #   (루프 밖으로 이동 — 기존 코드는 foreach 안에서 필드 수만큼 반복 기록하는 버그 있었음.)
+        if (isset($this->initial_data["freeradius_lastbasedata"])) {
+            $timerange = $this->initial_data["freeradius_maxtotaloctetstimerange"]
+                ?? ($this->config["installedpackages"]["freeradius"]["config"][$index]['varusersmaxtotaloctetstimerange'] ?? null);
+            if ($timerange !== null && $timerange !== '') {
                 $filepathall = "/var/log/radacct/datacounter/$timerange/used-octets-$username";
                 if (($use_file = fopen($filepathall, "w")) !== false) {
                     fwrite($use_file, (string) ((int) ($this->initial_data["freeradius_lastbasedata"] * 1048576)));

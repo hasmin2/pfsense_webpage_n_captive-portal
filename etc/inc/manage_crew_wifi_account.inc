@@ -1182,7 +1182,9 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
 
         $userinfoentry['varusersusername'] = $username;
 
-        if ($israndompw === "randpwd") {
+        // israndompw: true/false(bool) 또는 "true"/"false"(string) 수용. "randpwd" 구값도 truthy 라 자동 하위호환.
+        $do_randpw = ($israndompw === true) || (is_string($israndompw) && !in_array(strtolower(trim($israndompw)), array('', '0', 'false', 'no', 'off'), true));
+        if ($do_randpw) {
             $alphabet = '1234567890';
             $pass = array();
             $alphaLength = strlen($alphabet) - 1;

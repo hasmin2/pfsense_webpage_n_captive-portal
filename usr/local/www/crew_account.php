@@ -657,7 +657,7 @@ if ($_POST['dataamount']){
             </div>
 
             <div class="check v1 mt30">
-                <input type="checkbox" name="randpwd" id="randpwd" value="randpwd">
+                <input type="checkbox" name="randpwd" id="randpwd" value="true">
                 <label for="randpwd">
                     <p>Generate random password?</p>
                 </label>
