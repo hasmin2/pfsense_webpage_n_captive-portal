@@ -12,8 +12,8 @@
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
 | `develop` | `10aeaea` | **#1~#33 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강 — 커밋 `10aeaea`) |
-| `main` | `db8be52` | **#1~#33 전부 반영 완료** (merge 커밋 `db8be52`, develop 트리와 콘텐츠 동일). 2026-06-16 develop→main 일괄 통합 |
-| `prod` | `f04c9a4` | 실제 배포 버전, 건드리지 않음 |
+| `main` | `775066c` | **#1~#33 전부 반영 완료** (merge 커밋 `db8be52` + docs `775066c`, develop 트리와 콘텐츠 동일). 2026-06-16 develop→main 일괄 통합 |
+| `prod` | `4eb63ac` | **#1~#33 전부 반영** (merge 커밋 `4eb63ac`). 2026-06-16 main→prod 배포 |
 
 > **develop 최근 작업 묶음(#13확장·#15~#17)**: 배포 시 구룰 자동 purge + 로그인 유지 마이그레이션
 > (`4df5de3`), phantom CP zone 제거·즉시정리(`9bc6053`·`9476e47`), getsession 무효리셋 가드 +
