@@ -215,6 +215,11 @@ function captiveportal_load_modules() {
 function captiveportal_configure() {
     global $config, $cpzone, $cpzoneid;
 
+    // 멱등 self-heal: 구버전 per-user 로그인 룰("[User Rule] <id> auto generated rule")을
+    // config.xml 에서 일괄 제거한다. (pfctl 테이블 방식으로 전환되며 고아로 남은 룰 →
+    //  DHCP IP 재할당 시 옛 gateway 로 오라우팅될 위험.) 제거할 게 없으면 no-op.
+    cp_purge_legacy_user_login_rules();
+
     if (is_array($config['captiveportal'])) {
         foreach ($config['captiveportal'] as $cpkey => $cp) {
             $cpzone = $cpkey;
@@ -1202,15 +1207,11 @@ function captiveportal_disconnect($dbent, $term_cause = 1, $stop_time = null, $c
         static $_cp_kill_shutdown_registered = false;
         if (!$_cp_kill_shutdown_registered) {
             $_cp_kill_shutdown_registered = true;
+            // 즉시 kill 금지: 응답/연결 종료 전에 RST 되면 ~19초 지연.
+            // detached 백그라운드(짧은 sleep)로 분리 — cp_flush_deferred_state_kills().
             register_shutdown_function(static function() {
-                foreach (($GLOBALS['_cp_deferred_state_kills'] ?? []) as $ip) {
-                    if (is_ipaddr($ip)) {
-                        @pfSense_kill_states(utf8_encode($ip));
-                        @pfSense_kill_srcstates(utf8_encode($ip));
-                        if (function_exists('cp_kill_states_for_ip')) {
-                            cp_kill_states_for_ip($ip);
-                        }
-                    }
+                if (function_exists('cp_flush_deferred_state_kills')) {
+                    cp_flush_deferred_state_kills();
                 }
             });
         }
@@ -1694,6 +1695,40 @@ if (!function_exists('cp_wireless_log')) {
     }
 }
 
+if (!function_exists('cp_admin_actor')) {
+    /*
+     * 관리 작업(리셋/삭제/PW변경 등)을 수행한 주체를 반환한다.
+     * - GUI 로그인 세션이 있으면 그 관리자 ID($_SESSION['Username']).
+     * - 세션이 없는 호출(원격 API 등)은 "REMOTE API" + 호출자 IP.
+     *   IP는 TCP 피어(REMOTE_ADDR)를 쓰고, 리버스 프록시 뒤일 수 있어
+     *   X-Forwarded-For 선두값이 다르면 보조로 덧붙인다(XFF는 스푸핑 가능 — 참고용).
+     * - $_SERVER 자체가 없는 CLI/cron 호출이면 "REMOTE API".
+     * cp_wireless_log가 줄바꿈/탭을 다시 정리하므로 여기선 값만 정리한다.
+     */
+    function cp_admin_actor(): string
+    {
+        if (!empty($_SESSION['Username'])) {
+            $actor = trim(str_replace(["\r", "\n", "\t"], ' ', (string)$_SESSION['Username']));
+            if ($actor !== '') {
+                return $actor;
+            }
+        }
+
+        // 세션 없음 → 원격 API 호출로 간주, 호출자 IP를 식별한다.
+        $ip = !empty($_SERVER['REMOTE_ADDR']) ? (string)$_SERVER['REMOTE_ADDR'] : '';
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $xff = explode(',', (string)$_SERVER['HTTP_X_FORWARDED_FOR']);
+            $xff_ip = trim($xff[0]);
+            if ($xff_ip !== '' && $xff_ip !== $ip) {
+                $ip = ($ip !== '') ? "{$ip} via {$xff_ip}" : $xff_ip;
+            }
+        }
+        $ip = trim(str_replace(["\r", "\n", "\t"], ' ', $ip));
+
+        return ($ip !== '') ? "REMOTE API ({$ip})" : "REMOTE API";
+    }
+}
+
 
 /* log successful captive portal authentication to syslog */
 /* part of this code from php.net */
@@ -1816,9 +1851,23 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                 }
             }
 
-            // 마지막에 modified 플래그 해제 (처리 완료 후)
-            unset($uconf['varusersmodified']);
-            write_config("freeradius user update");
+            // 마지막에 modified 플래그 해제 — lock+parse_config(true) 로 최신본에 적용 (#30)
+            // stale $uconf 에 unset 하면 그 사이 다른 writer 가 변경한 내용을
+            // write_config 가 덮어쓰는 lost-update 가 발생하므로 fresh config 기준으로 지운다.
+            $cnf_lock_auth = lock('freeradius_user_config', LOCK_EX);
+            try {
+                parse_config(true);
+                foreach ($config['installedpackages']['freeradius']['config'] as $_ak => $_au) {
+                    if (strcasecmp($_au['varusersusername'] ?? '', $login) === 0) {
+                        unset($config['installedpackages']['freeradius']['config'][$_ak]['varusersmodified']);
+                        unset($config['installedpackages']['freeradius']['config'][$_ak]['varusersresetquota']);
+                        break;
+                    }
+                }
+                write_config("freeradius user update");
+            } finally {
+                unlock($cnf_lock_auth);
+            }
 
             // NOTE: freeradius_update_user() 는 여기서 호출하지 않음.
             // 이유:
@@ -2116,7 +2165,7 @@ function antenna_allowed($username)
         return true;
     }
 
-    $shutdown_gateways = $config['captiveportal']['shutdown_gateways'] ?? '';
+    $shutdown_gateways = $config['system']['cp_shutdown_gateways'] ?? '';
     if ($terminaltype !== '' && strpos($shutdown_gateways, $terminaltype . '||') !== false) {
         return false;
     }
@@ -2854,9 +2903,11 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         $cnf_lock = lock('freeradius_user_config', LOCK_EX);
         try {
             $config = parse_config(true);
+            $__pw_enc = 'Cleartext-Password';
             foreach($config['installedpackages']['freeradius']['config'] as $item => $value){
                 if($username===$value['varusersusername']){
                     $config['installedpackages']['freeradius']['config'][$item]['varuserspassword']=$password;
+                    $__pw_enc = $value['varuserspasswordencryption'] ?? 'Cleartext-Password';
                 }
             }
             write_config("{$username} change password applied");
@@ -2874,6 +2925,10 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         else{
             $title="Problem occurred while changing password.";
             $result='Password has not been changed, You may login old password.';
+        }
+        // #23 step3-A: radcheck 동기화(락 밖, 단일). files 가 아직 권위라 동작변경 없음 — radcheck 최신 유지.
+        if (function_exists('freeradius_radcheck_sync_password')) {
+            freeradius_radcheck_sync_password($username, $password, $__pw_enc);
         }
         $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
                 'logo'     => $logo,
@@ -4127,13 +4182,37 @@ function getusername($sessionid) {
 function getsession($username) {
     global $cpzone;
     $cpdb = captiveportal_read_db();
-    /* Lookup the username*/
+    /* Lookup the username (대소문자 무시).
+       세션 DB 의 username 과 config/요청 username 의 대소문자 불일치로 조회가
+       실패하면 무효 리셋(파일만 삭제 → 살아있는 세션이 되씀)·로그아웃 실패로
+       이어지므로 strcasecmp 로 매칭한다. */
     foreach ($cpdb as $cpentry) {
-        if ($cpentry[4] == $username){
+        if (isset($cpentry[4]) && strcasecmp((string)$cpentry[4], (string)$username) === 0){
             return $cpentry[5];
         }
     }
     return false;
+}
+
+/**
+ * 주어진 username 의 활성 CP 세션 ID 를 전부 반환 (대소문자 무시).
+ * getsession()은 첫 세션만 반환하므로, 다중 기기 동시 로그인 대응으로 별도 제공.
+ * captiveportal_read_db() 는 전역 $cpzone 에 의존한다.
+ */
+function cp_get_sessionids_for_username_ci(string $username): array {
+    global $cpzone;
+    $out  = array();
+    $cpdb = captiveportal_read_db();
+    if (is_array($cpdb)) {
+        foreach ($cpdb as $cpentry) {
+            if (isset($cpentry[4]) && strcasecmp((string)$cpentry[4], $username) === 0) {
+                if (isset($cpentry[5]) && (string)$cpentry[5] !== '') {
+                    $out[] = $cpentry[5];
+                }
+            }
+        }
+    }
+    return $out;
 }
 
 function getcurquota($sessionid) {
@@ -4242,6 +4321,82 @@ function getmaxquota($username){
     }
     return $result;
 }
+
+/**
+ * 사용자 사용량(쿼터)을 "즉시" 0 으로 리셋한다. (WIFI DATA RESET 명령 처리용)
+ *
+ * 기존 동작은 resetquota=true 태그만 달아두고 "차후 로그인 시" authenticate_user 에서
+ * 파일을 지웠다. 본 함수는 그 리셋을 명령 시점에 바로 수행한다.
+ *
+ * 순서가 핵심:
+ *   1) 활성 세션이 있으면 먼저 로그아웃(disconnect)시킨다. 로그아웃은 accounting Stop 을
+ *      보내 세션을 종료하고 ipfw 카운터를 정리하므로, 이후 세션이 used-octets 파일을
+ *      다시 쓰지 않는다. (살아있는 세션 중에 파일을 지우면 다음 Interim/Stop 이 다시 써서
+ *      0 이 유지되지 않는다.)
+ *   2) used-octets-{user}(메인) + used-octets-{user}-*(세션) 파일을 삭제 → 합산값 0.
+ *      max-octets-{user}(한도)는 보존한다. timerange 디렉터리 전체를 훑어
+ *      어느 range 든 확실히 0 으로 만든다(pointoftime↔maxtotaloctetstimerange 불일치 안전).
+ *
+ * 주의: resetquota/modified 태그는 호출측이 그대로 유지한다(차후 로그인 fallback).
+ *       authenticate_user 의 차후-로그인 리셋은 그대로 두어 오프라인 유저/레이스를 커버.
+ *
+ * @param string $username
+ * @return bool  유효 username 이면 true
+ */
+function captiveportal_reset_user_usage(string $username): bool {
+    global $cpzone;
+    if (empty($cpzone)) {
+        $cpzone = 'crew';
+    }
+
+    $username = trim($username);
+    // 파일 경로/세션 조회에 쓰이므로 안전한 사용자명만 허용
+    if ($username === '' || !preg_match('/^[A-Za-z0-9_.:-]+$/', $username)) {
+        cp_wireless_log("DATA RESET skipped (invalid username): '{$username}'");
+        return false;
+    }
+
+    // 1) 활성 세션(대소문자 무시, 다중 기기 포함)을 먼저 전부 로그아웃
+    //    → accounting Stop 으로 SESSFILE→USEDFILE 누적 후 세션 종료 + ipfw 카운터 정리.
+    $sids = cp_get_sessionids_for_username_ci($username);
+    foreach ($sids as $sid) {
+        captiveportal_disconnect_client($sid, 6, "DATA RESET");
+    }
+
+    // 2) 재확인 가드: disconnect 후에도 활성 세션이 남아 있으면, 파일을 지워도
+    //    살아있는 세션의 다음 Interim 이 사용량을 되써서 리셋이 무효가 된다.
+    //    (getsession 케이스 미스로 disconnect 를 건너뛰던 기존 결함의 안전망.)
+    //    → 삭제를 건너뛰고 경고를 남겨 "조용한 실패"를 가시화한다(다음 주기/명령이 재시도).
+    $still = cp_get_sessionids_for_username_ci($username);
+    if (!empty($still)) {
+        cp_wireless_log("DATA RESET aborted: active session still present after disconnect for '{$username}' (sids=" . implode(',', $still) . ")");
+        return false;
+    }
+
+    // 3) used-octets(메인 + 세션) 삭제 → 사용량 0. max-octets(한도)는 보존.
+    $safeUser = preg_replace('/[^0-9a-zA-Z._:-]/', 'X', $username);
+    $removed  = 0;
+    foreach (array('daily', 'weekly', 'monthly', 'forever') as $range) {
+        $base = "/var/log/radacct/datacounter/{$range}/used-octets-{$safeUser}";
+        if (is_file($base)) {
+            @unlink($base);
+            $removed++;
+        }
+        $sessfiles = glob($base . '-*');
+        if (is_array($sessfiles)) {
+            foreach ($sessfiles as $f) {
+                if (is_file($f)) {
+                    @unlink($f);
+                    $removed++;
+                }
+            }
+        }
+    }
+
+    cp_wireless_log("DATA RESET applied (usage=0, files={$removed}): {$username}");
+    return true;
+}
+
 function is_using_fx(){
     global $config;
     $result = "";
@@ -4651,6 +4806,144 @@ function cp_sync_routing_tables() {
 }
 
 /**
+ * cp_gw_* pfctl 라우팅 테이블만 CP 세션 DB 기준으로 재적재(안전망).
+ *
+ * cp_sync_routing_tables() 와 달리 config.xml/룰을 건드리지 않는다
+ * (cp_refresh_pass_rules 미호출 → write_config/filter_configure 없음 → #10 무관, 저비용).
+ * 오직 pfctl 테이블 멤버십만 갱신한다.
+ *
+ * 목적(과금 무결성): route-to/block 룰은 테이블에 IP 가 있을 때만 동작한다.
+ *   filter_configure()(게이트웨이 up/down 이 자동 트리거)가 빈 alias 기준으로
+ *   테이블을 flush 하면, 그 순간 고정(pinned) 사용자 트래픽이 기본 경로(반대 uplink)로
+ *   새어 오과금된다. 매분 이 함수로 재적재해 테이블이 절대 비지 않게 유지한다.
+ *
+ * 방어 가드:
+ *   (1) empty-guard: 세션 읽기가 비거나 배열이 아니면 아무 것도 하지 않는다.
+ *       (빈 세트로 전 테이블을 flush 하면 전원 라우팅이 붕괴되므로 절대 금지.
+ *        실유저 0명이면 로그아웃 경로가 이미 테이블을 정리했으므로 skip 해도 안전.)
+ *   (2) 미해석-고정 가드: terminal_type 이 "설정됐는데 매칭 실패"(오타/disabled/rename)면
+ *       cp_gw_default 로 흡수(=누수)하지 않고 경고 로그만 남기고 어느 테이블에도 넣지 않는다.
+ *       공란/'auto' 만 의도된 예외로 cp_gw_default(자동 라우팅) 처리.
+ *       ※ 미해석 사용자의 진짜 블랙홀(전용 block 룰)은 별도 후속(재배포 동반).
+ *
+ * @return int 동기화한 IP 개수. 세션 없음/읽기 실패 시 -1(아무 것도 안 함).
+ */
+function cp_resync_pf_tables_only() {
+    global $config;
+
+    $sessions = cp_read_crew_sessions();
+
+    // (1) empty-guard
+    if (!is_array($sessions) || empty($sessions)) {
+        return -1;
+    }
+
+    // username(소문자) => 원시 varusersterminaltype 맵 1회 구성
+    // (cp_get_terminaltype_for_user 는 공란 시 is_using_fx 로 치환하므로,
+    //  "의도된 auto/공란" vs "미해석 고정" 구분에는 원시값이 필요하다.)
+    $rawMap = array();
+    if (is_array($config['installedpackages']['freeradius']['config'] ?? null)) {
+        foreach ($config['installedpackages']['freeradius']['config'] as $value) {
+            $u = strtolower(trim((string)($value['varusersusername'] ?? '')));
+            if ($u !== '') {
+                $rawMap[$u] = strtolower(trim((string)($value['varusersterminaltype'] ?? '')));
+            }
+        }
+    }
+
+    // 대상 테이블 초기화(default + 모든 WAN GW)
+    $all_gws   = cp_find_all_wan_gateways();
+    $table_ips = array('cp_gw_default' => array());
+    foreach ($all_gws as $gw) {
+        $table_ips[cp_gw_table_name($gw['name'])] = array();
+    }
+
+    $count = 0;
+    foreach ($sessions as $s) {
+        $ip   = $s[2] ?? '';
+        $user = $s[4] ?? '';
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+            continue;
+        }
+
+        $gwname = cp_get_terminaltype_for_user($user);
+        $table  = cp_get_pf_table_for_gateway($gwname);
+
+        if ($table === null) {
+            $rawNorm = $rawMap[strtolower(trim((string)$user))] ?? '';
+            if ($rawNorm === '' || $rawNorm === 'auto') {
+                // 의도된 예외: 공란/'auto' → 기본(자동) 라우팅
+                $table = 'cp_gw_default';
+            } else {
+                // (2) 미해석-고정: 지정 GW 가 오타/disabled/rename 등으로 해석 실패.
+                //     cp_gw_default 로 흡수하면 누수(오과금) → 경고만 남기고 넣지 않는다.
+                cp_wireless_log("[CP Routing] PINNED user '{$user}' terminal_type '{$rawNorm}' unresolved (typo/disabled/renamed gateway) ip={$ip} — left unrouted (not default)");
+                continue;
+            }
+        }
+
+        if (array_key_exists($table, $table_ips)) {
+            $table_ips[$table][] = $ip;
+            $count++;
+        }
+    }
+
+    // 테이블 원자적 교체(replace). empty-guard 통과(세션 존재) 상태이므로,
+    // 특정 GW 테이블이 빈 것은 "그 GW 사용자 없음"이라 정상 flush.
+    foreach ($table_ips as $table => $ips) {
+        cp_sync_pf_table($table, $ips);
+    }
+
+    return $count;
+}
+
+/**
+ * 구버전 per-user 로그인 룰 일괄 제거 (멱등 self-heal).
+ *
+ * 과거 구현은 로그인마다 $config['filter']['rule'] 에
+ * "[User Rule] <id> auto generated rule" 을 추가하고 로그아웃 시 제거했다.
+ * 현재는 pfctl 테이블(cp_gw_*) 방식으로 전환되어 이 룰들을 더 이상 만들지/지우지 않으므로,
+ * 마이그레이션 이전 로그인 유저들의 룰이 config.xml 에 고아로 남는다.
+ * → 한 번에 전부 제거(write_config 1회 + filter_configure 1회). 제거할 게 없으면 no-op.
+ *
+ * 주의: 다른 "[User Rule]" 룰(ban-all-rule / allow only 'this' PC / enable_crew_wifi 등)은
+ *       건드리지 않는다. 접미사 " auto generated rule" 로만 정확히 매칭한다.
+ *
+ * @return int 제거한 룰 개수
+ */
+function cp_purge_legacy_user_login_rules(): int {
+    global $config;
+
+    if (empty($config['filter']['rule']) || !is_array($config['filter']['rule'])) {
+        return 0;
+    }
+
+    $suffix = ' auto generated rule';
+    $removed = 0;
+
+    foreach ($config['filter']['rule'] as $k => $rule) {
+        if (!is_array($rule)) {
+            continue;
+        }
+        $descr = (string)($rule['descr'] ?? '');
+        if (strpos($descr, '[User Rule] ') === 0
+            && substr($descr, -strlen($suffix)) === $suffix) {
+            unset($config['filter']['rule'][$k]);
+            $removed++;
+        }
+    }
+
+    if ($removed > 0) {
+        $config['filter']['rule'] = array_values($config['filter']['rule']);
+        write_config("Purged {$removed} legacy per-user CP login rules");
+        filter_configure();
+        cp_wireless_log("Purged {$removed} legacy per-user CP login rules (auto generated)");
+    }
+
+    return $removed;
+}
+
+/**
  * 로그아웃/테이블 정리 처리.
  * - 모든 게이트웨이 pfctl table 에서 IP 제거 (어느 테이블에 있든 무조건 정리)
  * - $kill_states=true(기본) 이면 pf state 도 함께 삭제 (로그아웃 시 즉시 차단)
@@ -4703,6 +4996,39 @@ function cp_kill_states_for_ip($ip) {
     return true;
 }
 
+/**
+ * deferred 큐에 쌓인 IP 의 pf state 를 정리한다 (web/CLI 공용 shutdown 처리).
+ *
+ * 주의: pfSense spawn-fcgi 에는 fastcgi_finish_request() 가 없어서 shutdown 함수가
+ *       HTTP 응답/연결 종료 "전"에 실행된다. 여기서 즉시 pfctl -k 로 클라이언트 IP 의
+ *       state 를 kill 하면 포털 자신의 TCP 연결이 RST 되어 응답 전달 전에 끊긴다
+ *       (지연 큰 선박 WiFi 에서 일관되게 ~19초 지연 발생).
+ *       → 짧게 대기 후 kill 하는 detached 백그라운드 프로세스로 분리한다.
+ *       (로그아웃 즉시 ipfw auth 테이블/DB 에서는 이미 제거되어 신규 트래픽은 차단됨;
+ *        state kill 은 기존 연결 종료용이라 2초 지연은 기능상 무해.)
+ */
+function cp_flush_deferred_state_kills(): void {
+    if (empty($GLOBALS['_cp_deferred_state_kills'])) {
+        return;
+    }
+    $ips = array_values(array_unique($GLOBALS['_cp_deferred_state_kills']));
+    $GLOBALS['_cp_deferred_state_kills'] = [];
+
+    $cmds = array();
+    foreach ($ips as $ip) {
+        if (!is_ipaddr($ip)) {
+            continue;
+        }
+        $s = escapeshellarg($ip);
+        $cmds[] = "/sbin/pfctl -k {$s} -k 0.0.0.0/0";
+        $cmds[] = "/sbin/pfctl -k {$s} -k ::/0";
+    }
+    if (empty($cmds)) {
+        return;
+    }
+    mwexec_bg("/bin/sleep 2; " . implode("; ", $cmds));
+}
+
 
 /**
  * 로그인 처리.
@@ -4733,14 +5059,261 @@ function add_crew_linked_rule($sourceip, $userid) {
     return true;
 }
 
+/* =========================================================================
+ * Captive Portal i18n (다국어)
+ *   지원: en, ko, tl(타갈로그), vi(베트남어), id(인도네시아어), zh(중국어), my(미얀마어)
+ *   언어 결정: ?lang / 쿠키 cp_lang / 브라우저 Accept-Language(auto) / en 폴백
+ *   누락 키는 en 으로 폴백.
+ *   주의: ko 외 비영어 번역은 best-effort — 현지(선원) 검수 권장. 사전 한 곳만 고치면 됨.
+ * ========================================================================= */
+function cp_supported_langs(): array {
+    // code => 드롭다운에 표시할 원어명
+    return array(
+        'en' => 'English',
+        'ko' => '한국어',
+        'tl' => 'Tagalog',
+        'vi' => 'Tiếng Việt',
+        'id' => 'Bahasa Indonesia',
+        'zh' => '中文',
+        'my' => 'မြန်မာ',
+    );
+}
+
+function cp_resolve_lang(): string {
+    $supported = cp_supported_langs();
+
+    // 1) 명시적 선택(?lang / POST)
+    $req = '';
+    if (isset($_GET['lang']))       { $req = strtolower(trim((string)$_GET['lang'])); }
+    elseif (isset($_POST['lang']))  { $req = strtolower(trim((string)$_POST['lang'])); }
+    if ($req !== '' && isset($supported[$req])) { return $req; }
+
+    // 2) 쿠키(드롭다운이 JS 로 저장)
+    if (isset($_COOKIE['cp_lang'])) {
+        $c = strtolower(trim((string)$_COOKIE['cp_lang']));
+        if (isset($supported[$c])) { return $c; }
+    }
+
+    // 3) 브라우저 Accept-Language 자동감지(auto)
+    //    예: "ko-KR,ko;q=0.9,en;q=0.8" → 우선순위대로 첫 매칭
+    if (!empty($_SERVER['HTTP_ACCEPT_LANGUAGE'])) {
+        $al = strtolower((string)$_SERVER['HTTP_ACCEPT_LANGUAGE']);
+        foreach (explode(',', $al) as $part) {
+            $code    = trim(explode(';', $part)[0]); // "ko-kr"
+            $primary = explode('-', $code)[0];       // "ko"
+            if ($primary === 'zh' && isset($supported['zh'])) { return 'zh'; }
+            if (isset($supported[$primary])) { return $primary; }
+        }
+    }
+
+    // 4) 폴백
+    return 'en';
+}
+
+function cp_t(string $key, string $lang = 'en'): string {
+    static $dict = null;
+    if ($dict === null) { $dict = cp_i18n_dict(); }
+    if (isset($dict[$lang][$key])) { return $dict[$lang][$key]; }
+    if (isset($dict['en'][$key]))  { return $dict['en'][$key]; }
+    return $key;
+}
+
+function cp_i18n_dict(): array {
+    return array(
+        'en' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'Welcome!',
+            'subtitle'     => 'Secure network access with login, status information, and quota lookup in one place.',
+            'username'     => 'Username',
+            'ph_username'  => 'Enter your username',
+            'password'     => 'Password',
+            'ph_password'  => 'Enter your password',
+            'show'         => 'Show',
+            'hide'         => 'Hide',
+            'terms_agree'  => 'I agree with the %s.',
+            'terms_link'   => 'terms & licences',
+            'login'        => 'Login',
+            'login_helper' => 'Login errors, session notices, and other messages are displayed in the alert area above.',
+            'mac_notice'   => 'For a stable connection, please disable %s for this network.',
+            'quota_title'  => 'Check quota',
+            'quota_subtitle' => 'Check usage for your reference.',
+            'ph_quota_user'=> 'Enter username for quota check',
+            'check_usage'  => 'Check data usage',
+            'quota_helper' => 'The quota lookup button is enabled after a username is entered.',
+            'quota_loaded' => 'Quota result loaded.',
+            'total'        => 'Total',
+            'used'         => 'Used',
+            'remain'       => 'Remain',
+            'lang_label'   => 'Language',
+        ),
+        'ko' => array(
+            'title'        => '캡티브 포털',
+            'welcome'      => '환영합니다!',
+            'subtitle'     => '로그인, 상태 정보, 사용량 조회를 한 곳에서.',
+            'username'     => '사용자 이름',
+            'ph_username'  => '사용자 이름을 입력하세요',
+            'password'     => '비밀번호',
+            'ph_password'  => '비밀번호를 입력하세요',
+            'show'         => '표시',
+            'hide'         => '숨기기',
+            'terms_agree'  => '%s에 동의합니다.',
+            'terms_link'   => '약관 및 라이선스',
+            'login'        => '로그인',
+            'login_helper' => '로그인 오류 및 알림 메시지는 위 알림 영역에 표시됩니다.',
+            'mac_notice'   => '안정적인 연결을 위해 이 네트워크에서 %s를 꺼 주세요.',
+            'quota_title'  => '사용량 조회',
+            'quota_subtitle' => '참고용 사용량을 확인하세요.',
+            'ph_quota_user'=> '조회할 사용자 이름을 입력하세요',
+            'check_usage'  => '데이터 사용량 조회',
+            'quota_helper' => '사용자 이름을 입력하면 조회 버튼이 활성화됩니다.',
+            'quota_loaded' => '사용량 결과를 불러왔습니다.',
+            'total'        => '전체',
+            'used'         => '사용',
+            'remain'       => '남음',
+            'lang_label'   => '언어',
+        ),
+        'tl' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'Maligayang pagdating!',
+            'subtitle'     => 'Ligtas na koneksyon: pag-login, status, at pagtingin ng quota sa isang lugar.',
+            'username'     => 'Username',
+            'ph_username'  => 'Ilagay ang iyong username',
+            'password'     => 'Password',
+            'ph_password'  => 'Ilagay ang iyong password',
+            'show'         => 'Ipakita',
+            'hide'         => 'Itago',
+            'terms_agree'  => 'Sumasang-ayon ako sa %s.',
+            'terms_link'   => 'mga tuntunin at lisensya',
+            'login'        => 'Mag-login',
+            'login_helper' => 'Ang mga error sa login at iba pang mensahe ay ipinapakita sa alerto sa itaas.',
+            'mac_notice'   => 'Para sa matatag na koneksyon, paki-disable ang %s para sa network na ito.',
+            'quota_title'  => 'Tingnan ang quota',
+            'quota_subtitle' => 'Tingnan ang paggamit para sa iyong sanggunian.',
+            'ph_quota_user'=> 'Ilagay ang username para sa quota check',
+            'check_usage'  => 'Tingnan ang paggamit ng data',
+            'quota_helper' => 'Mae-enable ang button matapos maglagay ng username.',
+            'quota_loaded' => 'Na-load ang resulta ng quota.',
+            'total'        => 'Kabuuan',
+            'used'         => 'Nagamit',
+            'remain'       => 'Natitira',
+            'lang_label'   => 'Wika',
+        ),
+        'vi' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'Chào mừng!',
+            'subtitle'     => 'Truy cập mạng an toàn: đăng nhập, trạng thái và tra cứu dung lượng tại một nơi.',
+            'username'     => 'Tên đăng nhập',
+            'ph_username'  => 'Nhập tên đăng nhập của bạn',
+            'password'     => 'Mật khẩu',
+            'ph_password'  => 'Nhập mật khẩu của bạn',
+            'show'         => 'Hiện',
+            'hide'         => 'Ẩn',
+            'terms_agree'  => 'Tôi đồng ý với %s.',
+            'terms_link'   => 'điều khoản và giấy phép',
+            'login'        => 'Đăng nhập',
+            'login_helper' => 'Lỗi đăng nhập và các thông báo khác sẽ hiển thị ở khu vực cảnh báo phía trên.',
+            'mac_notice'   => 'Để kết nối ổn định, vui lòng tắt %s cho mạng này.',
+            'quota_title'  => 'Kiểm tra dung lượng',
+            'quota_subtitle' => 'Xem mức sử dụng để tham khảo.',
+            'ph_quota_user'=> 'Nhập tên đăng nhập để kiểm tra dung lượng',
+            'check_usage'  => 'Kiểm tra mức dùng dữ liệu',
+            'quota_helper' => 'Nút tra cứu sẽ bật sau khi nhập tên đăng nhập.',
+            'quota_loaded' => 'Đã tải kết quả dung lượng.',
+            'total'        => 'Tổng',
+            'used'         => 'Đã dùng',
+            'remain'       => 'Còn lại',
+            'lang_label'   => 'Ngôn ngữ',
+        ),
+        'id' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'Selamat datang!',
+            'subtitle'     => 'Akses jaringan aman: login, status, dan cek kuota dalam satu tempat.',
+            'username'     => 'Nama pengguna',
+            'ph_username'  => 'Masukkan nama pengguna Anda',
+            'password'     => 'Kata sandi',
+            'ph_password'  => 'Masukkan kata sandi Anda',
+            'show'         => 'Tampilkan',
+            'hide'         => 'Sembunyikan',
+            'terms_agree'  => 'Saya menyetujui %s.',
+            'terms_link'   => 'syarat & lisensi',
+            'login'        => 'Masuk',
+            'login_helper' => 'Kesalahan login dan pesan lain ditampilkan di area peringatan di atas.',
+            'mac_notice'   => 'Untuk koneksi yang stabil, harap nonaktifkan %s untuk jaringan ini.',
+            'quota_title'  => 'Cek kuota',
+            'quota_subtitle' => 'Lihat penggunaan untuk referensi Anda.',
+            'ph_quota_user'=> 'Masukkan nama pengguna untuk cek kuota',
+            'check_usage'  => 'Cek penggunaan data',
+            'quota_helper' => 'Tombol cek aktif setelah nama pengguna dimasukkan.',
+            'quota_loaded' => 'Hasil kuota dimuat.',
+            'total'        => 'Total',
+            'used'         => 'Terpakai',
+            'remain'       => 'Sisa',
+            'lang_label'   => 'Bahasa',
+        ),
+        'zh' => array(
+            'title'        => '强制门户',
+            'welcome'      => '欢迎！',
+            'subtitle'     => '安全网络接入：登录、状态信息与流量查询，一处搞定。',
+            'username'     => '用户名',
+            'ph_username'  => '请输入用户名',
+            'password'     => '密码',
+            'ph_password'  => '请输入密码',
+            'show'         => '显示',
+            'hide'         => '隐藏',
+            'terms_agree'  => '我同意%s。',
+            'terms_link'   => '条款与许可',
+            'login'        => '登录',
+            'login_helper' => '登录错误及通知消息将显示在上方提示区域。',
+            'mac_notice'   => '为保持连接稳定，请在本网络关闭%s。',
+            'quota_title'  => '查询流量',
+            'quota_subtitle' => '查看使用量以供参考。',
+            'ph_quota_user'=> '输入要查询的用户名',
+            'check_usage'  => '查询数据使用量',
+            'quota_helper' => '输入用户名后，查询按钮将启用。',
+            'quota_loaded' => '已加载流量结果。',
+            'total'        => '总计',
+            'used'         => '已用',
+            'remain'       => '剩余',
+            'lang_label'   => '语言',
+        ),
+        'my' => array(
+            'title'        => 'Captive Portal',
+            'welcome'      => 'ကြိုဆိုပါတယ်!',
+            'subtitle'     => 'လုံခြုံသော ကွန်ရက်ချိတ်ဆက်မှု — အကောင့်ဝင်ခြင်း၊ အခြေအနေနှင့် ဒေတာသုံးစွဲမှုကို တစ်နေရာတည်းတွင်။',
+            'username'     => 'အသုံးပြုသူအမည်',
+            'ph_username'  => 'သင့်အသုံးပြုသူအမည် ထည့်ပါ',
+            'password'     => 'စကားဝှက်',
+            'ph_password'  => 'သင့်စကားဝှက် ထည့်ပါ',
+            'show'         => 'ပြရန်',
+            'hide'         => 'ဖျောက်ရန်',
+            'terms_agree'  => '%s ကို သဘောတူပါသည်။',
+            'terms_link'   => 'စည်းကမ်းနှင့် လိုင်စင်',
+            'login'        => 'ဝင်ရန်',
+            'login_helper' => 'အကောင့်ဝင်ရာ အမှားနှင့် အကြောင်းကြားချက်များကို အပေါ်ရှိ သတိပေးနေရာတွင် ပြသပါမည်။',
+            'mac_notice'   => 'တည်ငြိမ်သော ချိတ်ဆက်မှုအတွက် ဤကွန်ရက်တွင် %s ကို ပိတ်ပါ။',
+            'quota_title'  => 'ဒေတာသုံးစွဲမှု စစ်ဆေးရန်',
+            'quota_subtitle' => 'ကိုးကားရန် သုံးစွဲမှုကို ကြည့်ပါ။',
+            'ph_quota_user'=> 'စစ်ဆေးရန် အသုံးပြုသူအမည် ထည့်ပါ',
+            'check_usage'  => 'ဒေတာသုံးစွဲမှု စစ်ဆေးရန်',
+            'quota_helper' => 'အသုံးပြုသူအမည် ထည့်ပြီးမှ ခလုတ်ကို အသုံးပြုနိုင်ပါမည်။',
+            'quota_loaded' => 'ဒေတာသုံးစွဲမှု ရလဒ်ကို တင်ပြီးပါပြီ။',
+            'total'        => 'စုစုပေါင်း',
+            'used'         => 'သုံးပြီး',
+            'remain'       => 'ကျန်',
+            'lang_label'   => 'ဘာသာစကား',
+        ),
+    );
+}
+
 function renderLoginPortalHtml(array $data = []): string
 {
+    $lang = $data['lang'] ?? (function_exists('cp_resolve_lang') ? cp_resolve_lang() : 'en');
     $logo    = $data['logo'] ?? '';
     $portalError    = $data['portalError'] ?? '';
     $portalInfo     = $data['portalInfo'] ?? '';
     $loginUser = $data['loginUserValue'] ?? '';
     $uiConfig       = $data['uiConfig'] ?? [];
-    $subject        = $data['subject'] ?? 'Welcome!';
+    $subject        = $data['subject'] ?? cp_t('welcome', $lang);
     $quotaNotice    = $data['quotaNotice'] ?? '';
     $showQuotaResult= $data['showQuotaResult'] ?? false;
     $quotaResultMsg = $data['quotaResultMsg'] ?? '';
@@ -4768,7 +5341,7 @@ function renderLoginPortalHtml(array $data = []): string
                     <div>
                         <h1 class="page-title"><?=h($subject)?></h1>
                         <p class="page-subtitle">
-                            Secure network access with login, status information, and quota lookup in one place.
+                            <?= h(cp_t('subtitle', $lang)) ?>
                         </p>
                     </div>
                 </div>
@@ -4781,16 +5354,23 @@ function renderLoginPortalHtml(array $data = []): string
                     <div class="notice notice-info"><?= h($portalInfo) ?></div>
                 <?php endif; ?>
 
+                <div class="notice notice-warning">
+                    <?= sprintf(
+                        h(cp_t('mac_notice', $lang)),
+                        '<b>&ldquo;Private / Random Wi-Fi Address&rdquo;</b>'
+                    ) ?>
+                </div>
+
                 <form name="login_form" method="post" action="/index.php" autocomplete="on">
                     <div class="field">
-                        <label for="login_user">Username</label>
+                        <label for="login_user"><?= h(cp_t('username', $lang)) ?></label>
                         <div class="input-wrap">
                             <input
                                     class="input"
                                     type="text"
                                     name="auth_user"
                                     id="login_user"
-                                    placeholder="Enter your username"
+                                    placeholder="<?= h(cp_t('ph_username', $lang)) ?>"
                                     autocomplete="username"
                                     autocapitalize="none"
                                     spellcheck="false"
@@ -4800,18 +5380,18 @@ function renderLoginPortalHtml(array $data = []): string
                     </div>
 
                     <div class="field">
-                        <label for="login_pass">Password</label>
+                        <label for="login_pass"><?= h(cp_t('password', $lang)) ?></label>
                         <div class="input-wrap">
                             <input
                                     class="input with-action"
                                     type="password"
                                     name="auth_pass"
                                     id="login_pass"
-                                    placeholder="Enter your password"
+                                    placeholder="<?= h(cp_t('ph_password', $lang)) ?>"
                                     autocomplete="current-password"
                                     required
                             />
-                            <button type="button" class="input-action" id="togglePassword">Show</button>
+                            <button type="button" class="input-action" id="togglePassword"><?= h(cp_t('show', $lang)) ?></button>
                         </div>
                     </div>
 
@@ -4826,8 +5406,10 @@ function renderLoginPortalHtml(array $data = []): string
                                     checked
                             />
                             <span>
-                        I agree with the
-                        <a target="_blank" rel="noopener" href="http://192.168.208.1:8002/example.pdf">terms &amp; licences</a>.
+                        <?= sprintf(
+                            h(cp_t('terms_agree', $lang)),
+                            '<a target="_blank" rel="noopener" href="http://192.168.208.1:8002/example.pdf">' . h(cp_t('terms_link', $lang)) . '</a>'
+                        ) ?>
                     </span>
                         </div>
                     <?php endif; ?>
@@ -4836,21 +5418,69 @@ function renderLoginPortalHtml(array $data = []): string
                                 type="submit"
                                 name="accept"
                                 class="btn btn-primary"
-                                value="Login"
+                                value="<?= h(cp_t('login', $lang)) ?>"
                                 id="loginBtn"
                         >
                     </div>
                     <input name="login" type="hidden" value="true">
                     <div class="helper">
-                        Login errors, session notices, and other messages are displayed in the alert area above.
+                        <?= h(cp_t('login_helper', $lang)) ?>
                     </div>
                 </form>
+
+                <?php
+                // #31: 로그인 폼의 "Copy address(포털 주소)" 블록 표시 토글.
+                //   false = 이 스레드 이전 모습(블록 미표시) — 현재 기본. 아래 코드는 그대로 보존.
+                //   true  로 바꾸면 로그인 폼 아래에 "Copy address" 블록 재노출.
+                $cpShowCopyAddr = false;
+                ?>
+                <?php if ($cpShowCopyAddr): ?>
+                <?php /* 다른 브라우저에서 로그인하려는 사용자를 위한 포털 주소 복사.
+                         문구는 다국적 선원 공통 이해를 위해 "영문 고정"(i18n 미적용).
+                         복사 실패해도 주소가 그대로 보이므로 수동 입력 가능. */ ?>
+                <?php $cpAddr = (empty($_SERVER['HTTPS']) ? 'http://' : 'https://') . ($_SERVER['HTTP_HOST'] ?? ''); ?>
+                <div class="cp-copyaddr" style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(127,127,127,.25);">
+                    <div style="font-size:13px;opacity:.85;line-height:1.45;margin-bottom:8px;">
+                        Prefer to use a full web browser? Copy this address, then paste it into Chrome, Safari, or any browser to log in there.
+                    </div>
+                    <div id="cpPortalAddr" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:700;text-align:center;background:rgba(127,127,127,.12);border:1px dashed rgba(127,127,127,.5);border-radius:8px;padding:10px 8px;margin-bottom:8px;word-break:break-all;-webkit-user-select:all;user-select:all;"><?= h($cpAddr) ?></div>
+                    <button type="button" class="btn btn-secondary" id="cpCopyAddrBtn" style="width:100%;">Copy address</button>
+                </div>
+                <script>
+                (function(){
+                  var addrEl=document.getElementById('cpPortalAddr');
+                  var btn=document.getElementById('cpCopyAddrBtn');
+                  if(!addrEl||!btn){return;}
+                  // location 이 권위 — 실제 페이지가 서비스되는 주소(302 후 포털 호스트)를 복사한다.
+                  var url=location.protocol+'//'+location.host;
+                  addrEl.textContent=url;
+                  var orig=btn.textContent;
+                  function ok(){btn.textContent='Copied!';setTimeout(function(){btn.textContent=orig;},2000);}
+                  // HTTP(비보안)라 navigator.clipboard 보통 부재 → execCommand(동기)가 주경로.
+                  function doCopy(){
+                    var done=false;
+                    try{
+                      var ta=document.createElement('textarea');
+                      ta.value=url;ta.setAttribute('readonly','');
+                      ta.style.position='fixed';ta.style.left='-9999px';ta.style.fontSize='16px';
+                      document.body.appendChild(ta);ta.focus();ta.select();
+                      try{ta.setSelectionRange(0,url.length);}catch(e){}
+                      done=document.execCommand('copy');
+                      document.body.removeChild(ta);
+                    }catch(e){}
+                    if(!done&&navigator.clipboard&&navigator.clipboard.writeText){try{navigator.clipboard.writeText(url);done=true;}catch(e){}}
+                    return done;
+                  }
+                  btn.addEventListener('click',function(){if(doCopy()){ok();}});
+                })();
+                </script>
+                <?php endif; ?>
             </div>
             <div class="card">
                 <div class="card-head">
                     <div>
-                        <h2 class="card-title">Check quota</h2>
-                        <p class="card-subtitle">Check Usage for your reference.</p>
+                        <h2 class="card-title"><?= h(cp_t('quota_title', $lang)) ?></h2>
+                        <p class="card-subtitle"><?= h(cp_t('quota_subtitle', $lang)) ?></p>
                     </div>
                 </div>
 
@@ -4860,14 +5490,14 @@ function renderLoginPortalHtml(array $data = []): string
 
                 <form name="quota_form" method="post" action="/index.php" autocomplete="on">
                     <div class="field">
-                        <label for="quota_user">Username</label>
+                        <label for="quota_user"><?= h(cp_t('username', $lang)) ?></label>
                         <div class="input-wrap">
                             <input
                                     class="input"
                                     type="text"
                                     name="quota_user"
                                     id="quota_user"
-                                    placeholder="Enter username for quota check"
+                                    placeholder="<?= h(cp_t('ph_quota_user', $lang)) ?>"
                                     autocomplete="username"
                                     autocapitalize="none"
                                     spellcheck="false"
@@ -4882,34 +5512,34 @@ function renderLoginPortalHtml(array $data = []): string
                                 type="submit"
                                 name="quota"
                                 class="btn btn-secondary"
-                                value="Check data usage"
+                                value="<?= h(cp_t('check_usage', $lang)) ?>"
                                 id="check_quota"
                             <?= $loginUser === '' ? 'disabled' : '' ?>
                         >
                     </div>
 
                     <div class="helper">
-                        The quota lookup button is enabled after a username is entered.
+                        <?= h(cp_t('quota_helper', $lang)) ?>
                     </div>
                 </form>
 
                 <?php if ($showQuotaResult): ?>
                     <div id="quotaResultBox" class="quota-result">
                         <div class="notice notice-success" style="margin:0 0 12px 0;">
-                            <?= h($quotaResultMsg !== '' ? $quotaResultMsg : 'Quota result loaded.') ?>
+                            <?= h($quotaResultMsg !== '' ? $quotaResultMsg : cp_t('quota_loaded', $lang)) ?>
                         </div>
 
                         <div class="quota-grid">
                             <div class="quota-box">
-                                <span class="label">Total</span>
+                                <span class="label"><?= h(cp_t('total', $lang)) ?></span>
                                 <span class="value"><?= h($quotaAllocated !== '' ? $quotaAllocated : '-') ?></span>
                             </div>
                             <div class="quota-box">
-                                <span class="label">Used</span>
+                                <span class="label"><?= h(cp_t('used', $lang)) ?></span>
                                 <span class="value"><?= h($quotaUsed !== '' ? $quotaUsed : '-') ?></span>
                             </div>
                             <div class="quota-box">
-                                <span class="label">Remain</span>
+                                <span class="label"><?= h(cp_t('remain', $lang)) ?></span>
                                 <span class="value"><?= h($quotaRemain !== '' ? $quotaRemain : '-') ?></span>
                             </div>
                         </div>
@@ -4929,7 +5559,7 @@ function renderChangepwPortalHtml(array $data = []): string
     $logo          = $data['logo'] ?? '';
     $portalError   = $data['portalError'] ?? '';
     $portalInfo    = $data['portalInfo'] ?? '';
-    $loginUser     = $data['loginUser'] ?? '';
+    $loginUser     = $data['loginUserValue'] ?? '';   // portal_reply_page 전달 키와 통일
     $loginPassword = $data['loginPassword'] ?? '';
 
     if (!function_exists('h')) {
@@ -5008,7 +5638,7 @@ function renderChangepwPortalHtml(array $data = []): string
                     </div>
 
                     <input name="commit_change_pw" type="hidden" value="true">
-                    <input name="login_user" type="hidden" value="<?= h($loginUser) ?>">
+                    <input name="auth_user" type="hidden" value="<?= h($loginUser) ?>">
                     <input name="login_password" type="hidden" value="<?= h($loginPassword) ?>">
 
                     <div class="helper">
@@ -5279,7 +5909,8 @@ function renderLogoutPortalHtml(array $data = []): string
                         id="change_pw"
                 >
             </div>
-            <input name="change_pw" type="hidden" value="<?=h($loginUserValue)?>">
+            <input name="change_pw" type="hidden" value="true">
+            <input name="auth_user" type="hidden" value="<?=h($loginUserValue)?>">
 
     </div>
     </section>

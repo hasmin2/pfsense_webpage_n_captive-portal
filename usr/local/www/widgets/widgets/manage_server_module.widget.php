@@ -247,7 +247,14 @@ function check_vsat_status_influxdb(){
             if($satelliteid=='0'){
                 $color="red";
             }
-			return array("<font color={$color}>ID: {$satelliteid}</font>","{$lat_deg}{$latDir}<br>{$lon_deg}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
+            // 궤도경도 표시 규약: 음수 = 서경(W), 양수 = 동경(E), 소수점 1자리 고정
+            // (acureader 부호·소수점 보존 규약). 이 위젯 컨텍스트엔 server_module.inc
+            // 가 로드되지 않으므로 인라인 포맷.
+            $satdisp = $satelliteid;
+            if (is_numeric($satelliteid) && (float)$satelliteid != 0) {
+                $satdisp = number_format(abs((float)$satelliteid), 1, '.', '') . ((float)$satelliteid < 0 ? 'W' : 'E');
+            }
+			return array("<font color={$color}>ID: {$satdisp}</font>","{$lat_deg}{$latDir}<br>{$lon_deg}{$lonDir}<br>{$heading}deg. {$avrhrspeed}kts");
 		}
 	}
 }
@@ -434,15 +441,15 @@ function get_module_status(){
   padding: 0.25em 0.5em;
   text-decoration: none;
   color: #FFF;
-  background: #03A9F4;/*��*/
-  border: solid 1px #0f9ada;/*����*/
+  background: #03A9F4;/*��*/
+  border: solid 1px #0f9ada;/*����*/
   border-radius: 4px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
   text-shadow: 0 1px 0 rgba(0,0,0,0.2);
 }
 
 .btn-square-little-rich:active {
-  /*�㪷���Ȫ�*/
+  /*�㪷���Ȫ�*/
   border: solid 1px #03A9F4;
   box-shadow: none;
   text-shadow: none;

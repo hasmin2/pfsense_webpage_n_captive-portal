@@ -45,22 +45,22 @@ function draw_wifi_userid_search_box() {
     }
 
     $html = '';
-    $html .= '<form method="get" action="' . $action . '" style="display:flex; align-items:flex-end; justify-content:flex-start; gap:8px; flex-wrap:nowrap; margin:0;">';
+    $html .= '<form method="get" action="' . $action . '" style="display:flex; align-items:flex-end; justify-content:flex-start; gap:8px; flex-wrap:nowrap; margin:0; width:100%; min-width:0;">';
 
     if ($order !== '') {
         $html .= '<input type="hidden" name="order" value="' . h($order) . '">';
     }
 
-    $html .= '<div style="display:flex; flex-direction:column; gap:6px; width:370px;">';
+    $html .= '<div style="display:flex; flex-direction:column; gap:6px; flex:1 1 auto; min-width:120px; max-width:420px;">';
     //$html .= '  <label for="userid_search" style="font-weight:600; color:#333; line-height:1;">USERID</label>';
     $html .= '  <input type="text" id="userid_search" name="userid_search" value="' . h($q) . '" placeholder="User ID" ';
     $html .= '         style="height:34px; width:100%; padding:0 10px; border:1px solid #ccc; border-radius:6px; outline:none; box-sizing:border-box;">';
     $html .= '</div>';
 
-    $html .= '<button type="submit" style="height:34px; padding:0 12px; border:1px solid #1976d2; background:#1976d2; color:#fff; border-radius:6px; cursor:pointer; white-space:nowrap;">Search</button>';
+    $html .= '<button type="submit" style="height:34px; padding:0 12px; border:1px solid #1976d2; background:#1976d2; color:#fff; border-radius:6px; cursor:pointer; white-space:nowrap; flex:0 0 auto;">Search</button>';
 
     if ($q !== '') {
-        $html .= '<a href="' . h($clearUrl) . '" style="display:inline-flex; align-items:center; justify-content:center; height:34px; padding:0 12px; border:1px solid #bbb; background:#fff; color:#333; border-radius:6px; text-decoration:none; white-space:nowrap;">Clear</a>';
+        $html .= '<a href="' . h($clearUrl) . '" style="display:inline-flex; align-items:center; justify-content:center; height:34px; padding:0 12px; border:1px solid #bbb; background:#fff; color:#333; border-radius:6px; text-decoration:none; white-space:nowrap; flex:0 0 auto;">Clear</a>';
     }
 
     $html .= '</form>';
@@ -907,24 +907,30 @@ function check_wifi_account_id(){
 
 function del_wifi_user($userlist){
     global $config;
+    $deleted_users = array();   // #23 step3-A
     foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
         foreach ($userlist as $user){
             if ($user === $userentry['varusersusername']) {
                 unset($config["installedpackages"]["freeradius"]["config"][$item]);
+                $deleted_users[] = $user;
                 unlink_if_exists("/var/log/radacct/datacounter/daily/used-octets-$user*");
                 unlink_if_exists("/var/log/radacct/datacounter/daily/max-octets-$user");
-                unlink_if_exists("/var/log/radacct/datacounter/weekiy/used-octets-$user*");
-                unlink_if_exists("/var/log/radacct/datacounter/weekiy/max-octets-$user");
+                unlink_if_exists("/var/log/radacct/datacounter/weekly/used-octets-$user*");
+                unlink_if_exists("/var/log/radacct/datacounter/weekly/max-octets-$user");
                 unlink_if_exists("/var/log/radacct/datacounter/monthly/used-octets-$user*");
                 unlink_if_exists("/var/log/radacct/datacounter/monthly/max-octets-$user");
                 unlink_if_exists("/var/log/radacct/datacounter/forever/used-octets-$user*");
                 unlink_if_exists("/var/log/radacct/datacounter/forever/max-octets-$user");
-                cp_wireless_log("Deleted user: ".$user);
+                cp_wireless_log("Deleted user: ".$user." by ".cp_admin_actor());
             }
         }
     }
     freeradius_users_resync();
     write_config("Deleted Wifi user");
+    // #23 step3-A: 삭제 계정의 radcheck 행도 제거(단일 SQL).
+    if (function_exists('freeradius_radcheck_delete_users')) {
+        freeradius_radcheck_delete_users($deleted_users);
+    }
 }
 
 function modify_wifi_user($userlist, $modifydata){
@@ -966,17 +972,25 @@ function modify_wifi_user($userlist, $modifydata){
 
 function reset_wifi_user($userlist){
     global $config;
+    $reset_targets = array();
     foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
         foreach ($userlist as $user) {
             if ($user === $userentry['varusersusername']) {
+                // 태그는 그대로 유지(차후 로그인 fallback). 실제 리셋은 아래에서 "즉시" 수행.
                 $config['installedpackages']['freeradius']['config'][$item]['varusersresetquota'] = "true";
                 $config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
-                cp_wireless_log("Reset Datausage: ".$userentry['varusersusername']);
+                cp_wireless_log("Reset Datausage: ".$userentry['varusersusername']." by ".cp_admin_actor());
+                $reset_targets[] = $userentry['varusersusername'];
             }
         }
     }
     freeradius_users_resync();
     write_config("Reset datausage Wifi user");
+
+    // 차후 로그인이 아니라 "이때 바로": 활성 세션 로그아웃 + 사용량 0
+    foreach (array_unique($reset_targets) as $u) {
+        captiveportal_reset_user_usage($u);
+    }
 }
 
 function reset_wifi_user_pw($userlist){
@@ -984,6 +998,7 @@ function reset_wifi_user_pw($userlist){
     // 동시 PW 변경 lost-update 방지: 전용 락 + 락 안에서 config 최신본 재로딩 후 저장.
     // (write_config 는 내부적으로 lock('config') 를 쓰므로 다른 이름의 락이어야 데드락이 없다.)
     $cnf_lock = lock('freeradius_user_config', LOCK_EX);
+    $radcheck_entries = array();   // #23 step3-A
     try {
         $config = parse_config(true);
         $changed = false;
@@ -992,7 +1007,8 @@ function reset_wifi_user_pw($userlist){
                 if ($user === $userentry['varusersusername']) {
                     $config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword'] = "1111";
                     $changed = true;
-                    cp_wireless_log("Reset initial password: ".$userentry['varusersusername']);
+                    $radcheck_entries[] = array('user'=>$user, 'pass'=>"1111", 'enc'=>($userentry['varuserspasswordencryption'] ?? 'Cleartext-Password'));
+                    cp_wireless_log("Reset initial password: ".$userentry['varusersusername']." by ".cp_admin_actor());
                 }
             }
         }
@@ -1003,12 +1019,17 @@ function reset_wifi_user_pw($userlist){
     } finally {
         unlock($cnf_lock);
     }
+    // #23 step3-A: radcheck 동기화(락 밖, 단일 SQL). files 가 아직 권위라 동작변경 없음 — radcheck 최신 유지.
+    if (function_exists('freeradius_radcheck_sync_users')) {
+        freeradius_radcheck_sync_users($radcheck_entries);
+    }
 }
 
 function reset_random_wifi_user_pw($userlist){
     global $config;
     // 동시 PW 변경 lost-update 방지: 전용 락 + 락 안에서 config 최신본 재로딩 후 저장.
     $cnf_lock = lock('freeradius_user_config', LOCK_EX);
+    $radcheck_entries = array();   // #23 step3-A
     try {
         $config = parse_config(true);
         $changed = false;
@@ -1023,9 +1044,11 @@ function reset_random_wifi_user_pw($userlist){
                         $n = rand(0, $alphaLength);
                         $pass[] = $alphabet[$n];
                     }
-                    $config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword'] = implode($pass);
+                    $newpass = implode($pass);
+                    $config["installedpackages"]["freeradius"]["config"][$item]['varuserspassword'] = $newpass;
                     $changed = true;
-                    cp_wireless_log("Reset random password: ".$userentry['varusersusername']);
+                    $radcheck_entries[] = array('user'=>$user, 'pass'=>$newpass, 'enc'=>($userentry['varuserspasswordencryption'] ?? 'Cleartext-Password'));
+                    cp_wireless_log("Reset random password: ".$userentry['varusersusername']." by ".cp_admin_actor());
                 }
             }
         }
@@ -1035,6 +1058,10 @@ function reset_random_wifi_user_pw($userlist){
         }
     } finally {
         unlock($cnf_lock);
+    }
+    // #23 step3-A: radcheck 동기화(락 밖, 단일 SQL). files 가 아직 권위라 동작변경 없음 — radcheck 최신 유지.
+    if (function_exists('freeradius_radcheck_sync_users')) {
+        freeradius_radcheck_sync_users($radcheck_entries);
     }
 }
 
@@ -1051,7 +1078,6 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
     if (!isset($config['installedpackages']['freeradius']['config']) || !is_array($config['installedpackages']['freeradius']['config'])) {
         $config['installedpackages']['freeradius']['config'] = array();
     }
-    echo($issimplefied);
     if($issimplefied){
         if ($terminaltype == "") {
             $userprefix = 'usr';
@@ -1183,11 +1209,22 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
 
     freeradius_users_resync();
     write_config("Created Wifi user");
-
-    return $created_users;
     } finally {
         unlock($cnf_lock);
     }
+    // #23 step3-A: 생성 계정을 radcheck 에 일괄 동기화(락 밖, 단일 SQL). files 가 아직 권위라 동작변경 없음.
+    if (function_exists('freeradius_radcheck_sync_users')) {
+        $rc_entries = array();
+        foreach ($created_users as $cu) {
+            $rc_entries[] = array(
+                'user' => $cu['varusersusername'] ?? '',
+                'pass' => $cu['varuserspassword'] ?? '',
+                'enc'  => $cu['varuserspasswordencryption'] ?? 'Cleartext-Password',
+            );
+        }
+        freeradius_radcheck_sync_users($rc_entries);
+    }
+    return $created_users;
 }
 
 function getSyllableAbbr(string $word, int $maxLen = 4): string {

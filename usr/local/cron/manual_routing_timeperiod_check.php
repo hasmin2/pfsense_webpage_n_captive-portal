@@ -1,5 +1,13 @@
 <?php
 
+// ── 단일 인스턴스 가드 (#26) ──────────────────────────────────────────────────
+// 이전 실행이 1주기 안에 안 끝났으면(디스크풀/느린 I/O 등) 즉시 종료 → 프로세스 누적/OOM 방지.
+// 의존성 없는 self-contained(버전 섞임 안전). 락 fd 는 프로세스 종료 시 자동 해제.
+$__cron_singleton_fp = @fopen('/tmp/cron_' . basename(__FILE__, '.php') . '.lock', 'c');
+if ($__cron_singleton_fp === false || !@flock($__cron_singleton_fp, LOCK_EX | LOCK_NB)) {
+    exit(0);
+}
+
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 
@@ -16,6 +24,9 @@ $hasTimestamp = isset($config['gateways']['manualroutetimestamp']);
 $hasDuration  = isset($config['gateways']['manualrouteduration']);
 
 $changed = false;
+// 락 안에서 최신 config 에 재적용할 변경(delta). 스냅샷을 통째로 저장하지 않고
+// 이 키들만 unset 하므로, 동시 PW 변경 등 타 writer 의 변경을 덮지 않는다.
+$unset_keys = array();
 
 /*
  * manualroutetimestamp + manualrouteduration 둘 다 있는 경우
@@ -30,8 +41,8 @@ if ($hasTimestamp && $hasDuration) {
      */
     if (!is_numeric($manualRouteTimestamp) || !is_numeric($manualRouteDuration)) {
 
-        unset($config['gateways']['manualroutetimestamp']);
-        unset($config['gateways']['manualrouteduration']);
+        $unset_keys[] = 'manualroutetimestamp';
+        $unset_keys[] = 'manualrouteduration';
 
         $changed = true;
 
@@ -49,8 +60,8 @@ if ($hasTimestamp && $hasDuration) {
 
         if ($elapsedMinutes >= (float)$manualRouteDuration) {
 
-            unset($config['gateways']['manualroutetimestamp']);
-            unset($config['gateways']['manualrouteduration']);
+            $unset_keys[] = 'manualroutetimestamp';
+            $unset_keys[] = 'manualrouteduration';
 
             $changed = true;
 
@@ -74,10 +85,10 @@ if ($hasTimestamp && $hasDuration) {
 } else {
 
     if ($hasTimestamp && !$hasDuration) {
-        unset($config['gateways']['manualroutetimestamp']);
+        $unset_keys[] = 'manualroutetimestamp';
         $changed = true;
     } elseif (!$hasTimestamp && $hasDuration) {
-        unset($config['gateways']['manualrouteduration']);
+        $unset_keys[] = 'manualrouteduration';
         $changed = true;
     }
 
@@ -85,11 +96,26 @@ if ($hasTimestamp && $hasDuration) {
 }
 
 /*
- * 변경이 있을 때만 config 저장
+ * 변경이 있을 때만 config 저장.
+ * lost-update 방지: 느린 sleep 은 락 밖, 락 안에서 최신본(parse_config(true)) 재로딩 후
+ * 이 크론의 변경(delta=unset 키)만 재적용한다. PW writer 와 같은
+ * lock('freeradius_user_config') 를 공유해야 둘의 변경이 서로를 덮지 않는다.
  */
 if ($changed) {
     sleep(2);
-    write_config("Modified gateway via API");
+    $cnf_lock = lock('freeradius_user_config', LOCK_EX);
+    try {
+        $config = parse_config(true);
+        if (!isset($config['gateways']) || !is_array($config['gateways'])) {
+            $config['gateways'] = array();
+        }
+        foreach ($unset_keys as $k) {
+            unset($config['gateways'][$k]);
+        }
+        write_config("Modified gateway via API");
+    } finally {
+        unlock($cnf_lock);
+    }
 }
 
 ?>

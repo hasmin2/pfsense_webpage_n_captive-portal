@@ -927,9 +927,12 @@ EOD;
 		freeradius_sync_on_changes();
 
 		// 락을 잡은 상태에서 reload까지 수행하면 동시 호출 시 reload 도 직렬화됨.
-		// 전체 파일을 재생성했으므로 HUP(graceful)로 충분하며 accounting(1813)을 끊지 않는다.
+		// [#23 A] HUP 는 이 박스에서 rlm_files(users/authorize)를 재로딩하지 못한다(실측:
+		// 재시작해야만 비번 변경이 반영됨). 따라서 전체 재생성 후 전체 재시작으로 확실히
+		// 반영한다($allow_hup=false). accounting 단절(수초)은 수용 — 근본 해결은 radcheck(SQL)
+		// 권위화(step3). (resync 는 $changed 가드가 있는 경로에서만 호출되어 불필요 재시작 최소화.)
 		if ($via_rpc === false && !platform_booting()) {
-			freeradius_reload_or_restart_radiusd(true);
+			freeradius_reload_or_restart_radiusd(false);
 		}
 
 		return true;
@@ -1537,16 +1540,21 @@ function freeradius_validate_radiusd_config(): bool
 /*
  * radiusd 에 변경을 반영한다.
  *
- * 기본은 kill -HUP(graceful reload) 이다. HUP 는 listener(1812/1813)를 닫지 않으므로
- * accounting(1813) 패킷 유실이 없다. rlm_files 는 HUP 시 재읽기되어 users/authorize
- * 변경(비밀번호 등)이 런타임에 반영된다.
+ * [#23 중요] 이 박스에서 kill -HUP 은 rlm_files(users/authorize)를 재로딩하지 못한다(실측).
+ *   HUP 는 listener(1812/1813)를 닫지 않아 accounting 무중단이지만, 사용자 파일 변경
+ *   (비밀번호/계정)은 HUP 로 런타임 반영되지 않는다. 게다가 kill 이 시그널 전달에만 성공해도
+ *   ($ret==0) success 로 반환되어, 호출측(자가/관리자 PW 변경)은 "성공"으로 오인하지만 live
+ *   데몬은 옛 비번을 유지하는 silent-fail 이 발생한다. → 사용자 파일 변경을 반영하려면 반드시
+ *   $allow_hup=false 로 호출해 전체 재시작할 것.
  *
  * 전체 재시작(service radiusd onerestart)은 재시작 창 동안 1813 listener 가 닫혀
- * Accounting Start/Interim/Stop 이 유실(= RADIUS ACCOUNTING FAILED)될 수 있으므로,
- * HUP 전달이 불가능할 때(데몬 미기동/ PID 없음 등)의 fallback 으로만 사용한다.
+ * Accounting Start/Interim/Stop 이 유실될 수 있으나(수초), NAS 재전송 + 누적카운터 자가복구
+ * (#7)로 대부분 흡수된다. (근본 해결은 인증 소스를 radcheck(SQL)로 옮겨 reload 자체를
+ *  없애는 것 — step3.)
  *
- * @param bool $allow_hup  true(기본) : HUP 우선, 전달 불가 시에만 재시작(accounting-safe)
- *                         false      : 곧바로 전체 재시작(특수 상황 전용)
+ * @param bool $allow_hup  true  : HUP 우선(전달 불가 시에만 재시작). 단 이 박스에서는 HUP 가
+ *                                 rlm_files 를 재로딩하지 않으므로 사용자 파일 변경엔 부적합.
+ *                         false : 곧바로 전체 재시작. 사용자 파일(비번/계정) 변경엔 이 값을 쓸 것.
  */
 function freeradius_reload_or_restart_radiusd(bool $allow_hup = true): bool
 {
@@ -1641,12 +1649,18 @@ function fr_debug_log(string $msg): void
 }
 
 function freeradius_update_user(
-	string $username,
-	bool   $persist_config = true,
-	bool   $reload_radiusd = true,   // true=HUP 리로드, false=리로드 보류(호출측 일괄 리로드용)
-	bool   $sync_changes = false
+	?string $username,
+	bool    $persist_config = true,
+	bool    $reload_radiusd = true,   // true=HUP 리로드, false=리로드 보류(호출측 일괄 리로드용)
+	bool    $sync_changes = false
 ) {
 	global $config;
+
+	// null/빈 username 은 치명적 TypeError 대신 조용히 false 반환
+	if ($username === null || $username === '') {
+		fr_debug_log("freeradius_update_user: SKIP empty/null username");
+		return false;
+	}
 
 	fr_debug_log("freeradius_update_user: START username={$username}");
 
@@ -1768,10 +1782,16 @@ function freeradius_update_user(
 
 		fr_debug_log("freeradius_update_user: radius reload/restart start username={$username}");
 
-		// 기본은 HUP(graceful reload) — accounting(1813) 무중단.
+		// [#23 A] rlm_files(users/authorize) 변경은 이 박스에서 HUP 로 런타임 반영되지
+		// 않는다(실측: 비밀번호 변경 후 radiusd 재시작해야만 새 비번이 먹음). HUP 는 시그널
+		// 전달만 성공("ret=0")해도 success 로 처리되어, 사용자에겐 "변경 성공"이 뜨지만 live
+		// 데몬은 옛 비번을 유지하는 silent-fail 이 발생했다. 따라서 변경이 즉시 먹도록 전체
+		// 재시작으로 적용한다($allow_hup=false). 재시작 창에서 accounting(1813) 이 잠깐 닫히나
+		// (수초) NAS 재전송 + 누적카운터 자가복구(#7)로 대부분 흡수된다. 근본 해결은 인증
+		// 소스를 radcheck(SQL) 로 옮겨 reload 자체를 없애는 것(step3).
 		// $reload_radiusd=false 면 호출측이 일괄 리로드하므로 여기서는 건너뛴다(배치용).
 		if ($reload_radiusd) {
-			$radius_result = freeradius_reload_or_restart_radiusd(true);
+			$radius_result = freeradius_reload_or_restart_radiusd(false);
 		} else {
 			$radius_result = true;
 		}
@@ -1808,6 +1828,164 @@ function freeradius_update_user(
 
 		fr_debug_log("freeradius_update_user: lock released username={$username}");
 	}
+}
+
+/**
+ * ── #23 step3-A: radcheck(SQL) dual-write 헬퍼 ────────────────────────────────
+ * PW writer 가 config.xml/files 와 함께 radcheck 도 갱신하게 해, 인증 권위를
+ * radcheck 로 옮기는 컷오버(3b: authorize 에서 sql override)의 토대를 만든다.
+ * 이 단계만으론 동작 변화 없음(files 가 여전히 권위) — radcheck 를 항상 최신으로 유지할 뿐.
+ *
+ * - 접속 파라미터는 freeradiussqlconf 에서 읽음(하드코딩 없음).
+ * - mysql CLI + 임시 defaults-extra-file(비번 argv 노출 방지) + --connect-timeout 로 bounded.
+ * - 실패해도 throw 하지 않고 false 반환(기존 PW 흐름을 깨지 않음 — degrade).
+ * - 배치(sync_users/delete_users)는 단일 SQL 트랜잭션으로 한 번에 실행(락 밖 호출 권장).
+ */
+function freeradius_radcheck_conn_params() {
+	global $config;
+	if (!is_array($config['installedpackages']['freeradiussqlconf']['config'][0] ?? null)) {
+		return null;
+	}
+	$s = $config['installedpackages']['freeradiussqlconf']['config'][0];
+	return array(
+		'server' => ($s['varsqlconfserver']        ?? '') ?: 'localhost',
+		'port'   => ($s['varsqlconfport']          ?? '') ?: '3306',
+		'login'  => ($s['varsqlconflogin']         ?? '') ?: 'radius',
+		'pass'   => ($s['varsqlconfpassword']      ?? '') ?: 'radpass',
+		'db'     => ($s['varsqlconfradiusdb']      ?? '') ?: 'radius',
+		'table'  => ($s['varsqlconfauthchecktable'] ?? '') ?: 'radcheck',
+	);
+}
+
+/* 암호화 방식 → radcheck (attribute, value). build_single_user_stanza 의 switch 와 동일. */
+function freeradius_radcheck_password_item($encryption, $rawpassword) {
+	$enc = ($encryption !== '' && $encryption !== null) ? $encryption : 'Cleartext-Password';
+	switch ($enc) {
+		case 'MD5-Password':        return array('MD5-Password', md5((string)$rawpassword));
+		case 'MD5-Password-hashed': return array('MD5-Password', (string)$rawpassword);
+		case 'NT-Password-hashed':  return array('NT-Password', (string)$rawpassword);
+		default:                    return array($enc, (string)$rawpassword);
+	}
+}
+
+function freeradius_radcheck_sql_str($s) {
+	return str_replace(array('\\', "'"), array('\\\\', "\\'"), (string)$s);
+}
+
+function freeradius_radcheck_mysql_bin() {
+	foreach (array('mysql', 'mariadb') as $name) {
+		$out = array(); $ret = 1;
+		@exec('command -v ' . escapeshellarg($name) . ' 2>/dev/null', $out, $ret);
+		if ($ret === 0 && !empty($out[0]) && is_executable(trim($out[0]))) {
+			return trim($out[0]);
+		}
+	}
+	foreach (array('/usr/local/bin/mysql', '/usr/local/bin/mariadb') as $p) {
+		if (is_executable($p)) { return $p; }
+	}
+	return '';
+}
+
+function freeradius_radcheck_exec_sql($sql) {
+	$c = freeradius_radcheck_conn_params();
+	if ($c === null) { return false; }
+	$mysql = freeradius_radcheck_mysql_bin();
+	if ($mysql === '') {
+		log_error('freeradius_radcheck_exec_sql: mysql client not found');
+		return false;
+	}
+	$cnf = @tempnam('/tmp', 'frrc');
+	$sqlfile = @tempnam('/tmp', 'frrcsql');
+	if ($cnf === false || $sqlfile === false) {
+		if ($cnf !== false) { @unlink($cnf); }
+		if ($sqlfile !== false) { @unlink($sqlfile); }
+		return false;
+	}
+	@file_put_contents($cnf,
+		"[client]\nhost={$c['server']}\nport={$c['port']}\nuser={$c['login']}\n"
+		. 'password="' . str_replace('"', '\\"', $c['pass']) . "\"\n");
+	@chmod($cnf, 0600);
+	@file_put_contents($sqlfile, $sql);
+	@chmod($sqlfile, 0600);
+
+	$cmd = escapeshellarg($mysql)
+		. ' --defaults-extra-file=' . escapeshellarg($cnf)
+		. ' --connect-timeout=4 '
+		. escapeshellarg($c['db'])
+		. ' < ' . escapeshellarg($sqlfile) . ' 2>&1';
+	$out = array(); $ret = 1;
+	@exec($cmd, $out, $ret);
+	@unlink($cnf);
+	@unlink($sqlfile);
+	if ($ret !== 0) {
+		log_error('freeradius_radcheck_exec_sql failed: ' . implode(' | ', $out));
+		return false;
+	}
+	return true;
+}
+
+/* 사용자 1명의 비번 check-item 을 radcheck 에 멱등 갱신(DELETE 후 INSERT). */
+function freeradius_radcheck_sync_password($username, $rawpassword, $encryption = 'Cleartext-Password') {
+	$username = trim((string)$username);
+	if ($username === '') { return false; }
+	$c = freeradius_radcheck_conn_params();
+	if ($c === null) { return false; }
+	list($attr, $val) = freeradius_radcheck_password_item($encryption, $rawpassword);
+	if ($val === '' || $attr === '') { return false; }
+	$t = $c['table'];
+	$u = freeradius_radcheck_sql_str($username);
+	$a = freeradius_radcheck_sql_str($attr);
+	$v = freeradius_radcheck_sql_str($val);
+	$sql = "START TRANSACTION;\n"
+		. "DELETE FROM `{$t}` WHERE username='{$u}' AND attribute IN ('Cleartext-Password','NT-Password','MD5-Password');\n"
+		. "INSERT INTO `{$t}` (username, attribute, op, value) VALUES ('{$u}', '{$a}', ':=', '{$v}');\n"
+		. "COMMIT;\n";
+	return freeradius_radcheck_exec_sql($sql);
+}
+
+/* 여러 사용자 비번을 단일 SQL 트랜잭션으로 일괄 동기화. $entries[] = ['user'=>,'pass'=>,'enc'=>]. */
+function freeradius_radcheck_sync_users(array $entries) {
+	if (empty($entries)) { return true; }
+	$c = freeradius_radcheck_conn_params();
+	if ($c === null) { return false; }
+	$t = $c['table'];
+	$sql = "START TRANSACTION;\n";
+	$n = 0;
+	foreach ($entries as $e) {
+		$username = trim((string)($e['user'] ?? ''));
+		if ($username === '') { continue; }
+		list($attr, $val) = freeradius_radcheck_password_item($e['enc'] ?? 'Cleartext-Password', $e['pass'] ?? '');
+		if ($val === '' || $attr === '') { continue; }
+		$u = freeradius_radcheck_sql_str($username);
+		$a = freeradius_radcheck_sql_str($attr);
+		$v = freeradius_radcheck_sql_str($val);
+		$sql .= "DELETE FROM `{$t}` WHERE username='{$u}' AND attribute IN ('Cleartext-Password','NT-Password','MD5-Password');\n";
+		$sql .= "INSERT INTO `{$t}` (username, attribute, op, value) VALUES ('{$u}', '{$a}', ':=', '{$v}');\n";
+		$n++;
+	}
+	$sql .= "COMMIT;\n";
+	if ($n === 0) { return true; }
+	return freeradius_radcheck_exec_sql($sql);
+}
+
+/* 여러 사용자의 radcheck 행을 일괄 삭제(계정 삭제 시). */
+function freeradius_radcheck_delete_users(array $usernames) {
+	$names = array();
+	foreach ($usernames as $nm) {
+		$nm = trim((string)$nm);
+		if ($nm !== '') { $names[] = $nm; }
+	}
+	if (empty($names)) { return true; }
+	$c = freeradius_radcheck_conn_params();
+	if ($c === null) { return false; }
+	$t = $c['table'];
+	$sql = "START TRANSACTION;\n";
+	foreach ($names as $nm) {
+		$u = freeradius_radcheck_sql_str($nm);
+		$sql .= "DELETE FROM `{$t}` WHERE username='{$u}';\n";
+	}
+	$sql .= "COMMIT;\n";
+	return freeradius_radcheck_exec_sql($sql);
 }
 
 function freeradius_authorizedmacs_resync($restart_svc = true, $via_rpc = false) {
@@ -3094,6 +3272,69 @@ EOD;
 EOD;
 	}
 
+	// ── #23 step3-B: radcheck(SQL) 비번 권위화 (플래그 게이트, 기본 off) ─────────────
+	// 켜지면 files 가 사용자를 찾아도 sql1(radcheck)을 항상 실행해, radcheck 의 ':=' 비번
+	// check-item 이 files 비번을 덮어쓴다 → 비번 변경이 radiusd reload/재시작 없이 즉시 반영
+	// (재시작으로 인한 accounting(1813) 단절도 소멸). 전제: step1(SQL authorize=Enable) +
+	// step2/3-A(radcheck 적재·dual-write) 선행.
+	// 플래그가 꺼져 있으면 else 가 기존과 바이트 동일한 블록을 생성 → 코드 배포만으론 동작 무변경.
+	// 토글: /usr/local/sbin/freeradius_enable_radcheck_override.php (radiusd -C 검증 + 자동 롤백).
+	// 플래그를 freeradiussqlconf 가 아닌 $config['system'] 에 두는 이유: GUI 패키지 페이지 저장이
+	// XML 미정의 키를 떨굴 수 있어서(#8/#15 와 같은 원칙 — 전역 플래그는 system). 떨궈져도
+	// 안전한 방향(기존 files 권위로 복귀)으로만 강등된다(3-A dual-write 가 files 를 최신 유지).
+	$radcheck_override_on = ((($config['system']['freeradius_radcheck_override'] ?? '') === 'on')
+		&& ($sqlconf['varsqlconfincludeenable'] == 'on')
+		&& ($sqlconf['varsqlconfenableauthorize'] == 'Enable'));
+	if ($radcheck_override_on) {
+		// 상태별 동작: files O/radcheck O/DB up → radcheck 비번(즉시 반영, 목적) |
+		// files O/radcheck X → files 비번(안전 강등) | files O/DB down → files 비번(graceful
+		// fallback) | files X/radcheck O → radcheck 비번 | files X/radcheck X → reject(기존 동일).
+		// 'sql1 { fail = 1 }' : fail(DB 불통)의 기본 액션(return=섹션 중단)을 우선순위 1 로 바꿔
+		// 다음 줄로 계속 진행하게 한다. 바로 뒤 'if (fail) { ok }' 가 rcode 를 ok 로 회복시켜
+		// files 비번으로 인증이 이어진다(DB 불통이 전면 거부로 번지는 것을 차단).
+		$varauthorizeuserlookup = <<<EOD
+	files
+	if (ok || updated) {
+		# mark "user exists in files" (used by the final reject decision below)
+		update control {
+			&Tmp-Integer-0 := 1
+		}
+	}
+	if ("%{%{Control:Auth-Type}:-No-Accept}" != "Accept") {
+		# radcheck(SQL) is the password authority: its ':=' check-items override
+		# the files password. No radcheck row -> notfound (files password kept).
+		sql1 {
+			fail = 1
+		}
+		if (fail) {
+			# MySQL unreachable -> keep files password (graceful fallback)
+			ok
+		}
+		elsif ((notfound || noop) && ("%{%{control:Tmp-Integer-0}:-0}" != "1")) {
+			# user in neither files nor radcheck -> same as before: ldap fallback, then reject
+			{$varmodulesldapenableauthorize}
+			if (notfound || noop) {
+				reject
+			}
+		}
+	}
+EOD;
+	} else {
+		// 기존 경로(기본): files 우선, 못 찾은 경우에만 sql/ldap 폴백.
+		// (step3-B 도입 전 출력과 바이트 동일해야 한다 — 들여쓰기 포함 수정 금지)
+		$varauthorizeuserlookup = <<<EOD
+	files
+	if ((notfound || noop) && ("%{%{Control:Auth-Type}:-No-Accept}" != "Accept")) {
+		{$varsqlconfauthorize}
+			{$varmodulesldapenableauthorize}
+			if (notfound || noop) {
+				reject
+			}
+		}
+	}
+EOD;
+	}
+
 	// accounting section DATABASE 1
 	if (($sqlconf['varsqlconfincludeenable'] == 'on') && ($sqlconf['varsqlconfenableaccounting'] == 'Enable')) {
 		$varsqlconfaccounting = <<<EOD
@@ -3278,15 +3519,7 @@ authorize {
 #		updated = return
 	}
 #	unix
-	files
-	if ((notfound || noop) && ("%{%{Control:Auth-Type}:-No-Accept}" != "Accept")) {
-		{$varsqlconfauthorize}
-			{$varmodulesldapenableauthorize}
-			if (notfound || noop) {
-				reject
-			}
-		}
-	}
+{$varauthorizeuserlookup}
 	{$varsqlconfauthcounters}
 	# Formerly checkval
 	if (&request:Calling-Station-Id == &control:Calling-Station-Id) {
@@ -4915,7 +5148,7 @@ CENTRAL_INFLUX_HOST="10.8.128.1"
 CENTRAL_INFLUX_PORT="8086"
 CENTRAL_INFLUX_DB="wifiusage"
 CENTRAL_INFLUX_PRECISION="m"
-CENTRAL_INFLUX_TIMEOUT="1"
+CENTRAL_INFLUX_TIMEOUT="10"   # 중앙은 위성회선 너머(원격)라 1초로는 잦은 드롭 → 10초
 CENTRAL_INFLUX_CACHE_SEC="600"
 CENTRAL_MEASUREMENT="wifi_usage"
 

@@ -137,6 +137,15 @@
             "command": "/usr/local/bin/php /usr/local/cron/crew_dailyusage_reset_check.php"
         },
         {
+            "minute": "15,45",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/crew_usage_reset_selfheal.php > /dev/null"
+        },
+        {
             "minute": "*",
             "hour": "*",
             "mday": "*",
@@ -227,13 +236,22 @@
             "command": "/usr/local/bin/php /usr/local/cron/manual_routing_timeperiod_check.php > /dev/null"
         },
         {
-            "minute": "0",
-            "hour": "0",
-            "mday": "1",
+            "minute": "*",
+            "hour": "*",
+            "mday": "*",
             "month": "*",
             "wday": "*",
             "who": "root",
-            "command": "/usr/local/bin/php /usr/local/cron/crew_prepaidmonthlyusage_reset_check.php > /dev/null"
+            "command": "/usr/local/bin/php /usr/local/cron/cp_routing_table_resync.php > /dev/null"
+        },
+        {
+            "minute": "7",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/cp_tz_offset_update.php > /dev/null"
         }
 
     ]

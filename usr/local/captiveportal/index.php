@@ -1,8 +1,28 @@
 <?php
+// ── 캡티브포털 에러/디버그 로깅 (#24) ────────────────────────────────────────
+// 과거: 요청마다 모든 PHP warning 을 /tmp/cp_portal_error.log 에 "무제한" append →
+//       요청 폭주 시 25GB 까지 폭발 → ZFS 풀 포화 → 502/OOM/vnstat readonly 등 전면장애.
+// 변경:
+//   - 프로덕션 기본: /tmp 무제한 파일로 리다이렉트하지 않음(시스템 관리 로그로). 요청당
+//     warning 은 적재하지 않고 fatal 계열만 → 무제한 증가 자체가 불가.
+//   - 디버그가 필요하면:  touch /tmp/cp_portal_debug.on  (이후 요청부터 활성)
+//     이 경우에도 5MB 상한을 넘으면 요청 시작 시 truncate 하여 디스크를 절대 못 채움.
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
-ini_set('error_log', '/tmp/cp_portal_error.log');
-error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED & ~E_STRICT);
+
+define('CP_DEBUG', @file_exists('/tmp/cp_portal_debug.on'));
+if (CP_DEBUG) {
+	$cp_errlog = '/tmp/cp_portal_error.log';
+	// 누적 폭발(디스크 풀) 원천 차단: 상한 초과 시 비우고 다시 시작
+	if (@filesize($cp_errlog) > 5 * 1024 * 1024) { // 5MB 상한
+		@file_put_contents($cp_errlog, '');
+	}
+	ini_set('error_log', $cp_errlog);
+	error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED & ~E_STRICT);
+} else {
+	// 프로덕션: error_log 미설정(시스템 관리 로그) + fatal 계열만 → /tmp 무제한 적재 없음.
+	error_reporting(E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR | E_RECOVERABLE_ERROR);
+}
 
 
 function cp_safe_redirect_url(string $url): string
@@ -194,8 +214,11 @@ HTML;
 	exit;
 }
 
-
 function cp_log(string $msg): void {
+	// #24: 디버그 모드에서만 기록(프로덕션에선 no-op) → 핫패스 무제한 로깅 차단
+	if (!CP_DEBUG) {
+		return;
+	}
 	$t = sprintf('%.6f', microtime(true));
 	$sid = session_id();
 	error_log("[CP] t={$t} sid={$sid} {$msg}");
@@ -210,17 +233,10 @@ $GLOBALS['_cp_deferred_state_kills'] = [];
 // HTTP 응답 전송(fastcgi_finish_request) 이후 pf state 정리
 // → 로그아웃 시 포털 TCP 연결이 응답 도달 전에 RST 되는 것 방지
 register_shutdown_function(function() {
-	foreach (($GLOBALS['_cp_deferred_state_kills'] ?? []) as $ip) {
-		if (!filter_var($ip, FILTER_VALIDATE_IP)) {
-			continue;
-		}
-		if (function_exists('pfSense_kill_states')) {
-			@pfSense_kill_states(utf8_encode($ip));
-			@pfSense_kill_srcstates(utf8_encode($ip));
-		}
-		if (function_exists('cp_kill_states_for_ip')) {
-			cp_kill_states_for_ip($ip);
-		}
+	// 즉시 kill 하면 spawn-fcgi(=fastcgi_finish_request 부재) 환경에서 응답/연결 종료 전에
+	// 포털 TCP 가 RST 되어 ~19초 지연. detached 백그라운드(짧은 sleep)로 분리한다.
+	if (function_exists('cp_flush_deferred_state_kills')) {
+		cp_flush_deferred_state_kills();
 	}
 });
 
@@ -360,6 +376,7 @@ if (!empty($_POST['change_pw'])) {
 		'msg' => 'Reset PW',
 		'mac' => $clientmac,
 		'ip' => $clientip,
+		'username' => $auth_user,   // change_pw 폼의 auth_user hidden 필드에서 옴
 	]);
 	cp_redirect_self(['zone' => $cpzone]);
 }
@@ -515,7 +532,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || (($cpcfg['auth_method'] ?? '') === 
 		$context = 'first';
 	}
 
-	$pipeno = captiveportal_get_next_dn_ruleno('auth');
+	// 빈 username 단락(short-circuit): OS 캡티브 탐지/빈 폼 재제출 등 "로그인 의도 없는" 요청은
+		// username 이 비어 있다. 인증 + FAILURE("Username blank") 로깅 시 로그 폭주 + 빈 인증 spawn.
+		// → username 비면 인증·로깅 없이 로그인 페이지만 재표시(radmac 은 MAC 인증이라 제외).
+		if ($context !== 'radmac' && trim((string)$user) === '') {
+			portal_reply_page($redirurl, "login", null, $clientmac, $clientip);
+			ob_flush();
+			exit;
+		}
+
+		$pipeno = captiveportal_get_next_dn_ruleno('auth');
 	if (is_null($pipeno)) {
 		$replymsg = gettext("System reached maximum login capacity");
 		if (($cpcfg['auth_method'] ?? '') === 'radmac') {
@@ -604,6 +630,7 @@ if ($connectedSession==='') {
 	$uri    = $_SERVER['REQUEST_URI'] ?? '';
 	$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+	// OS 캡티브 탐지 프로브(=내장 로그인 창이 로드하는 URL)는 로그인 URL 로 302 리다이렉트.
 	$probeMap = [
 		'connectivitycheck.gstatic.com' => ['/generate_204'],
 		'www.msftconnecttest.com'       => ['/connecttest.txt'],
@@ -630,17 +657,19 @@ if ($connectedSession==='') {
 		header("Location: {$loginurl}", true, 302);
 		exit;
 	}
-	cp_flash_set([
+	// #25: 미인증 GET 은 로그인 페이지를 "직접" 렌더한다.
+	// (과거: flash 저장 후 cp_redirect_self → 세션쿠키 지속에 의존. OS 캡티브탐지/무쿠키
+	//  클라이언트는 쿠키를 안 돌려보내 매 요청 새 세션 → flash 못 읽음 → 무한 self-redirect
+	//  루프 → 세션파일/로그(cp_log) 폭주 → 디스크풀/OOM(#24). self-redirect 는 POST 의
+	//  PRG[재제출 방지]에만 쓴다.)
+	cp_render_from_flash([
 		'redirurl' => $redirurl,
-		'type' => $data['type'] ?? 'login',
-		'msg' => $data['msg'] ?? 'Welcome!',
-		'mac' => $clientmac,
-		'ip' => $clientip,
+		'type'     => 'login',
+		'msg'      => 'Welcome!',
+		'mac'      => $clientmac,
+		'ip'       => $clientip,
 	]);
-	cp_redirect_self(['zone' => $cpzone]);
-	ob_flush();
-	exit;
-
+	// cp_render_from_flash() 가 렌더 후 exit 한다.
 }
 
 
@@ -651,16 +680,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 	$speedProfile = trim((string)($_POST['speed_profile'] ?? ''));
 }
 
-cp_flash_set([
+// #25: 연결된 클라이언트의 GET 은 connected 페이지를 "직접" 렌더한다(self-redirect 루프 방지).
+cp_render_from_flash([
 	'redirurl' => $redirurl,
-	'type' => 'connected',
-	'msg' => '',
-	'mac' => $clientmac,
-	'ip' => $clientip,
+	'type'     => 'connected',
+	'msg'      => '',
+	'mac'      => $clientmac,
+	'ip'       => $clientip,
 	'username' => $connectedUser,
 ]);
-cp_redirect_self(['zone' => $cpzone]);
-ob_flush();
-exit;
 ?>
 

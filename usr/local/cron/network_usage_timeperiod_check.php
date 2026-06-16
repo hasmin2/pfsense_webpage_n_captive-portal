@@ -23,28 +23,45 @@
  * limitations under the License.
  */
 
+// ── 단일 인스턴스 가드 (#26) ──────────────────────────────────────────────────
+// 이전 실행이 1주기 안에 안 끝났으면(디스크풀/느린 I/O 등) 즉시 종료 → 프로세스 누적/OOM 방지.
+// 의존성 없는 self-contained(버전 섞임 안전). 락 fd 는 프로세스 종료 시 자동 해제.
+$__cron_singleton_fp = @fopen('/tmp/cron_' . basename(__FILE__, '.php') . '.lock', 'c');
+if ($__cron_singleton_fp === false || !@flock($__cron_singleton_fp, LOCK_EX | LOCK_NB)) {
+    exit(0);
+}
 require_once("terminal_status.inc");
 require_once("captiveportal.inc");
 require_once("status_traffic_totals.inc");
+// vnstat SQLite DB 가 vnstatd 쓰기와 겹치면 "database is locked"(SQLITE_BUSY) 로
+// 일시 실패한다(선상에서 하루 수십 회). 즉시 skip 하면 그 5분 구간 게이트웨이 사용량
+// 갱신이 통째로 누락되므로 재시도 헬퍼로 일시적 lock 을 흡수한다(#18 graceful skip 유지).
 $json_string = '';
-$fd = popen("/usr/local/bin/vnstat --json f 1", "r");
-$error = "";
-
-$json_string = str_replace("\n", ' ', fgets($fd));
-if(substr($json_string, 0, 5) === "Error") {
-    throw new Exception(substr($json_string, 7));
-}
-
-while (!feof($fd)) {
-    $json_string .= fgets($fd);
-
-    if(substr($json_string, 0, 5) === "Error") {
-        throw new Exception(str_replace("\n", ' ', substr($json_string, 7)));
-        break;
+if (function_exists('cp_vnstat_json_exec')) {
+    $json_string = cp_vnstat_json_exec('f 1');
+    if ($json_string === false) {
+        error_log("[network_usage] vnstat unavailable after retries (skipping)");
+        exit(0);
     }
+} else {
+    // 폴백(구버전 terminal_status.inc): 단발 실행 + graceful skip
+    $fd = popen("/usr/local/bin/vnstat --json f 1", "r");
+    $json_string = str_replace("\n", ' ', fgets($fd));
+    if (substr($json_string, 0, 5) === "Error") {
+        error_log("[network_usage] vnstat error (skipping): " . trim(substr($json_string, 7)));
+        pclose($fd);
+        exit(0);
+    }
+    while (!feof($fd)) {
+        $json_string .= fgets($fd);
+        if (substr($json_string, 0, 5) === "Error") {
+            error_log("[network_usage] vnstat error (skipping): " . trim(str_replace("\n", ' ', substr($json_string, 7))));
+            pclose($fd);
+            exit(0);
+        }
+    }
+    pclose($fd);
 }
-#sleep (10);
-pclose($fd);
 $datastring="traffic ";
 global $config;
 $filepath="/etc/inc/";
@@ -114,6 +131,17 @@ $interfaces = $config['interfaces'];
 
 $isModified = false;
 
+// Fix#2: 이번 사이클에 게이트웨이가 "새로" shutdown 목록에 추가됐는지 추적.
+// disconnect 는 이 경우에만, 그리고 해당 차단에 걸리는 사용자만 대상으로 한다.
+$shutdownAdded = false;
+
+// 불씨 제거: 게이트웨이 월 사용량 판정 소스를 원격 InfluxDB 합산이 아니라
+// 로컬 vnstat "이번달" 누계로 전환한다. vnstat 월 맵을 루프 전 1회만 조회해
+// 재사용(게이트웨이마다 vnstat 호출 방지). influx 는 대시보드 쓰기 용도로만 유지.
+$vnstatMonthMap = function_exists('get_vnstat_month_to_date_map')
+    ? get_vnstat_month_to_date_map()
+    : false;
+
 foreach ($gateways as &$gateway) {
     $gatewayInterface = $gateway['interface'] ?? '';
     $terminalType     = $gateway['terminal_type'] ?? '';
@@ -148,7 +176,19 @@ foreach ($gateways as &$gateway) {
         continue;
     }
 
-    $usage     = get_datausage_from_db($rootIf);
+    // 불씨 제거: 원격 influx 합산 대신 로컬 vnstat 이번달 누계(+stale 캐시)에서
+    //           게이트웨이 월 사용량을 얻는다. 원격 조회 의존이 없어 타임아웃/
+    //           false-0 오독에 의한 shutdown flapping 이 구조적으로 발생하지 않는다.
+    $usage = function_exists('get_gateway_monthly_usage_local')
+        ? get_gateway_monthly_usage_local($rootIf, $vnstatMonthMap)
+        : false;
+
+    // Fix#1: 소스(vnstat)도 캐시도 없으면 상태를 바꾸지 말고 건너뛴다(이전 상태 유지).
+    if ($usage === false) {
+        echo "usage unavailable (vnstat+cache miss), keep shutdown state: " . $gatewayName . "\n";
+        continue;
+    }
+
     $allowance = (float)$gateway['allowance'];
 
     $needShutdown = ((float)$usage >= $allowance);
@@ -162,6 +202,7 @@ foreach ($gateways as &$gateway) {
             if (captiveportal_add_shutdown_gateway($gatewayName)) {
                 echo "shutdown gateway added: " . $gatewayName . "\n";
                 $isModified = true;
+                $shutdownAdded = true;
             } else {
                 echo "shutdown gateway already exists: " . $gatewayName . "\n";
             }
@@ -193,10 +234,75 @@ unset($gateway);
 if ($isModified) {
     $cpzone='crew';
     $cpzoneid = $config['captiveportal']['crew']['zoneid'];
-    echo "shutdown gateway applied: " . $gatewayName . "\n";
-    captiveportal_disconnect_all($term_cause = 6, $logoutReason = "DISCONNECT", $carp_loop = false);
-    write_config("Update captiveportal shutdown gateway list");
+
+    // Fix#2: 게이트웨이가 "새로" shutdown 목록에 추가된 경우에만, 그리고 그 차단에
+    //        실제로 걸리는 사용자(antenna_allowed()=false)만 골라 개별 disconnect 한다.
+    //        기존 captiveportal_disconnect_all() 은 게이트웨이와 무관한 crew zone
+    //        전원을 끊어(blast radius 과다) 무관한 사용자까지 강제 로그아웃 + 전 사용자
+    //        ipfw 카운터 리셋(계측 오차)을 유발했다. turnon(목록 제거)만 있었던
+    //        사이클에서는 아무도 끊지 않는다.
+    if ($shutdownAdded) {
+        $disconnected = cp_disconnect_users_blocked_by_shutdown();
+        echo "shutdown disconnect applied: " . $disconnected . " user(s)\n";
+    }
+
+    // lost-update 방지: 느린 vnstat/curl 은 위에서 끝났고, 이 크론이 $config 에서 실제로
+    // 바꾸는 값은 $config['system']['cp_shutdown_gateways'] 하나뿐이다($gateways 는 line 78
+    // 에서 만든 복사본이라 rootinterface 변경은 config 에 반영되지 않음). 락 안에서 최신본
+    // (parse_config(true)) 재로딩 후 그 키만 재적용 → 동시 PW 변경 등을 덮지 않는다.
+    // (PW writer 와 같은 lock('freeradius_user_config') 공유.)
+    $new_shutdown_list = isset($config['system']['cp_shutdown_gateways'])
+        ? $config['system']['cp_shutdown_gateways']
+        : '';
+    $cnf_lock = lock('freeradius_user_config', LOCK_EX);
+    try {
+        $config = parse_config(true);
+        if (!isset($config['system']) || !is_array($config['system'])) {
+            $config['system'] = array();
+        }
+        $config['system']['cp_shutdown_gateways'] = $new_shutdown_list;
+        write_config("Update captiveportal shutdown gateway list");
+    } finally {
+        unlock($cnf_lock);
+    }
 }
+// Fix#2: crew zone 의 활성 세션 중, 현재 cp_shutdown_gateways 로 차단되는
+// 사용자(antenna_allowed()=false)만 골라 개별 로그아웃한다.
+// captiveportal_disconnect_all() 의 zone 전체 disconnect 를 대체해 무관한
+// 게이트웨이 사용자의 강제 로그아웃과 전 사용자 ipfw 카운터 리셋을 막는다.
+// 전제: 호출 전 global $cpzone 가 'crew' 로 설정돼 있어야 한다(captiveportal
+// 함수들이 $cpzone 전역에 의존). 반환값 = 끊은 사용자 수.
+function cp_disconnect_users_blocked_by_shutdown(): int
+{
+    // 버전 섞임 방어: 필요한 함수가 없으면 no-op.
+    if (!function_exists('captiveportal_read_db') ||
+        !function_exists('antenna_allowed') ||
+        !function_exists('captiveportal_disconnect_client')) {
+        return 0;
+    }
+
+    $cpdb = captiveportal_read_db();
+    if (!is_array($cpdb)) {
+        return 0;
+    }
+
+    $count = 0;
+    foreach ($cpdb as $cpentry) {
+        $username  = $cpentry[4] ?? '';
+        $sessionid = $cpentry[5] ?? '';
+        if ($username === '' || $sessionid === '') {
+            continue;
+        }
+        // 현재 shutdown 목록 기준으로 차단되는 사용자만 끊는다(게이트웨이 단위 한정).
+        if (antenna_allowed($username) === false) {
+            captiveportal_disconnect_client($sessionid, 6, "DISCONNECT");
+            $count++;
+        }
+    }
+
+    return $count;
+}
+
 function captiveportal_add_shutdown_gateway(string $gatewayName): bool
 {
     global $config;
@@ -207,12 +313,14 @@ function captiveportal_add_shutdown_gateway(string $gatewayName): bool
         return false;
     }
 
-    if (!isset($config['captiveportal']['shutdown_gateways']) ||
-        !is_string($config['captiveportal']['shutdown_gateways'])) {
-        $config['captiveportal']['shutdown_gateways'] = '';
+    // $config['captiveportal']['shutdown_gateways'] 는 zone 배열에 비-zone 키를 주입해
+    // phantom CP zone 을 만든다 (#8 prepaid_enabled 동일 패턴). $config['system'] 에 보관.
+    if (!isset($config['system']['cp_shutdown_gateways']) ||
+        !is_string($config['system']['cp_shutdown_gateways'])) {
+        $config['system']['cp_shutdown_gateways'] = '';
     }
 
-    $gatewayNameString = $config['captiveportal']['shutdown_gateways'];
+    $gatewayNameString = $config['system']['cp_shutdown_gateways'];
 
     if (strpos($gatewayNameString, $gatewayName . "||") !== false) {
         return false;
@@ -220,7 +328,7 @@ function captiveportal_add_shutdown_gateway(string $gatewayName): bool
 
     $gatewayNameString .= $gatewayName . "||";
 
-    $config['captiveportal']['shutdown_gateways'] = $gatewayNameString;
+    $config['system']['cp_shutdown_gateways'] = $gatewayNameString;
 
     return true;
 }
@@ -235,12 +343,12 @@ function captiveportal_remove_shutdown_gateway(string $gatewayName): bool
         return false;
     }
 
-    if (!isset($config['captiveportal']['shutdown_gateways']) ||
-        !is_string($config['captiveportal']['shutdown_gateways'])) {
+    if (!isset($config['system']['cp_shutdown_gateways']) ||
+        !is_string($config['system']['cp_shutdown_gateways'])) {
         return false;
     }
 
-    $gatewayList = explode('||', $config['captiveportal']['shutdown_gateways']);
+    $gatewayList = explode('||', $config['system']['cp_shutdown_gateways']);
 
     // 빈 값 제거
     $gatewayList = array_filter($gatewayList, function ($value) {
@@ -255,7 +363,7 @@ function captiveportal_remove_shutdown_gateway(string $gatewayName): bool
         return $value !== $gatewayName;
     });
 
-    $config['captiveportal']['shutdown_gateways'] = empty($gatewayList)
+    $config['system']['cp_shutdown_gateways'] = empty($gatewayList)
         ? ''
         : implode('||', $gatewayList) . '||';
 

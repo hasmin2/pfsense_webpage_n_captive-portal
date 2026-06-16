@@ -150,12 +150,31 @@ function print_sidebar($inputlink)
     // CP zone 목록에 '내부가 빈 가짜 zone' 이 생기던 버그를 정리한다.
     // 구 위치(captiveportal)가 보이면 system 으로 이전하고 구 키를 제거한 뒤 1회 영구화한다.
     // (이후 요청부터는 구 키가 없어 no-op)
+    // phantom CP zone self-heal: 아래 3가지 비-zone 키가 $config['captiveportal'] 에
+    // 남아있으면 pfSense CP zone 목록에 빈 zone 으로 표시된다.
+    // 수정은 cp_routing_setup.php(배포 시)에서 먼저 처리하므로 여기는 fallback 역할.
+    // write_config() 는 비용이 크므로 변경이 있을 때만 1회만 호출한다.
+    $_cp_sidebar_dirty = false;
     if (isset($config['captiveportal']['prepaid_enabled'])) {
         $config['system']['prepaid_enabled'] = "";
         unset($config['captiveportal']['prepaid_enabled']);
-        if (function_exists('write_config')) {
-            write_config("prepaid_enabled: captiveportal->system 이전(가짜 zone 제거)");
+        $_cp_sidebar_dirty = true;
+    }
+    if (isset($config['captiveportal']['filter'])) {
+        unset($config['captiveportal']['filter']);
+        $_cp_sidebar_dirty = true;
+    }
+    if (isset($config['captiveportal']['shutdown_gateways'])) {
+        if (!isset($config['system']['cp_shutdown_gateways']) ||
+            $config['captiveportal']['shutdown_gateways'] !== '') {
+            $config['system']['cp_shutdown_gateways'] =
+                $config['captiveportal']['shutdown_gateways'];
         }
+        unset($config['captiveportal']['shutdown_gateways']);
+        $_cp_sidebar_dirty = true;
+    }
+    if ($_cp_sidebar_dirty && function_exists('write_config')) {
+        write_config("phantom CP zone 키 정리(captiveportal→system 이전)");
     }
     if (isset($config['system']['prepaid_enabled'])) {
         $rtnstr .= $mk("prepaid_account.php", "Prepaid Account", "ic-lnb05");
@@ -170,6 +189,20 @@ function print_sidebar($inputlink)
         . '</a>'
         . '</li>';
     $rtnstr .= '    </ul></div>';
+
+    // 사이드바 하단 푸터 (전 페이지 공통 — print_sidebar 가 모든 커스텀 페이지의 사이드바를 그림).
+    // 다크 사이드바 대비 인라인 스타일(외부 CSS 의존 없음). 링크는 새 탭.
+    $rtnstr .= '    <div class="lnb-footer" style="margin-top:18px; padding:14px 16px 20px; '
+        . 'font-size:11px; line-height:1.65; color:rgba(255,255,255,.45); '
+        . 'border-top:1px solid rgba(255,255,255,.08);">'
+        . 'This Web console is developed and maintained by '
+        . '<a href="https://www.synersat.com" target="_blank" rel="noopener" '
+        . 'style="color:rgba(255,255,255,.72); text-decoration:underline;">SynerSAT Korea</a>. '
+        . '&copy; since 2016 Powered by '
+        . '<a href="https://www.pfsense.org" target="_blank" rel="noopener" '
+        . 'style="color:rgba(255,255,255,.72); text-decoration:underline;">PFSense</a>.'
+        . '</div>';
+
     $rtnstr .= '  </div>'; // lnb
     $rtnstr .= '</div>';   // sidebar
 

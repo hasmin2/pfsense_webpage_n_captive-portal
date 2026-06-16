@@ -28,9 +28,64 @@ require_once("filter.inc");
 require_once("util.inc");
 require_once("gwlb.inc");
 
-init_config_arr(['captiveportal', 'filter', 'aliases', 'gateways']);
+// init_config_arr 는 중첩 경로 함수이므로, 배열로 묶어 호출하면
+// $config['captiveportal']['filter']['aliases']['gateways'] 가 생성되어
+// 'filter' 라는 phantom CP zone 이 config.xml 에 주입된다.
+// 각 top-level 키를 개별 경로로 초기화한다.
+init_config_arr(['filter', 'rule']);
+init_config_arr(['aliases', 'alias']);
 
 global $config;
+
+// ----------------------------------------------------------------
+// 구 phantom CP zone 키 정리 (배포 시 즉시 제거)
+// ----------------------------------------------------------------
+// 아래 두 키는 과거 코드가 $config['captiveportal'] zone 배열에 직접 저장해
+// pfSense CP zone 목록에 phantom zone 을 만들던 버그의 잔재다.
+// cp_routing_setup 은 배포마다 실행되므로 여기서 제거하면 GUI 방문 없이도 정리된다.
+// $changed = true 로 표시만 해두면 스크립트 말미의 write_config() 한 번에 같이 저장된다.
+
+$_cp_phantom_cleaned = false;
+
+// Bug 1: init_config_arr(['captiveportal','filter','aliases','gateways']) 오용으로
+//        $config['captiveportal']['filter'] 배열이 주입되어 phantom zone 'filter' 생성.
+if (isset($config['captiveportal']['filter'])) {
+    unset($config['captiveportal']['filter']);
+    $_cp_phantom_cleaned = true;
+    setup_log("CLEAN phantom zone 'filter' 제거");
+}
+
+// Bug 2: shutdown_gateways 를 captiveportal zone 배열에 문자열로 직접 저장하던 버그.
+//        system 으로 이전 후 구 키 제거.
+if (isset($config['captiveportal']['shutdown_gateways'])) {
+    if (!isset($config['system']['cp_shutdown_gateways']) ||
+        $config['captiveportal']['shutdown_gateways'] !== '') {
+        $config['system']['cp_shutdown_gateways'] =
+            $config['captiveportal']['shutdown_gateways'];
+    }
+    unset($config['captiveportal']['shutdown_gateways']);
+    $_cp_phantom_cleaned = true;
+    setup_log("CLEAN phantom zone 'shutdown_gateways' → system 이전");
+}
+
+// $_cp_phantom_cleaned 는 아래 $changed 선언 시 OR 로 합산된다 (추가 I/O 없음).
+
+// ----------------------------------------------------------------
+// 구버전 per-user 로그인 룰 일괄 purge (배포 시 자동 정리)
+// ----------------------------------------------------------------
+// 과거 add_crew_linked_rule() 은 로그인마다 config.xml 에
+// "[User Rule] <id> auto generated rule" 룰을 추가했다(현재는 pfctl 테이블 방식).
+// 마이그레이션 이전 유저들의 룰이 고아로 남아 DHCP IP 재할당 시 오라우팅 위험이 있어 제거한다.
+// captiveportal_configure() 의 self-heal(#13)과 동일 함수를 호출 — 멱등(제거할 게 없으면 no-op),
+// 제거 시 자체적으로 write_config + filter_configure 1회 수행.
+// cp_routing_setup 은 배포마다 실행되므로, 여기서 호출하면 GUI 방문/재부팅 없이도 정리된다.
+// 버전 섞임 방어: 구버전 captiveportal.inc 가 먼저 올라온 partial deploy 에서도 fatal 없도록 가드.
+if (function_exists('cp_purge_legacy_user_login_rules')) {
+    $_purged = cp_purge_legacy_user_login_rules();
+    setup_log("purge_legacy: 구버전 per-user 룰 {$_purged}건 제거");
+} else {
+    setup_log("SKIP purge_legacy (함수 없음 — 구버전 captiveportal.inc)");
+}
 
 // ----------------------------------------------------------------
 // 헬퍼
@@ -195,7 +250,7 @@ echo "\n";
 // 모든 WAN 인터페이스 목록 (블록룰 생성용)
 $all_ifaces = array_unique(array_column($all_gws, 'interface'));
 
-$changed = false;
+$changed = $_cp_phantom_cleaned;
 
 // ---- 2. Alias 생성 ----
 

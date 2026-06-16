@@ -1,5 +1,6 @@
 <?php
 require_once("captiveportal.inc");
+require_once("cp_usage_reset.inc");
 
 init_config_arr(array('captiveportal'));
 
@@ -13,6 +14,7 @@ $radiusUsers =& $config['installedpackages']['freeradius']['config'];
 
 $currentTime = time();
 $changed = false;
+$reset_targets = array();
 
 if (is_array($radiusUsers) && !empty($radiusUsers)) {
 
@@ -153,6 +155,9 @@ if (is_array($radiusUsers) && !empty($radiusUsers)) {
                 $userEntry['varusersmodified'] = "update";
                 $changed = true;
             }
+
+            // 즉시 리셋 대상(monthly, non-half)으로 수집
+            $reset_targets[] = (string)($userEntry['varusersusername'] ?? '');
         }
 
         unset($userEntry);
@@ -183,8 +188,25 @@ if (
 
 // 변경이 있을 때만 반영 (lost-update 방지)
 if ($changed) {
+    // forever 유저 삭제분을 radiusd 활성 users 파일에 반영(HUP).
+    // 누락 시 삭제된 유저가 radiusd 재로드 전까지 계속 인증 통과한다.
+    // (daily/weekly/half/prepaid 와 동일 패턴으로 일치화.)
+    if (function_exists('freeradius_users_resync')) {
+        freeradius_users_resync();
+    }
     cp_wireless_log("Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset");
     write_config("Reset Monthly Crew wifi usage, delete all unused onetime id more 360days, initialize gateway usage offset");
+
+    // 차후 로그인이 아니라 "이때 바로": 활성 세션 로그아웃 + 사용량 0
+    if (function_exists('captiveportal_reset_user_usage')) {
+        foreach (array_unique($reset_targets) as $u) {
+            if (is_string($u) && $u !== '') {
+                captiveportal_reset_user_usage($u);
+                // 자가복구 크론이 이번 주기를 중복 리셋하지 않도록 날짜키 마킹(monthly).
+                if (function_exists('cp_reset_mark_user')) { cp_reset_mark_user($u, 'monthly', ''); }
+            }
+        }
+    }
 } else {
     cp_wireless_log("Reset Monthly Crew wifi usage: no changes");
 }

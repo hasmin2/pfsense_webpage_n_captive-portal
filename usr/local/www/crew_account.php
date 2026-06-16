@@ -498,12 +498,12 @@ if ($_POST['dataamount']){
         <div class="contents">
             <div class="container">
                 <div class="manage-wrap">
-                    <div class="list-top" style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
-                        <div class="search-area" style="display:flex; align-items:flex-end; justify-content:flex-start; flex:0 0 auto;">
+                    <div class="list-top" style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:nowrap; margin-bottom:14px;">
+                        <div class="search-area" style="display:flex; align-items:flex-end; justify-content:flex-start; flex:1 1 auto; min-width:0;">
                             <?php echo draw_wifi_userid_search_box(); ?>
                         </div>
 
-                        <div class="btn-area" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; flex:1 1 auto; flex-wrap:wrap;">
+                        <div class="btn-area" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; flex:0 0 auto; flex-wrap:nowrap;">
                             <?= $controldisplay ?>
                         </div>
                     </div>
@@ -584,17 +584,6 @@ if ($_POST['dataamount']){
                             pattern="[0-9]*"
                             aria-label="Data limit (Mbytes)"
                     >
-                </div>
-            </div>
-            <div class="form">
-                <div class="form-tit">
-                    <br>
-                    <p class="tit">Time limit (Time minutes)</p>
-                </div>
-                <div class="form-cont">
-                    <input type="text" name="timelimit" id="timelimit"
-                           placeholder="Time based limit, NOT IMPLEMENTED YET"
-                           inputmode="numeric" autocomplete="off" pattern="[0-9]*">
                 </div>
             </div>
             <div class="form mt20">
@@ -1147,7 +1136,6 @@ if ($_POST['dataamount']){
 
         // 필요에 맞게 allowEmpty 조절 가능
         bindPositiveIntOnly('datalimit', false);
-        bindPositiveIntOnly('timelimit', true);   // 미구현이면 비워두기 허용 추천
         bindPositiveIntOnly('downspeed', true);   // 실험 기능이면 비워두기 허용 추천
         bindPositiveIntOnly('upspeed', true);
         bindPositiveIntOnly('dataamount', false);

@@ -11,6 +11,7 @@ if (!is_array($radiusUsers) || empty($radiusUsers)) {
 }
 
 $changed = false;
+$reset_targets = array();
 
 foreach ($radiusUsers as $idx => $userEntry) {
     // 배열인지 확인 (방어)
@@ -32,6 +33,7 @@ foreach ($radiusUsers as $idx => $userEntry) {
         $config['installedpackages']['freeradius']['config'][$idx]['varusersmodified']  = 'update';
         $config['installedpackages']['freeradius']['config'][$idx]['varusersmaxtotaloctets']  = '0';
         $changed = true;
+        $reset_targets[] = $username;
     }
 }
 
@@ -40,6 +42,13 @@ if ($changed) {
     freeradius_users_resync();
     cp_wireless_log("crewpay - Reset PREPAID datausage / allocation (Updated)");
     write_config("Reset half monthly datausage Wifi user");
+
+    // 차후 로그인이 아니라 "이때 바로": 활성 세션 로그아웃 + 사용량 0
+    if (function_exists('captiveportal_reset_user_usage')) {
+        foreach (array_unique($reset_targets) as $u) {
+            if (is_string($u) && $u !== '') { captiveportal_reset_user_usage($u); }
+        }
+    }
 } else {
     cp_wireless_log("crewpay - Reset PREPAID datausage / allocation (no changes)");
 }
