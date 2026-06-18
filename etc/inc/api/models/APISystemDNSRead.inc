@@ -237,11 +237,27 @@ if (!function_exists("api_dns_gw_max")) {
         return $names;
     }
 
-    # Auto-assign gateways to a DNS server list. Policy "top2x2" (default): 2 DNS servers per gateway
-    # across the top gateways, filling the 4 dns{N}gw slots -> dns[0,1]=rank#1, dns[2,3]=rank#2.
+    # Parse an auto policy string into [N gateways, M DNS-servers-per-gateway]:
+    #   "top2x2" / "top2/2" -> [2,2]   (2 gateways, 2 DNS each)
+    #   "top4x1" / "top4/1" / "top4"   -> [4,1]   (spread: 1 DNS per gateway = unique DNS per WAN)
+    #   "top1x4" / "top1/4"            -> [1,4]   (all DNS on the single best gateway)
+    # 'x' or '/' separator; a bare "topN" means M=1. Legacy/truthy values (auto/true/1/yes) -> [2,2].
+    function api_dns_parse_auto_policy($policy) {
+        $p = strtolower(trim((string)$policy));
+        if (preg_match('/^top(\d+)(?:[x\/](\d+))?$/', $p, $mm)) {
+            $N = max(1, (int)$mm[1]);
+            $M = (isset($mm[2]) and $mm[2] !== "") ? max(1, (int)$mm[2]) : 1;
+            return [$N, $M];
+        }
+        return [2, 2];
+    }
+
+    # Auto-assign gateways to a DNS server list per a topN/M policy (see api_dns_parse_auto_policy):
+    # the top-N ranked gateways each receive M consecutive DNS servers (dns[0..M-1]=#1, dns[M..2M-1]=#2,
+    # ...), capped at the 4 dns{N}gw slots pfSense supports.
     # Only online gateways are used while any are online (so a down in-port link like LANDLINE is never
     # bound when other uplinks are up); if none are online, falls back to type-priority order.
-    # Fewer eligible gateways than ranks => remaining DNS fall back to the last available gateway.
+    # Fewer eligible gateways than N => remaining DNS fall back to the last selected gateway.
     function api_dns_auto_servergw($config, $servers, $policy) {
         $n = is_array($servers) ? count($servers) : 0;
         if ($n === 0) {
@@ -260,12 +276,15 @@ if (!function_exists("api_dns_gw_max")) {
         }
         $pick = !empty($online_ranked) ? $online_ranked : $ranked;
 
-        # Only "top2x2" is implemented; any non-empty policy maps to it.
+        list($N, $M) = api_dns_parse_auto_policy($policy);
+        # Never use more gateways than are actually available
+        $ngw = min($N, count($pick));
+
         $max = api_dns_gw_max();
         for ($i = 0; $i < $n and $i < $max; $i++) {
-            $rank = intdiv($i, 2);
-            if (!isset($pick[$rank])) {
-                $rank = count($pick) - 1;
+            $rank = intdiv($i, $M);
+            if ($rank >= $ngw) {
+                $rank = $ngw - 1;   // overflow -> last selected gateway
             }
             $gws[$i] = $pick[$rank];
         }
