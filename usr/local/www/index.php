@@ -1286,12 +1286,20 @@ $cp_coverage_json = '{}';
                 var vx = (pos[1] + 180) / 360 * iw, vy = (90 - pos[0]) / 180 * ih;
                 var c = C(), R = c.R, sp = Math.sin(pitch);
                 var k = R / ppu, ks = R * sp / ppu;
-                // 바닥 지도는 항상 N=위/E=오른쪽 고정(yaw=0) — dome 회전에 무관하게 정방위 표시
+                var cyA = Math.cos(yaw), syA = Math.sin(yaw);
+                // 바닥 지도도 dome(와이어/위성/본선)과 동일한 yaw 회전을 적용 → 같이 회전.
+                //   이미지px(ix,iy)→EN평면 오프셋→yaw 회전(E1,N1)→화면 x=cx+E1*R, y=cy+N1*sp*R.
+                //   본선(vx,vy)은 디스크 중심(cx,cy)에 고정되어 그 둘레로 회전. yaw=0 이면 기존과 동일.
                 horizonPath();
                 ctx.save();
                 ctx.clip();
-                ctx.setTransform(dpr * k, 0, 0, dpr * (-ks),
-                                 dpr * (c.cx - k * vx), dpr * (c.cy + ks * vy));
+                ctx.setTransform(
+                    dpr * k * cyA,
+                    dpr * ks * syA,
+                    dpr * k * syA,
+                    dpr * (-ks * cyA),
+                    dpr * (c.cx - k * (cyA * vx + syA * vy)),
+                    dpr * (c.cy + ks * (cyA * vy - syA * vx)));
                 try { ctx.drawImage(floorImg, 0, 0, iw, ih); } catch (x) {}
                 ctx.restore();
                 horizonPath();
