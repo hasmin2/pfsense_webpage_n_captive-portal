@@ -137,6 +137,52 @@ if($_POST['data_update']){
     exit(0);
 }
 ////////////////////SIMPLE SELF API//////////////////////////
+
+// === 위성 커버리지 DB (10.8.128.1:3306/SynerSAT/coveragemap) ===
+$cp_coverage_json = '{}';
+(function() use (&$cp_coverage_json) {
+    $mysql = '';
+    foreach (array('/usr/local/bin/mysql', '/usr/bin/mysql', '/usr/local/bin/mariadb', '/usr/bin/mariadb') as $_p) {
+        if (is_executable($_p)) { $mysql = $_p; break; }
+    }
+    if ($mysql === '') { return; }
+
+    $cnf = @tempnam('/tmp', 'cpdbcov');
+    if ($cnf === false) { return; }
+    @file_put_contents($cnf, "[client]\nhost=10.8.128.1\nport=3306\nuser=sbox_reader\n"
+        . "password=\"readonlyP@ss\"\n");
+    @chmod($cnf, 0600);
+
+    $run = function($sql) use ($mysql, $cnf) {
+        $out = array(); $ret = 1;
+        $cmd = escapeshellarg($mysql)
+            . ' --defaults-extra-file=' . escapeshellarg($cnf)
+            . ' --connect-timeout=4 -N -B SynerSAT -e ' . escapeshellarg($sql)
+            . ' 2>/dev/null';
+        @exec($cmd, $out, $ret);
+        return array($ret, $out);
+    };
+
+    $coverage = array();
+    /* schema: (satellite, positionlist) — positionlist 열이 polygon JSON 배열 */
+    list($r2, $rows) = $run('SELECT `satellite`, `positionlist` FROM coveragemap');
+    if ($r2 === 0) {
+        foreach ($rows as $line) {
+            $parts = explode("\t", $line, 2);
+            if (count($parts) === 2) {
+                $decoded = json_decode(trim($parts[1]), true);
+                if (is_array($decoded)) { $coverage[trim($parts[0])] = $decoded; }
+            }
+        }
+    }
+
+    @unlink($cnf);
+    if (!empty($coverage)) {
+        $cp_coverage_json = json_encode($coverage, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+})();
+// =============================================================
+
 ?>
 <!DOCTYPE HTML>
 <html lang="ko">
@@ -163,31 +209,29 @@ if($_POST['data_update']){
             <p class="acu3d-hint">drag to rotate &middot; auto-orbits when idle</p>
         </div>
     </div>
-    <!-- 위성 커버리지: 인터넷 데이터 소모 경고 -->
+    <!-- 위성 커버리지: 지도 타일 인터넷 소모 경고 -->
     <div id="covwarn-ov" role="dialog" aria-modal="true" aria-label="Internet data warning">
         <div class="covwarn">
-            <h3>Internet connection required</h3>
-            <p>This view downloads online map tiles from the internet and <b>may consume satellite data</b>.
-               Coverage shown is <b>approximate / indicative only</b>. Continue?</p>
+            <h3>Online map tiles required</h3>
+            <p>Coverage polygon data is loaded from the local database.<br>
+               The <b>background map tiles</b> (OpenStreetMap) require an internet connection and
+               <b>may consume satellite data</b>. Continue?</p>
             <div class="row">
                 <button type="button" id="covwarn-cancel">Cancel</button>
                 <button type="button" id="covwarn-ok" class="primary">Connect &amp; view</button>
             </div>
         </div>
     </div>
-    <!-- 위성 커버리지 맵 모달 (근사 커버리지 + 선박 위치) -->
+    <!-- 위성 커버리지 맵 모달 (DB polygon + 선박 위치) -->
     <div id="cov-ov" role="dialog" aria-modal="true" aria-label="Satellite coverage map">
         <div class="cov-modal">
             <div class="cov-head">
-                <h3>Satellite coverage (approximate)</h3>
+                <h3>Satellite coverage</h3>
                 <button type="button" class="cov-close" id="cov-x" aria-label="Close">&times;</button>
             </div>
-            <div class="cov-disc">&#9888; APPROXIMATE / INDICATIVE ONLY &mdash; generic latitude bands, not actual
-                operator footprints. Do not use for operational, comms, or navigational planning.</div>
-            <div class="cov-toggles">
-                <label><input type="checkbox" id="cov-oneweb" checked><span class="sw" style="background:#9b87ff"></span>OneWeb (approx)</label>
-                <label><input type="checkbox" id="cov-gx" checked><span class="sw" style="background:#2fd39a"></span>Global Xpress (approx)</label>
-                <label><input type="checkbox" id="cov-fbb" checked><span class="sw" style="background:#ffc34d"></span>FleetBroadband (approx)</label>
+            <div class="cov-disc" id="cov-disc">&#9432; Coverage footprints from local database &mdash; for informational purposes only. Do not use for operational, comms, or navigational planning.</div>
+            <div class="cov-toggles" id="cov-toggles">
+                <!-- JS가 CP_COVERAGE_DB 키 기반으로 동적 생성 -->
             </div>
             <div id="cov-map"></div>
             <p class="cov-pos" id="cov-pos">Vessel position: --</p>
@@ -526,8 +570,9 @@ if($_POST['data_update']){
     .cov-head {display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;}
     .cov-head h3 {margin:0; font-size:15px; font-weight:700; color:#e7eefc;}
     .cov-close {background:none; border:none; color:#9fb6d4; font-size:24px; line-height:1; cursor:pointer; padding:0 4px;}
-    .cov-disc {font-size:12px; font-weight:700; color:#7a1f1f; background:#ffe3e3; border:1px solid #ffa8a8;
+    .cov-disc {font-size:12px; font-weight:600; color:#9fb6d4; background:#0a192f; border:1px solid #21344f;
         border-radius:8px; padding:6px 10px; margin-bottom:8px; line-height:1.45;}
+    .cov-disc.approx {color:#7a4f1f; background:#fff3e0; border-color:#ffc107;}
     .cov-toggles {display:flex; flex-wrap:wrap; gap:14px; margin-bottom:8px; font-size:12px; color:#cdd9ea;}
     .cov-toggles label {display:flex; align-items:center; gap:6px; cursor:pointer;}
     .cov-toggles .sw {width:11px; height:11px; border-radius:3px; display:inline-block;}
@@ -1154,6 +1199,7 @@ if($_POST['data_update']){
     // 초기 1회 렌더 (이후엔 refreshValue 의 10초 AJAX 가 갱신)
     updateAcuCompass(<?php echo json_encode($acu_view); ?>);
     updateFbbCompass(<?php echo json_encode($fbb_view); ?>);
+    var CP_COVERAGE_DB = <?php echo $cp_coverage_json; ?>;
 
     // === 안테나 3D 스카이돔 (Satellite 나침반 클릭 → 모달; Canvas 2D 자체 투영, 외부 라이브러리 0) ===
     //   데이터는 acuLastVsat/acuLastFbb(az·el·heading·status) 그대로 사용 → 10초 AJAX 갱신 자동 반영.
@@ -1164,7 +1210,7 @@ if($_POST['data_update']){
         if (!cv || !ov) { return; }
         var ctx = cv.getContext('2d');
         var W = 0, H = 0, dpr = Math.min(window.devicePixelRatio || 1, 2);
-        var yaw = 0, pitch = -0.74, dragging = false, lastX = 0, raf = null, isOpen = false;
+        var yaw = 0, pitch = -0.74, dragging = false, lastX = 0, raf = null, isOpen = false, orbitT = 0;
         function size() {
             var r = cv.getBoundingClientRect();
             W = r.width || 480; H = r.height || 360;
@@ -1214,13 +1260,14 @@ if($_POST['data_update']){
                 var iw = floorImg.naturalWidth, ih = floorImg.naturalHeight;
                 var ppu = FLOOR_SPAN_HALF * ih / 180;
                 var vx = (pos[1] + 180) / 360 * iw, vy = (90 - pos[0]) / 180 * ih;
-                var c = C(), R = c.R, cyA = Math.cos(yaw), syA = Math.sin(yaw), sp = Math.sin(pitch);
+                var c = C(), R = c.R, sp = Math.sin(pitch);
                 var k = R / ppu, ks = R * sp / ppu;
+                // 바닥 지도는 항상 N=위/E=오른쪽 고정(yaw=0) — dome 회전에 무관하게 정방위 표시
                 horizonPath();
                 ctx.save();
                 ctx.clip();
-                ctx.setTransform(dpr * k * cyA, dpr * ks * syA, dpr * k * syA, dpr * (-ks * cyA),
-                                 dpr * (c.cx - k * (vx * cyA + vy * syA)), dpr * (c.cy - ks * (vx * syA - vy * cyA)));
+                ctx.setTransform(dpr * k, 0, 0, dpr * (-ks),
+                                 dpr * (c.cx - k * vx), dpr * (c.cy + ks * vy));
                 try { ctx.drawImage(floorImg, 0, 0, iw, ih); } catch (x) {}
                 ctx.restore();
                 horizonPath();
@@ -1286,8 +1333,8 @@ if($_POST['data_update']){
                     : ((fb && fb.heading !== null && fb.heading !== undefined && !isNaN(fb.heading)) ? fb.heading : 0);
             boat(hdg);
         }
-        function loop() { if (!isOpen) { return; } if (!dragging) { yaw += 0.004; } draw(); raf = requestAnimationFrame(loop); }
-        function openModal() { ov.classList.add('on'); isOpen = true; size(); if (raf) { cancelAnimationFrame(raf); } raf = requestAnimationFrame(loop); }
+        function loop() { if (!isOpen) { return; } if (!dragging) { orbitT += 0.016; yaw = Math.sin(orbitT * 0.3); } draw(); raf = requestAnimationFrame(loop); }
+        function openModal() { yaw = 0; orbitT = 0; ov.classList.add('on'); isOpen = true; size(); if (raf) { cancelAnimationFrame(raf); } raf = requestAnimationFrame(loop); }
         function closeModal() { isOpen = false; ov.classList.remove('on'); if (raf) { cancelAnimationFrame(raf); raf = null; } }
         var trk = document.getElementById('acu_trk');
         if (trk) { trk.addEventListener('click', openModal); }
@@ -1301,15 +1348,47 @@ if($_POST['data_update']){
         window.addEventListener('resize', function () { if (isOpen) { size(); } });
     })();
 
-    // === 위성 커버리지 맵 (Position 미니맵 클릭 → 인터넷 데이터 경고 → 온라인 지도 + 근사 커버리지) ===
-    //   사용자 승인(데이터 소모 경고) 후에만 인터넷 사용(Leaflet+타일 CDN 로드). 오프라인이면 안내 표시.
-    //   커버리지는 운영사 실제 footprint 가 아닌 "근사 위도대"이며 UI 에 APPROXIMATE 라벨을 명시한다.
+    // === 위성 커버리지 맵 (Position 미니맵 클릭 → 인터넷 경고(타일용) → Leaflet 지도 + DB polygon) ===
+    //   커버리지 데이터: CP_COVERAGE_DB (PHP→JSON, 로컬 DB 10.8.128.1:3306/SynerSAT/coveragemap).
+    //   DB 조회 실패(빈 객체)면 근사 위도대로 폴백.
     (function () {
-        var warnOv = document.getElementById('covwarn-ov');
-        var covOv  = document.getElementById('cov-ov');
+        var warnOv  = document.getElementById('covwarn-ov');
+        var covOv   = document.getElementById('cov-ov');
         var trigger = document.getElementById('port_mm');
         if (!warnOv || !covOv || !trigger) { return; }
+
+        // 카테고리 → 색상 (DB 키 소문자 기준)
+        var COV_COLORS = {
+            'gx1': '#2fd39a', 'gx2': '#4ecdc4', 'gx3': '#45b7d1',
+            'gx4': '#96ceb4', 'gx5': '#7be0c8',
+            'GX1': '#2fd39a', 'GX2': '#4ecdc4', 'GX3': '#45b7d1',
+            'GX4': '#96ceb4', 'GX5': '#7be0c8',
+            'oneweb': '#9b87ff', 'OneWeb': '#9b87ff',
+            'fbb': '#ffc34d', 'FBB': '#ffc34d'
+        };
+        // 폴백 위도대 (DB 없을 때)
+        var COV_FALLBACK = [
+            { key: 'oneweb', lat: 88, color: '#9b87ff', name: 'OneWeb' },
+            { key: 'GX',     lat: 76, color: '#2fd39a', name: 'Global Xpress' },
+            { key: 'fbb',    lat: 70, color: '#ffc34d', name: 'FleetBroadband' }
+        ];
+
         var consented = false, map = null, layers = {}, vesselMk = null, leafletTried = false;
+        var dbKeys = (typeof CP_COVERAGE_DB === 'object' && CP_COVERAGE_DB !== null)
+            ? Object.keys(CP_COVERAGE_DB) : [];
+        var hasDb = dbKeys.length > 0;
+
+        function colorFor(key) {
+            if (COV_COLORS[key]) { return COV_COLORS[key]; }
+            // 접두사 매칭 (GX1..GX9 → green 계열, 나머지 기본)
+            if (/^[Gg][Xx]\d/.test(key)) { return '#2fd39a'; }
+            if (/oneweb/i.test(key)) { return '#9b87ff'; }
+            if (/fbb/i.test(key)) { return '#ffc34d'; }
+            // 순차 fallback 팔레트
+            var pal = ['#a78bfa','#34d399','#60a5fa','#f472b6','#fb923c','#facc15','#4ade80'];
+            var idx = dbKeys.indexOf(key) % pal.length; if (idx < 0) { idx = 0; }
+            return pal[idx];
+        }
 
         function vesselPos() {
             function ok(d) { return d && d.lat != null && d.lon != null && !isNaN(d.lat) && !isNaN(d.lon) && !(d.lat === 0 && d.lon === 0); }
@@ -1319,11 +1398,47 @@ if($_POST['data_update']){
         }
         function setMsg(t) { var m = document.getElementById('cov-map'); if (m) { m.innerHTML = '<div class="cov-msg">' + t + '</div>'; } }
 
+        // 동적 토글 생성
+        function buildToggles() {
+            var container = document.getElementById('cov-toggles'); if (!container) { return; }
+            container.innerHTML = '';
+            var keys = hasDb ? dbKeys : COV_FALLBACK.map(function(f){ return f.key; });
+            keys.forEach(function (key) {
+                var color = colorFor(key);
+                // gx* 는 중첩 방지용 기본 비체크; oneweb/fbb 는 기본 체크
+                var defaultOn = !(/^[Gg][Xx]/.test(key));
+                var label = document.createElement('label');
+                var cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = 'cov-cb-' + key; cb.checked = defaultOn;
+                var sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = color;
+                var txt = document.createTextNode(key + (hasDb ? '' : ' (approx)'));
+                label.appendChild(cb); label.appendChild(sw); label.appendChild(txt);
+                container.appendChild(label);
+            });
+            // gx 그룹 안내 문구
+            if (hasDb && keys.some(function(k){ return /^[Gg][Xx]/.test(k); })) {
+                var hint = document.createElement('span');
+                hint.style.cssText = 'font-size:11px;color:#6f8aab;align-self:center;';
+                hint.textContent = '(GX: select one at a time)';
+                container.appendChild(hint);
+            }
+            // 免责 텍스트 업데이트
+            var disc = document.getElementById('cov-disc');
+            if (disc) {
+                if (hasDb) {
+                    disc.textContent = 'ℹ Coverage footprints from local database — for informational purposes only. Do not use for operational, comms, or navigational planning.';
+                    disc.classList.remove('approx');
+                } else {
+                    disc.textContent = '⚠ APPROXIMATE / INDICATIVE ONLY — generic latitude bands, not actual operator footprints.';
+                    disc.classList.add('approx');
+                }
+            }
+        }
+
         function loadLeaflet(cb) {
             if (window.L) { cb(); return; }
             if (leafletTried) { return; }
             leafletTried = true;
-            setMsg('Loading map&hellip;');
+            setMsg('Loading map…');
             var css = document.createElement('link'); css.rel = 'stylesheet';
             css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
             document.head.appendChild(css);
@@ -1333,53 +1448,74 @@ if($_POST['data_update']){
             js.onerror = function () { leafletTried = false; setMsg('Map could not be loaded.<br>Check the internet connection, then close and try again.'); };
             document.body.appendChild(js);
         }
-        // 운영사 커버리지: '../img/coverage_{op}.png' 가 있으면 그 이미지를 오버레이(운영사 실제 맵).
-        //   이미지 미설치/로드실패 시 근사 위도대로 폴백 → 이미지 넣는 즉시 자동으로 실제 맵으로 전환.
-        //   이미지 규격: 전세계 PNG(투명 배경 + 커버리지 영역만 색), 등장방형(plate carrée) 또는 Web Mercator.
-        var COV_BOUNDS = [[-85.0511, -180], [85.0511, 180]];
-        var COV_IMG = { oneweb: '../img/coverage_oneweb.png', gx: '../img/coverage_gx.png', fbb: '../img/coverage_fbb.png' };
+
+        // 위도대 근사 폴백 레이어
         function covBandInto(grp, latLimit, color, name) {
             L.rectangle([[-latLimit, -180], [latLimit, 180]],
-                { color: color, weight: 2.5, dashArray: '7 5', fillColor: color, fillOpacity: 0.07, interactive: false }).addTo(grp);
+                { color: color, weight: 2, dashArray: '7 5', fillColor: color, fillOpacity: 0.07, interactive: false }).addTo(grp);
             L.marker([latLimit, -148], { interactive: false, keyboard: false, icon: L.divIcon({
                 className: 'cov-lbl',
                 html: '<span style="color:' + color + ';font-size:11px;font-weight:700;white-space:nowrap;text-shadow:0 0 3px #000,0 0 3px #000;">'
-                    + name + ' &asymp;±' + latLimit + '&deg; (approx band)</span>',
+                    + name + ' ≈\xb1' + latLimit + '\xb0 (approx band)</span>',
                 iconSize: [200, 14], iconAnchor: [0, 7] }) }).addTo(grp);
         }
-        function covLayer(key, latLimit, color, name) {
+
+        // DB polygon 레이어 생성
+        function covDbLayer(key, polygons, color) {
             var grp = L.layerGroup();
-            var ov = L.imageOverlay(COV_IMG[key], COV_BOUNDS, { opacity: 0.55, interactive: false });
-            ov.on('error', function () { try { grp.removeLayer(ov); } catch (x) {} covBandInto(grp, latLimit, color, name); });
-            ov.addTo(grp);
+            polygons.forEach(function (poly) {
+                var pts = poly.points;
+                if (!pts || !pts.length) { return; }
+                L.polygon(pts, {
+                    color: color, weight: 1.5, opacity: 0.85,
+                    fillColor: color, fillOpacity: 0.13, interactive: true
+                }).bindTooltip(poly.label || key, { sticky: true }).addTo(grp);
+            });
             return grp;
         }
-        function bindToggle(id, key) {
-            var c = document.getElementById(id); if (!c) { return; }
+
+        function bindToggle(key) {
+            var c = document.getElementById('cov-cb-' + key); if (!c) { return; }
             c.onchange = function () {
                 if (!map || !layers[key]) { return; }
                 if (c.checked) { layers[key].addTo(map); } else { map.removeLayer(layers[key]); }
             };
         }
+
         function initMap() {
             var el = document.getElementById('cov-map'); if (!el) { return; }
             el.innerHTML = '';
             map = L.map(el, { worldCopyJump: true, minZoom: 1, maxZoom: 6 }).setView([20, 0], 2);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                { maxZoom: 6, attribution: '&copy; OpenStreetMap' }).addTo(map);
-            layers.oneweb = covLayer('oneweb', 88, '#9b87ff', 'OneWeb').addTo(map);
-            layers.gx     = covLayer('gx', 76, '#2fd39a', 'Global Xpress').addTo(map);
-            layers.fbb    = covLayer('fbb', 70, '#ffc34d', 'FleetBroadband').addTo(map);
-            bindToggle('cov-oneweb', 'oneweb'); bindToggle('cov-gx', 'gx'); bindToggle('cov-fbb', 'fbb');
+                { maxZoom: 6, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+
+            if (hasDb) {
+                dbKeys.forEach(function (key) {
+                    var color = colorFor(key);
+                    var defaultOn = !(/^[Gg][Xx]/.test(key));
+                    layers[key] = covDbLayer(key, CP_COVERAGE_DB[key], color);
+                    if (defaultOn) { layers[key].addTo(map); }
+                    bindToggle(key);
+                });
+            } else {
+                COV_FALLBACK.forEach(function (f) {
+                    var grp = L.layerGroup();
+                    covBandInto(grp, f.lat, f.color, f.name);
+                    layers[f.key] = grp.addTo(map);
+                    bindToggle(f.key);
+                });
+            }
+
             var pos = vesselPos(), posEl = document.getElementById('cov-pos');
             if (pos) {
                 vesselMk = L.circleMarker(pos, { radius: 6, color: '#fff', weight: 2, fillColor: '#FA5252', fillOpacity: 1 }).addTo(map);
-                vesselMk.bindTooltip('Vessel');
+                vesselMk.bindTooltip('Vessel', { permanent: false });
                 map.setView(pos, 3);
-                if (posEl) { posEl.textContent = 'Vessel position: ' + pos[0].toFixed(3) + ', ' + pos[1].toFixed(3); }
+                if (posEl) { posEl.textContent = 'Vessel position: ' + pos[0].toFixed(3) + '\xb0, ' + pos[1].toFixed(3) + '\xb0'; }
             } else if (posEl) { posEl.textContent = 'Vessel position: GPS not available'; }
             setTimeout(function () { if (map) { map.invalidateSize(); } }, 80);
         }
+
         function openCov() {
             covOv.classList.add('on');
             loadLeaflet(function () {
@@ -1395,15 +1531,18 @@ if($_POST['data_update']){
                 }
             });
         }
+
+        buildToggles();  // 페이지 로드 시 토글 즉시 구성 (Leaflet 불필요)
+
         trigger.addEventListener('click', function (e) {
-            if (e.target && e.target.closest && e.target.closest('.pm-zoom')) { return; }  // 줌버튼 클릭은 제외
+            if (e.target && e.target.closest && e.target.closest('.pm-zoom')) { return; }
             if (consented) { openCov(); } else { warnOv.classList.add('on'); }
         });
-        var wc = document.getElementById('covwarn-cancel'); if (wc) { wc.addEventListener('click', function () { warnOv.classList.remove('on'); }); }
-        var wok = document.getElementById('covwarn-ok'); if (wok) { wok.addEventListener('click', function () { consented = true; warnOv.classList.remove('on'); openCov(); }); }
-        var cx = document.getElementById('cov-x'); if (cx) { cx.addEventListener('click', function () { covOv.classList.remove('on'); }); }
-        covOv.addEventListener('click', function (e) { if (e.target === covOv) { covOv.classList.remove('on'); } });
-        warnOv.addEventListener('click', function (e) { if (e.target === warnOv) { warnOv.classList.remove('on'); } });
+        var wc  = document.getElementById('covwarn-cancel'); if (wc)  { wc.addEventListener('click',  function () { warnOv.classList.remove('on'); }); }
+        var wok = document.getElementById('covwarn-ok');     if (wok) { wok.addEventListener('click', function () { consented = true; warnOv.classList.remove('on'); openCov(); }); }
+        var cx  = document.getElementById('cov-x');          if (cx)  { cx.addEventListener('click',  function () { covOv.classList.remove('on'); }); }
+        covOv.addEventListener('click',   function (e) { if (e.target === covOv)   { covOv.classList.remove('on'); } });
+        warnOv.addEventListener('click',  function (e) { if (e.target === warnOv)  { warnOv.classList.remove('on'); } });
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { warnOv.classList.remove('on'); covOv.classList.remove('on'); } });
     })();
     // ===================================================================
