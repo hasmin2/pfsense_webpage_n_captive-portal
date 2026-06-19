@@ -233,6 +233,17 @@ $cp_coverage_json = '{}';
             </div>
         </div>
     </div>
+    <!-- NexusWave 외 안테나: 커버리지 미지원 안내 팝업 (월드맵은 표시하되 커버리지 오버레이만 게이트) -->
+    <div id="covnote-ov" role="dialog" aria-modal="true" aria-label="Coverage map notice">
+        <div class="covwarn">
+            <h3>Coverage map</h3>
+            <p>Currently, <b>only NEXUSWAVE</b> antennas support the satellite coverage map.<br>
+               The world map is shown without coverage overlays.</p>
+            <div class="row">
+                <button type="button" id="covnote-ok" class="primary">OK</button>
+            </div>
+        </div>
+    </div>
     <!-- 위성 커버리지 맵 모달 (DB polygon + 선박 위치) -->
     <div id="cov-ov" role="dialog" aria-modal="true" aria-label="Satellite coverage map">
         <div class="cov-modal">
@@ -339,7 +350,7 @@ $cp_coverage_json = '{}';
                                     <p class="text" id="gps_info"><?= $drawing_gps_info;?></p>
                                     <!-- #28 항구 미니맵: 최근접 3개 항구 방위/거리 (GPS 갱신 시 자동 재계산, 오프라인 지도)
                                          GPS 미수신 시 no-gps 클래스 → 회색 디스크 + "NO GPS" (레이아웃 점프 없음) -->
-                                    <div class="port-mm no-gps<?php echo $cp_has_nexuswave_gw ? '' : ' no-cov'; ?>" id="port_mm">
+                                    <div class="port-mm no-gps" id="port_mm">
                                         <!-- 상단 존 플레이트: 현재 해역/위치 영문 표시 (WoW 존 이름판) -->
                                         <div class="pm-plate"><span id="port_mm_region">--</span></div>
                                         <div class="pm-stage">
@@ -567,9 +578,10 @@ $cp_coverage_json = '{}';
     .acu3d-hint {text-align:center; font-size:11px; color:#6f8aab; margin:5px 0 0;}
 
     /* === 위성 커버리지 맵 (Position 미니맵 클릭 → 인터넷 경고 → 온라인 지도 + 근사 커버리지) === */
-    #covwarn-ov, #cov-ov {position:fixed; inset:0; background:rgba(8,12,20,.74); z-index:10000;
+    #covwarn-ov, #cov-ov, #covnote-ov {position:fixed; inset:0; background:rgba(8,12,20,.74); z-index:10000;
         display:none; align-items:center; justify-content:center;}
-    #covwarn-ov.on, #cov-ov.on {display:flex;}
+    #covwarn-ov.on, #cov-ov.on, #covnote-ov.on {display:flex;}
+    #covnote-ov {z-index:10001;}  /* coverage 모달 위에 표시 */
     .covwarn {width:min(420px,92vw); background:#fff; border-radius:14px; padding:20px 22px;}
     .covwarn h3 {margin:0 0 8px; font-size:16px; font-weight:700; color:#212529;}
     .covwarn p {margin:0 0 16px; font-size:13px; line-height:1.6; color:#495057;}
@@ -594,9 +606,6 @@ $cp_coverage_json = '{}';
     .pm-stage::after {content:'\2922 MAP'; position:absolute; left:7%; top:7%; z-index:3; font-size:9px;
         font-weight:700; color:#FFD75E; background:#343A40; border:1px solid #D4AF37; border-radius:6px;
         padding:1px 5px; pointer-events:none; letter-spacing:.5px;}
-    /* NexusWave gateway 가 없으면 coverage map 비활성 → MAP 배지 숨김 + 클릭 힌트 제거 */
-    .port-mm.no-cov {cursor:default;}
-    .port-mm.no-cov .pm-stage::after {display:none;}
 
     /* === #28 항구 미니맵 (Position 타일) === */
     /* 반응형(B): 고정 220px → 컨테이너 비례(최대 248=링 포함 시각폭). 좁은 타일에서도 우측 넘침 없음.
@@ -1367,13 +1376,15 @@ $cp_coverage_json = '{}';
     //   커버리지 데이터: CP_COVERAGE_DB (PHP→JSON, 로컬 DB 10.8.128.1:3306/SynerSAT/coveragemap).
     //   DB 조회 실패(빈 객체)면 근사 위도대로 폴백.
     (function () {
-        // NexusWave gateway(terminal_type) 가 없으면 coverage map 자체를 비활성:
-        // 트리거/모달을 바인딩하지 않아 미니맵 클릭이 coverage 를 열지 않는다(일반 미니맵 유지).
-        if (typeof CP_HAS_NEXUSWAVE !== 'undefined' && !CP_HAS_NEXUSWAVE) { return; }
         var warnOv  = document.getElementById('covwarn-ov');
         var covOv   = document.getElementById('cov-ov');
+        var noteOv  = document.getElementById('covnote-ov');
         var trigger = document.getElementById('port_mm');
         if (!warnOv || !covOv || !trigger) { return; }
+
+        // NexusWave gateway(terminal_type) 가 있을 때만 커버리지 오버레이를 렌더.
+        // 없으면 월드맵은 그대로 열되 커버리지/토글을 숨기고 안내 팝업(covnote-ov)을 표시.
+        var covEnabled = (typeof CP_HAS_NEXUSWAVE !== 'undefined') ? !!CP_HAS_NEXUSWAVE : false;
 
         // 카테고리 → 색상 (DB 키 소문자 기준)
         var COV_COLORS = {
@@ -1420,6 +1431,17 @@ $cp_coverage_json = '{}';
         function buildToggles() {
             var container = document.getElementById('cov-toggles'); if (!container) { return; }
             container.innerHTML = '';
+            // 비-NexusWave: 커버리지 토글 없음 + disc 에 안내문 (월드맵만 표시)
+            if (!covEnabled) {
+                container.style.display = 'none';
+                var dnc = document.getElementById('cov-disc');
+                if (dnc) {
+                    dnc.textContent = 'ℹ Currently, only NEXUSWAVE antennas support the satellite coverage map. The world map is shown without coverage overlays.';
+                    dnc.classList.add('approx');
+                }
+                return;
+            }
+            container.style.display = '';
             var keys = hasDb ? dbKeys : COV_FALLBACK.map(function(f){ return f.key; });
             keys.forEach(function (key) {
                 var color = colorFor(key);
@@ -1507,21 +1529,24 @@ $cp_coverage_json = '{}';
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                 { maxZoom: 6, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
 
-            if (hasDb) {
-                dbKeys.forEach(function (key) {
-                    var color = colorFor(key);
-                    var defaultOn = !(/^[Gg][Xx]/.test(key));
-                    layers[key] = covDbLayer(key, CP_COVERAGE_DB[key], color);
-                    if (defaultOn) { layers[key].addTo(map); }
-                    bindToggle(key);
-                });
-            } else {
-                COV_FALLBACK.forEach(function (f) {
-                    var grp = L.layerGroup();
-                    covBandInto(grp, f.lat, f.color, f.name);
-                    layers[f.key] = grp.addTo(map);
-                    bindToggle(f.key);
-                });
+            // 커버리지 오버레이는 NexusWave 안테나가 있을 때만 렌더 (없으면 월드맵만)
+            if (covEnabled) {
+                if (hasDb) {
+                    dbKeys.forEach(function (key) {
+                        var color = colorFor(key);
+                        var defaultOn = !(/^[Gg][Xx]/.test(key));
+                        layers[key] = covDbLayer(key, CP_COVERAGE_DB[key], color);
+                        if (defaultOn) { layers[key].addTo(map); }
+                        bindToggle(key);
+                    });
+                } else {
+                    COV_FALLBACK.forEach(function (f) {
+                        var grp = L.layerGroup();
+                        covBandInto(grp, f.lat, f.color, f.name);
+                        layers[f.key] = grp.addTo(map);
+                        bindToggle(f.key);
+                    });
+                }
             }
 
             var pos = vesselPos(), posEl = document.getElementById('cov-pos');
@@ -1536,6 +1561,8 @@ $cp_coverage_json = '{}';
 
         function openCov() {
             covOv.classList.add('on');
+            // 비-NexusWave: 월드맵 위에 "NEXUSWAVE 만 커버리지 지원" 안내 팝업
+            if (!covEnabled && noteOv) { noteOv.classList.add('on'); }
             loadLeaflet(function () {
                 if (!map) { initMap(); }
                 else {
@@ -1559,9 +1586,11 @@ $cp_coverage_json = '{}';
         var wc  = document.getElementById('covwarn-cancel'); if (wc)  { wc.addEventListener('click',  function () { warnOv.classList.remove('on'); }); }
         var wok = document.getElementById('covwarn-ok');     if (wok) { wok.addEventListener('click', function () { consented = true; warnOv.classList.remove('on'); openCov(); }); }
         var cx  = document.getElementById('cov-x');          if (cx)  { cx.addEventListener('click',  function () { covOv.classList.remove('on'); }); }
+        var nok = document.getElementById('covnote-ok');     if (nok && noteOv) { nok.addEventListener('click', function () { noteOv.classList.remove('on'); }); }
         covOv.addEventListener('click',   function (e) { if (e.target === covOv)   { covOv.classList.remove('on'); } });
         warnOv.addEventListener('click',  function (e) { if (e.target === warnOv)  { warnOv.classList.remove('on'); } });
-        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { warnOv.classList.remove('on'); covOv.classList.remove('on'); } });
+        if (noteOv) { noteOv.addEventListener('click', function (e) { if (e.target === noteOv) { noteOv.classList.remove('on'); } }); }
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { warnOv.classList.remove('on'); covOv.classList.remove('on'); if (noteOv) { noteOv.classList.remove('on'); } } });
     })();
     // ===================================================================
     function core_open(){
