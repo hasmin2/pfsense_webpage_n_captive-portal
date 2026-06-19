@@ -75,6 +75,17 @@ $vpncolor = $vpnstatus == 'Online' ? 'green' : 'red';
 $gateways = return_gateways_array();
 $gateways_status = return_gateways_status(true);
 
+// === NexusWave gateway 유무: 위성 커버리지 맵 노출 게이트 (terminal_type 기준) ===
+//   terminal_type 이 nexuswave(_pri/_sec/_thi/_fth) 인 gateway 가 하나라도 있을 때만
+//   Position 미니맵 클릭 → coverage map 모달을 노출한다. 없으면 일반 미니맵으로 유지.
+$cp_has_nexuswave_gw = false;
+foreach ($gateways as $gw) {
+    if (isset($gw['terminal_type']) && stripos($gw['terminal_type'], 'nexuswave') !== false) {
+        $cp_has_nexuswave_gw = true;
+        break;
+    }
+}
+
 $drawing_table_label = "<th>Core/Version</th><th>NOC</th>";
 $drawing_table_content = '<td id="core_status_string" data-th="Version" data-th-width="90" data-width="100" class="txt-'.$a_core_status_string[1].'">'.$a_core_status_string[0].'</td>';
 $drawing_table_content .='<td id="vpnstatus" data-th="NOC" data-th-width="90" data-width="100" class="txt-'. $vpncolor .'">'.$vpnstatus.'</td>';
@@ -328,7 +339,7 @@ $cp_coverage_json = '{}';
                                     <p class="text" id="gps_info"><?= $drawing_gps_info;?></p>
                                     <!-- #28 항구 미니맵: 최근접 3개 항구 방위/거리 (GPS 갱신 시 자동 재계산, 오프라인 지도)
                                          GPS 미수신 시 no-gps 클래스 → 회색 디스크 + "NO GPS" (레이아웃 점프 없음) -->
-                                    <div class="port-mm no-gps" id="port_mm">
+                                    <div class="port-mm no-gps<?php echo $cp_has_nexuswave_gw ? '' : ' no-cov'; ?>" id="port_mm">
                                         <!-- 상단 존 플레이트: 현재 해역/위치 영문 표시 (WoW 존 이름판) -->
                                         <div class="pm-plate"><span id="port_mm_region">--</span></div>
                                         <div class="pm-stage">
@@ -583,6 +594,9 @@ $cp_coverage_json = '{}';
     .pm-stage::after {content:'\2922 MAP'; position:absolute; left:7%; top:7%; z-index:3; font-size:9px;
         font-weight:700; color:#FFD75E; background:#343A40; border:1px solid #D4AF37; border-radius:6px;
         padding:1px 5px; pointer-events:none; letter-spacing:.5px;}
+    /* NexusWave gateway 가 없으면 coverage map 비활성 → MAP 배지 숨김 + 클릭 힌트 제거 */
+    .port-mm.no-cov {cursor:default;}
+    .port-mm.no-cov .pm-stage::after {display:none;}
 
     /* === #28 항구 미니맵 (Position 타일) === */
     /* 반응형(B): 고정 220px → 컨테이너 비례(최대 248=링 포함 시각폭). 좁은 타일에서도 우측 넘침 없음.
@@ -1200,6 +1214,7 @@ $cp_coverage_json = '{}';
     updateAcuCompass(<?php echo json_encode($acu_view); ?>);
     updateFbbCompass(<?php echo json_encode($fbb_view); ?>);
     var CP_COVERAGE_DB = <?php echo $cp_coverage_json; ?>;
+    var CP_HAS_NEXUSWAVE = <?php echo $cp_has_nexuswave_gw ? 'true' : 'false'; ?>;
 
     // === 안테나 3D 스카이돔 (Satellite 나침반 클릭 → 모달; Canvas 2D 자체 투영, 외부 라이브러리 0) ===
     //   데이터는 acuLastVsat/acuLastFbb(az·el·heading·status) 그대로 사용 → 10초 AJAX 갱신 자동 반영.
@@ -1352,6 +1367,9 @@ $cp_coverage_json = '{}';
     //   커버리지 데이터: CP_COVERAGE_DB (PHP→JSON, 로컬 DB 10.8.128.1:3306/SynerSAT/coveragemap).
     //   DB 조회 실패(빈 객체)면 근사 위도대로 폴백.
     (function () {
+        // NexusWave gateway(terminal_type) 가 없으면 coverage map 자체를 비활성:
+        // 트리거/모달을 바인딩하지 않아 미니맵 클릭이 coverage 를 열지 않는다(일반 미니맵 유지).
+        if (typeof CP_HAS_NEXUSWAVE !== 'undefined' && !CP_HAS_NEXUSWAVE) { return; }
         var warnOv  = document.getElementById('covwarn-ov');
         var covOv   = document.getElementById('cov-ov');
         var trigger = document.getElementById('port_mm');
