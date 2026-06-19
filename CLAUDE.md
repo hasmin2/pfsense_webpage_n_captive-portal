@@ -11,9 +11,9 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `10aeaea` | **#1~#33 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강 — 커밋 `10aeaea`) |
-| `main` | `775066c` | **#1~#33 전부 반영 완료** (merge 커밋 `db8be52` + docs `775066c`, develop 트리와 콘텐츠 동일). 2026-06-16 develop→main 일괄 통합 |
-| `prod` | `4eb63ac` | **#1~#33 전부 반영** (merge 커밋 `4eb63ac`). 2026-06-16 main→prod 배포 |
+| `develop` | `92ae399` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵을 NexusWave gateway(terminal_type=nexuswave_*) 존재 시에만 노출 — 커밋 `c72b1d2`) |
+| `main` | `369da8e` | **#1~#34 전부 반영 완료** (커밋 `369da8e`). 2026-06-16 develop→main 일괄 통합 |
+| `prod` | `7a7195f` | **#1~#34 전부 반영** (커밋 `7a7195f`). 2026-06-16 main→prod 배포 |
 
 > **develop 최근 작업 묶음(#13확장·#15~#17)**: 배포 시 구룰 자동 purge + 로그인 유지 마이그레이션
 > (`4df5de3`), phantom CP zone 제거·즉시정리(`9bc6053`·`9476e47`), getsession 무효리셋 가드 +
@@ -969,6 +969,57 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - 검증: php -l + 단위/런타임 하네스(다건 수집·키보호·방어정규화·timeperiod 분해/케이스수렴·del 재사용·폴백) 통과.
 - **배포 정합성**: 5파일 일괄(APIFreeRadiusUser{Create,Update,Delete}.inc + manage_crew_wifi_account.inc + crew_account.php).
 
+### 34. API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정 (develop `92ae399` / main `369da8e` / prod `7a7195f`)
+- **israndompw true/false 정규화 (API + 웹 공통)**: 기존 `"randpwd"` 문자열 값을 `true`/`false` 불리언으로 전환.
+  PHP 함정(`"false"` 문자열은 truthy) 대비 명시 falsy 목록 `['','0','false','no','off']` 적용.
+  구값 `"randpwd"` 는 truthy 라 **자동 하위호환** 유지.
+  - `manage_crew_wifi_account.inc` `create_wifi_user`: `if ($israndompw === "randpwd")` → `$do_randpw` 정규화 판정.
+  - `crew_account.php`: checkbox `value="randpwd"` → `value="true"`.
+  - `APIFreeRadiusUserCreate.inc` 단건 경로: `__validate_username()` 내 `israndompw` 주입 로직 신규 추가
+    (6자리 숫자 난수 생성, `create_wifi_user` 와 동일 알고리즘). bulk 경로는 `create_wifi_user` 내부가 처리.
+  - `APIFreeRadiusUserUpdate.inc` `update_userinfo()`: `israndompw=true` → 사용자마다 독립 6자리 난수 생성,
+    `israndompw=false` → 비밀번호를 `"1111"` 로 초기화(명시적 리셋), `israndompw` 미지정 → 비밀번호 무변경.
+- **Update `freeradius_lastbasedata` timerange 폴백 + foreach 버그 수정** (`APIFreeRadiusUserUpdate.inc`):
+  - 기존: `freeradius_lastbasedata`(MB 단위 파일 직접 쓰기) 블록이 `foreach($userentry)` 루프 **안**에 있어
+    config 키(~20개) 순회마다 파일을 N번 반복 open·write. 또한 `maxtotaloctetstimerange` 가 페이로드에 없으면
+    동작 안 됨.
+  - 수정: 블록을 foreach **밖**(루프 종료 후)으로 이동. `timerange` 는 페이로드 미포함 시 **기존 config 값
+    자동 폴백**(`varusersmaxtotaloctetstimerange`).
+- **#23 step3-A radcheck 동기화 (Create 단건 + Update israndompw 경로)**:
+  - Create 단건: `action()` 에서 `freeradius_radcheck_sync_users()` 호출(비밀번호 있을 때).
+  - Update: `israndompw` 명시 시(true→난수/false→1111) `_radcheck_entries` 누적 → `action()` 에서 일괄 sync.
+- **Topup delta 가감 (`APIFreeRadiusUserTopup.inc`)**:
+  - 신규 필드 `freeradius_lastbasedata`(MB 단위 정수, 양수=+, 음수=-): used-octets **베이스 파일**만 직접 수정.
+    세션 파일(`used-octets-{user}-{SID}`)은 건드리지 않음 → datacounter_auth.sh 합산이므로 delta 즉시 반영.
+    하한 0(음수 방지). 기존 태그명 `freeradius_usageadjust` 에서 변경.
+  - `freeradius_maxtotaloctets`(쿼터 증감)와 `freeradius_lastbasedata`(사용량 증감)를 **독립 필드**로 분리.
+    둘 다 0이면 해당 블록 skip(로그에도 미포함).
+  - **로그 0값 가드**: 두 필드 모두 값이 0이면 로그 문자열에서 제외(기존 `quota+0MB` 오출력 차단).
+- **3D 안테나 스카이돔 좌우 반전 수정** (`usr/local/www/index.php`):
+  - `pitch = +0.74`(남쪽 아래 시점 → 북이 화면 하단에 표시) → `pitch = -0.74`(북쪽 위 시점 → 북이 화면 상단).
+  - `yaw = -0.5` → `yaw = 0`(초기 정면 정렬).
+- **배포 정합성**: `APIFreeRadiusUserCreate.inc` + `APIFreeRadiusUserUpdate.inc` + `APIFreeRadiusUserTopup.inc`
+  + `manage_crew_wifi_account.inc` + `crew_account.php` + `index.php` **6파일 일괄 배포**.
+- 검증: php -l 전부 통과 / israndompw 정규화·6자리 난수·1111 리셋·lastbasedata foreach 버그·delta 가감·0값 가드
+  런타임 하네스 통과.
+
+### 35. 위성 커버리지 맵 — NexusWave gateway 존재 시에만 노출 (develop `c72b1d2`)
+- **요구**: #33 커버리지 맵(Position 미니맵 클릭 → `⤢ MAP` 모달)을 **NexusWave gateway 가 있을 때만**
+  노출(시연). 없으면 일반 미니맵으로 유지.
+- **판정 기준 = terminal_type (사용자 선택)**: gateway 의 `terminal_type` 이 `nexuswave`(_pri/_sec/_thi/_fth)
+  를 포함하면 노출. terminal_status.inc 의 기존 nexuswave 감지 로직과 동일 기준. (사용자가 지칭한
+  `tcp_nexuswave` 리터럴은 코드베이스에 없음 — 실제 존재값은 `nexuswave_*`.)
+- **수정 (`usr/local/www/index.php` 단일 파일, 5곳)**:
+  - **PHP** `$cp_has_nexuswave_gw`: `$gateways`(=`return_gateways_array()`) 순회 +
+    `stripos($gw['terminal_type'],'nexuswave')` 매칭 1개라도 있으면 true (페이지 로드 1회 판정).
+  - **HTML**: 없을 때 `#port_mm` 에 `no-cov` 클래스 추가.
+  - **CSS**: `.port-mm.no-cov .pm-stage::after {display:none}`(⤢ MAP 배지 숨김) + `cursor:default`.
+  - **JS**: `CP_HAS_NEXUSWAVE` 주입 + coverage map IIFE 초입 `if(!CP_HAS_NEXUSWAVE) return;`
+    → 트리거/모달 미바인딩(미니맵 클릭이 coverage 안 열림).
+- **영향 없음**: #28 항구 미니맵(거리/방위/줌)은 별도 IIFE 라 그대로 동작. 가드는 PHP/JS 양쪽이라
+  버전 섞임에도 fatal 없이 안전 강등.
+- 검증: php -l 통과.
+
 ### 33. 관리/Main Panel UI 보강 — 미커밋
 - **crew_account.php 툴바 1줄(A안)**: `.list-top` nowrap + 검색박스 가변(`flex:1 1 auto; min-width:0`,
   입력 max 420px) + 버튼군 고정(`flex:0 0 auto`) + Search/Clear `flex:0 0 auto`(찌그러짐·겹침 차단,
@@ -994,8 +1045,15 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 
 ## 다음 작업 대기 중
 
-- [ ] **이번 세션 미커밋 (커밋 대기)**: #32(voucher API 5파일) + #33(UI: crew_account.php·
-  manage_crew_wifi_account.inc·common_ui.inc·index.php). 지시 시 develop 일괄 커밋.
+- [x] **#35 커밋 완료(develop)**: 위성 커버리지 맵을 NexusWave gateway(terminal_type=nexuswave_*) 존재 시에만 노출 — develop `c72b1d2`. (main/prod 미반영 — 명시 지시 시 병합)
+- [ ] #35 검증(선상): NexusWave gateway 있는 선박 → Position 미니맵에 `⤢ MAP` 배지 + 클릭 시 coverage 모달 정상 /
+  NexusWave gateway 없는 선박 → 배지 숨김 + 미니맵 클릭이 coverage 안 열림(항구 미니맵·줌은 정상 동작).
+- [x] **#34 커밋 완료**: develop `92ae399` → main `369da8e` → prod `7a7195f`. 2026-06-16 전 브랜치 배포.
+- [ ] #34 검증(선상): API `israndompw:true` PUT(Create)/POST(Update) → 6자리 숫자 난수 비밀번호 생성 확인 /
+  `israndompw:false` Update → 비밀번호 `1111` 초기화 / Topup `freeradius_lastbasedata:50` → used-octets +50MB /
+  `freeradius_lastbasedata:-50` → -50MB(0 하한) / 3D 돔 열면 **북이 화면 상단**에 표시되는지 / 배포 6파일 일괄 확인.
+- [ ] **이번 세션 미커밋 (커밋 대기)**: #33(UI: crew_account.php·manage_crew_wifi_account.inc·common_ui.inc·index.php)
+  는 `10aeaea` 에 포함돼 prod 반영 완료. #32(voucher API 5파일)도 동일 배포 묶음에 포함.
 - [ ] #32 검증(선상): 원격 API 로 voucher **다건** create(PUT)/update(POST)/delete(DELETE) → 웹과 동일
   결과 / `weekly` 사용량 파일 삭제 확인 / **배포 정합성 5파일 일괄**(버전 섞임 시 ArgumentCountError 등).
 - [ ] #33 커버리지 맵: **운영사 이미지 필요(B)** — `usr/local/www/img/coverage_{oneweb,gx,fbb}.png`
