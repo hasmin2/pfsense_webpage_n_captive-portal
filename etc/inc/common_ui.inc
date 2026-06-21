@@ -180,6 +180,7 @@ function print_sidebar($inputlink)
         $rtnstr .= $mk("prepaid_account.php", "Prepaid Account", "ic-lnb05");
     }
     $rtnstr .= $mk("download_center.php", "Download Center", "ic-lnb06");
+    $rtnstr .= $mk("release_note.php", "Release Note", "ic-lnb06");
 
 
     $rtnstr .= '<li style="margin-top:12px;">'
