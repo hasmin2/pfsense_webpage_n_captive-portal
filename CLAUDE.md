@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `92ae399` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵을 NexusWave gateway(terminal_type=nexuswave_*) 존재 시에만 노출 — 커밋 `c72b1d2`) |
+| `develop` | `92ae399` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`) — 커밋 `82fc3d4`) |
 | `main` | `369da8e` | **#1~#34 전부 반영 완료** (커밋 `369da8e`). 2026-06-16 develop→main 일괄 통합 |
 | `prod` | `7a7195f` | **#1~#34 전부 반영** (커밋 `7a7195f`). 2026-06-16 main→prod 배포 |
 
@@ -1003,21 +1003,42 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - 검증: php -l 전부 통과 / israndompw 정규화·6자리 난수·1111 리셋·lastbasedata foreach 버그·delta 가감·0값 가드
   런타임 하네스 통과.
 
-### 35. 위성 커버리지 맵 — NexusWave gateway 존재 시에만 노출 (develop `c72b1d2`)
-- **요구**: #33 커버리지 맵(Position 미니맵 클릭 → `⤢ MAP` 모달)을 **NexusWave gateway 가 있을 때만**
-  노출(시연). 없으면 일반 미니맵으로 유지.
+### 36. 3D 스카이돔 바닥 세계지도를 dome 과 함께 yaw 회전 (develop `82fc3d4`)
+- **증상**: Antenna 3D 스카이돔(#33, Satellite 나침반 클릭 → 모달)을 드래그/자동궤도로 회전하면
+  dome(와이어·위성·본선·NESW 라벨)만 돌고 **바닥 세계지도(`world_minimap.jpg`)는 안 돌아 따로 놂**.
+- **원인**: `drawFloor()` 의 바닥 텍스처 `setTransform` 이 **yaw=0 고정**이었음(기존 주석 "바닥 지도는
+  항상 N=위/E=오른쪽 고정 — 정방위 표시" = 의도적 고정). dome 좌표는 `P(az,el)` 에서 yaw 회전을 적용하나
+  바닥만 회전에서 빠져 있었다.
+- **수정 (`usr/local/www/index.php` `drawFloor()`)**: dome 투영 `P()` 와 **동일한 yaw 회전**을 바닥 아핀에
+  적용. 이미지px(ix,iy)→본선기준 EN 오프셋→yaw 회전(E1,N1)→화면 `x=cx+E1*R, y=cy+N1*sin(pitch)*R`.
+  본선(vx,vy)은 디스크 중심(cx,cy)에 고정되어 그 둘레로 회전. **yaw=0 이면 기존 변환과 동일(회귀 없음)**.
+  - setTransform 6계수: `a=k·cosY, b=ks·sinY, c=k·sinY, d=-ks·cosY,
+    e=cx−k(cosY·vx+sinY·vy), f=cy+ks(cosY·vy−sinY·vx)` (×dpr). `k=R/ppu, ks=R·sin(pitch)/ppu`.
+- **검증**: node 수치 하네스 — 본선이 yaw 무관하게 정확히 중심 고정 + 지도상 방위 `a`·거리 `FLOOR_SPAN_HALF`(16°)
+  지점이 dome 수평선 링 `P(a,0)` 와 **픽셀오차 0** 일치(yaw 0/0.5/−0.8/1.2), 북쪽점 yaw 추종 확인. php -l 통과.
+
+### 35. 위성 커버리지 맵 — NexusWave gateway 존재 시에만 커버리지 노출 (develop `c72b1d2`→최종 `2c23248`)
+- **요구(최종)**: #33 커버리지 맵(Position 미니맵 클릭 → `⤢ MAP` 모달)에서 **월드맵은 항상 열되**,
+  **커버리지 오버레이는 NexusWave gateway 가 있을 때만** 렌더. 없으면 커버리지 미표시 + **안내 팝업**으로
+  "현재 NEXUSWAVE 만 커버리지 맵 지원" 고지.
 - **판정 기준 = terminal_type (사용자 선택)**: gateway 의 `terminal_type` 이 `nexuswave`(_pri/_sec/_thi/_fth)
-  를 포함하면 노출. terminal_status.inc 의 기존 nexuswave 감지 로직과 동일 기준. (사용자가 지칭한
+  를 포함하면 활성. terminal_status.inc 의 기존 nexuswave 감지 로직과 동일 기준. (사용자가 지칭한
   `tcp_nexuswave` 리터럴은 코드베이스에 없음 — 실제 존재값은 `nexuswave_*`.)
-- **수정 (`usr/local/www/index.php` 단일 파일, 5곳)**:
+- **이력(동작 변경)**:
+  - **1차 `c72b1d2`**: NexusWave 없으면 **클릭 자체 비활성**(트리거/모달 미바인딩) + `⤢ MAP` 배지 숨김
+    (`no-cov` 클래스). → 사용자 요구로 "월드맵은 열어야 함"으로 변경.
+  - **최종 `2c23248`**: 월드맵은 항상 열고, **커버리지 오버레이만 게이트** + 비-NexusWave 안내 팝업.
+- **수정 (`usr/local/www/index.php` 단일 파일)**:
   - **PHP** `$cp_has_nexuswave_gw`: `$gateways`(=`return_gateways_array()`) 순회 +
     `stripos($gw['terminal_type'],'nexuswave')` 매칭 1개라도 있으면 true (페이지 로드 1회 판정).
-  - **HTML**: 없을 때 `#port_mm` 에 `no-cov` 클래스 추가.
-  - **CSS**: `.port-mm.no-cov .pm-stage::after {display:none}`(⤢ MAP 배지 숨김) + `cursor:default`.
-  - **JS**: `CP_HAS_NEXUSWAVE` 주입 + coverage map IIFE 초입 `if(!CP_HAS_NEXUSWAVE) return;`
-    → 트리거/모달 미바인딩(미니맵 클릭이 coverage 안 열림).
+  - **JS** `CP_HAS_NEXUSWAVE` 주입 → coverage IIFE `covEnabled` 플래그.
+    - `buildToggles()`: 비-NexusWave 면 토글 숨김 + `cov-disc` 에 "only NEXUSWAVE…" 안내문.
+    - `initMap()`: 커버리지 폴리곤/폴백밴드를 `covEnabled` 일 때만 추가(타일·선박 마커는 항상).
+    - `openCov()`: 비-NexusWave 면 안내 팝업 `#covnote-ov` 표시(닫기/Escape 핸들러 포함).
+  - **HTML/CSS**: 안내 팝업 오버레이 `#covnote-ov`(기존 `.covwarn` 스타일 재사용, z-index 10001 로
+    cov 모달 위). (1차의 `no-cov` 클래스/배지숨김 CSS 는 최종본에서 제거 — 배지·클릭 모두 복원.)
 - **영향 없음**: #28 항구 미니맵(거리/방위/줌)은 별도 IIFE 라 그대로 동작. 가드는 PHP/JS 양쪽이라
-  버전 섞임에도 fatal 없이 안전 강등.
+  버전 섞임에도 fatal 없이 안전 강등(`CP_HAS_NEXUSWAVE` 미정의 시 `covEnabled=false`).
 - 검증: php -l 통과.
 
 ### 33. 관리/Main Panel UI 보강 — 미커밋
@@ -1045,9 +1066,11 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 
 ## 다음 작업 대기 중
 
-- [x] **#35 커밋 완료(develop)**: 위성 커버리지 맵을 NexusWave gateway(terminal_type=nexuswave_*) 존재 시에만 노출 — develop `c72b1d2`. (main/prod 미반영 — 명시 지시 시 병합)
-- [ ] #35 검증(선상): NexusWave gateway 있는 선박 → Position 미니맵에 `⤢ MAP` 배지 + 클릭 시 coverage 모달 정상 /
-  NexusWave gateway 없는 선박 → 배지 숨김 + 미니맵 클릭이 coverage 안 열림(항구 미니맵·줌은 정상 동작).
+- [x] **#36 커밋 완료(develop)**: 3D 스카이돔 바닥 세계지도를 dome 과 함께 yaw 회전 — develop `82fc3d4`. (main/prod 미반영)
+- [ ] #36 검증(선상): 3D 돔 드래그/자동궤도 회전 시 바닥 세계지도가 와이어·위성·본선·NESW 와 **함께 회전**·정합 / GPS 없을 때 흐린 채움 유지.
+- [x] **#35 커밋 완료(develop)**: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업 — develop `c72b1d2`→최종 `2c23248`. (main/prod 미반영 — 명시 지시 시 병합)
+- [ ] #35 검증(선상): NexusWave gateway 있는 선박 → 미니맵 클릭 시 월드맵 + 커버리지 오버레이 정상 /
+  없는 선박 → 월드맵은 열리되 커버리지 미표시 + "only NEXUSWAVE…" 안내 팝업(항구 미니맵·줌은 정상 동작).
 - [x] **#34 커밋 완료**: develop `92ae399` → main `369da8e` → prod `7a7195f`. 2026-06-16 전 브랜치 배포.
 - [ ] #34 검증(선상): API `israndompw:true` PUT(Create)/POST(Update) → 6자리 숫자 난수 비밀번호 생성 확인 /
   `israndompw:false` Update → 비밀번호 `1111` 초기화 / Topup `freeradius_lastbasedata:50` → used-octets +50MB /
