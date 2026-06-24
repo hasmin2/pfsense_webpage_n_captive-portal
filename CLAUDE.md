@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `92ae399` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) — 커밋 `1f0c4da`) |
+| `develop` | `92ae399` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`) — 커밋 `deb779c`) |
 | `main` | `369da8e` | **#1~#34 전부 반영 완료** (커밋 `369da8e`). 2026-06-16 develop→main 일괄 통합 |
 | `prod` | `7a7195f` | **#1~#34 전부 반영** (커밋 `7a7195f`). 2026-06-16 main→prod 배포 |
 
@@ -1088,10 +1088,13 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 
 ## 다음 작업 대기 중
 
-- [x] **#37 커밋 완료(develop)**: Release Note 사이드바 메뉴 + 패치노트 표시 페이지 — develop `1f0c4da`. (main/prod 미반영)
-- [ ] #37 검증(선상): 사이드바 "Release Note" 메뉴 → 1.1.3/1.1.38 카드 정상 렌더 / **3파일 일괄 배포**
-  (common_ui.inc + release_note.php + release_note.md; `.md` 누락 시 "No release notes") / 릴리스노트
-  갱신 시 루트 RELEASENOTE.md ↔ usr/local/www/release_note.md 동기화.
+- [x] **#37 커밋 완료(develop)**: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) +
+  단일 소스화(A안)·사용자 양식 파서(`deb779c`) — develop `deb779c`. (main/prod 미반영)
+- [ ] #37 검증(선상): 사이드바 "Release Note" 메뉴 → 1.1.3/1.1.2 카드 정상 렌더 / **3파일 일괄 배포**
+  (common_ui.inc + release_note.php + release_note.md; `.md` 누락 시 "No release notes").
+- [ ] #37 유지보수: 패치노트 갱신은 **단일 소스 `usr/local/www/release_note.md` 한 파일만 편집**
+  (루트 RELEASENOTE.md 는 제거됨). 양식 = `X.Y.Z (날짜)` 헤더 + 자유 양식 서브라인(Beta/Stable 등) +
+  `- TAG:` 불릿. **커밋만으로는 선상 미반영 — 별도 배포 필요**(deploy 가 usr/local/www/ 트리를 박스로 올림).
 - [x] **#36 커밋 완료(develop)**: 3D 스카이돔 바닥 세계지도를 dome 과 함께 yaw 회전 — develop `82fc3d4`. (main/prod 미반영)
 - [ ] #36 검증(선상): 3D 돔 드래그/자동궤도 회전 시 바닥 세계지도가 와이어·위성·본선·NESW 와 **함께 회전**·정합 / GPS 없을 때 흐린 채움 유지.
 - [x] **#35 커밋 완료(develop)**: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업 — develop `c72b1d2`→최종 `2c23248`. (main/prod 미반영 — 명시 지시 시 병합)
