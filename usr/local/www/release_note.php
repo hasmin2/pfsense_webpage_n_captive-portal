@@ -5,24 +5,19 @@ include_once("common_ui.inc");
 
 /**
  * Release Note 페이지 — 릴리스노트 마크다운을 파싱해 사용자 친화 카드로 표시.
- *   소스: usr/local/www/release_note.md (배포 트리 내 사본). 개발 환경에선 repo 루트
- *   RELEASENOTE.md 로 폴백. 둘 다 없으면 안내 메시지.
+ *   소스(단일): usr/local/www/release_note.md (배포 트리 내 — 이 파일만 편집·배포).
+ *   없으면 안내 메시지.
  *   양식(RELEASENOTE.md): 상단 메타 → "X.Y.Z (YYYY-MM-DD)" 버전 헤더 →
  *   "Beta: ... · Stable: ..." 채널줄 → "- TAG: text"(NEW/CHANGED/FIXED/REMOVED) 불릿
  *   (들여쓰기 연속줄은 직전 불릿에 이어붙임).
  */
 
 function rn_load_release_md() {
-    $candidates = array(
-        __DIR__ . '/release_note.md',          // 배포 트리 사본 (선상)
-        __DIR__ . '/RELEASENOTE.md',           // 혹시 같은 폴더에 둔 경우
-        __DIR__ . '/../../../RELEASENOTE.md',  // dev: repo 루트
-    );
-    foreach ($candidates as $p) {
-        if (@is_file($p) && @is_readable($p)) {
-            $c = @file_get_contents($p);
-            if ($c !== false && trim($c) !== '') { return $c; }
-        }
+    // 단일 소스: 같은 폴더의 release_note.md (배포 트리). 이 파일만 편집·배포한다.
+    $p = __DIR__ . '/release_note.md';
+    if (@is_file($p) && @is_readable($p)) {
+        $c = @file_get_contents($p);
+        if ($c !== false && trim($c) !== '') { return $c; }
     }
     return '';
 }
@@ -32,28 +27,43 @@ function rn_parse($md) {
     $header = array();
     $versions = array();
     $cur = null;
-    $reVer = '/^(\d+\.\d+(?:\.\d+)?)\s*\(([^)]+)\)\s*$/';
+    $awaitSub = false;   // 버전 헤더 직후 = 하위 버전/채널 줄(자유 양식)을 기다림
 
     foreach ($lines as $ln) {
         $t = rtrim($ln);
         $trim = trim($t);
+        $isBullet  = (bool) preg_match('/^-\s+([A-Z][A-Z]+):\s*(.*)$/', $t, $bm);
+        $isHeader  = ($trim !== '' && !$isBullet && rn_is_version_header($trim));
 
-        if (preg_match($reVer, $trim, $m)) {
-            if ($cur !== null) { $versions[] = $cur; }
-            $cur = array('version' => $m[1], 'date' => $m[2], 'channels' => '', 'items' => array());
-            continue;
-        }
         if ($cur === null) {
-            if ($trim !== '') { $header[] = $trim; }
+            if ($isHeader) {
+                list($ver, $date) = rn_split_version_date($trim);
+                $cur = array('version' => $ver, 'date' => $date, 'subline' => '', 'items' => array());
+                $awaitSub = true;
+            } elseif ($trim !== '') {
+                $header[] = $trim;
+            }
             continue;
         }
-        // 채널줄 (버전 직후, 불릿 시작 전 1회)
-        if (stripos($trim, 'Beta:') === 0 && $cur['channels'] === '' && empty($cur['items'])) {
-            $cur['channels'] = $trim;
+
+        // 버전 헤더 바로 다음의 (불릿 아닌) 첫 줄 = 하위 버전/채널 줄. 예:
+        //   "Beta 1.1.40-Beta Stable: 1.1.3-Stable" / "Beta: 1.1.38-Beta (develop) · Stable: ..."
+        if ($awaitSub) {
+            if ($trim === '') { continue; }
+            if (!$isBullet && !$isHeader) { $cur['subline'] = $trim; $awaitSub = false; continue; }
+            $awaitSub = false;   // 서브라인 없음 → 정상 처리로 폴백
+        }
+
+        // 새 버전 헤더
+        if ($isHeader) {
+            $versions[] = $cur;
+            list($ver, $date) = rn_split_version_date($trim);
+            $cur = array('version' => $ver, 'date' => $date, 'subline' => '', 'items' => array());
+            $awaitSub = true;
             continue;
         }
         // 불릿 "- TAG: text"
-        if (preg_match('/^-\s+([A-Z][A-Z]+):\s*(.*)$/', $t, $bm)) {
+        if ($isBullet) {
             $cur['items'][] = array('tag' => strtoupper($bm[1]), 'text' => trim($bm[2]));
             continue;
         }
@@ -66,6 +76,20 @@ function rn_parse($md) {
     }
     if ($cur !== null) { $versions[] = $cur; }
     return array('header' => $header, 'versions' => $versions);
+}
+
+// 버전 헤더 줄: "X.Y[.Z][-suffix] (날짜)" — 날짜 괄호가 있어야 서브라인과 구분됨
+function rn_is_version_header($s) {
+    return (bool) preg_match(
+        '/^\d+\.\d+(?:\.\d+)?(?:-[A-Za-z0-9]+)?\s*\([^)]+\)\s*$/', trim($s));
+}
+
+// 헤더 줄에서 "(날짜)" 분리 → array(version, date)
+function rn_split_version_date($s) {
+    if (preg_match('/^(.*?)\s*\(([^)]+)\)\s*$/', trim($s), $m)) {
+        return array(trim($m[1]), trim($m[2]));
+    }
+    return array(trim($s), '');
 }
 
 $RN = rn_parse(rn_load_release_md());
@@ -146,10 +170,12 @@ $rn_tagColors = array(
                         <div class="rn-card">
                             <div class="rn-card-head">
                                 <span class="rn-ver"><?php echo htmlspecialchars($v['version'], ENT_QUOTES); ?></span>
-                                <span class="rn-date"><?php echo htmlspecialchars($v['date'], ENT_QUOTES); ?></span>
+                                <?php if (!empty($v['date'])) { ?>
+                                    <span class="rn-date"><?php echo htmlspecialchars($v['date'], ENT_QUOTES); ?></span>
+                                <?php } ?>
                                 <?php if ($vi === 0) { echo '<span class="rn-latest">LATEST</span>'; } ?>
-                                <?php if ($v['channels'] !== '') { ?>
-                                    <span class="rn-chan"><?php echo htmlspecialchars($v['channels'], ENT_QUOTES); ?></span>
+                                <?php if ($v['subline'] !== '') { ?>
+                                    <span class="rn-chan"><?php echo htmlspecialchars($v['subline'], ENT_QUOTES); ?></span>
                                 <?php } ?>
                             </div>
                             <?php if (empty($v['items'])) { ?>

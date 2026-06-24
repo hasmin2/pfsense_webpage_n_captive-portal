@@ -1,11 +1,9 @@
-SynerSAT Crew WiFi Console — Release Notes
-Platform: pfSense 2.5.2 · PHP 7.4 · nginx + PHP-FPM · FreeRADIUS · Captive Portal
-Maintainer: SynerSAT Korea
-Channels: Beta (develop) · Stable (main)
+BlueWave Link — Release Notes
 
+Developed by SynerSAT Korea
 
 1.1.3 (2026-06-21)
-Beta: 1.1.3-Beta (develop) · Stable: 1.1.2-Stable (main)
+Beta 1.1.40-Beta Stable: 1.1.3-Stable
 
 - CHANGED: Satellite coverage map now gated by antenna type — the world
   map still opens on Position-minimap click, but coverage overlays are
@@ -17,7 +15,7 @@ Beta: 1.1.3-Beta (develop) · Stable: 1.1.2-Stable (main)
   dragging or auto-orbiting; previously the textured floor stayed fixed.
 
 
-1.1.38 (2026-06-15)
+1.1.2 (2026-06-15)
 Beta: 1.1.38-Beta (develop) · Stable: 1.1.2-Stable (main)
 
 - NEW: Antenna tracking compass on Main Panel — VSAT/FBB look-angle

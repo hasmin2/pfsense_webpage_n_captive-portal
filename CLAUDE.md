@@ -1005,24 +1005,25 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 
 ### 37. Release Note 사이드바 메뉴 + 패치노트 표시 페이지 (develop `1f0c4da`)
 - **요구**: 사이드바에 "Release Note" 메뉴를 넣고, 패치노트(릴리스노트)를 사용자가 보기 좋은 양식으로 표시.
-- **데이터 소스 = 마크다운 파싱**: 배포 스크립트가 repo 에 없고 루트 `RELEASENOTE.md` 는 배포 트리
-  (`usr/`, `etc/`) **밖**이라 선상 미배포 → 배포 트리 안에 **사본 `usr/local/www/release_note.md`** 를
-  두고 페이지가 이를 파싱. 후보 경로: `release_note.md`(선상) → 루트 `RELEASENOTE.md`(개발 폴백).
-  둘 다 없으면 "No release notes available." **graceful 폴백(fatal 없음)**.
+- **데이터 소스 = 단일 마크다운(배포 트리 내)**: 배포 스크립트가 repo 에 없고 루트 파일은 배포 트리
+  (`usr/`, `etc/`) **밖**이라 선상 미배포 → **단일 소스 `usr/local/www/release_note.md`** (배포 트리 내)
+  하나만 두고 페이지가 이를 파싱. **이 파일만 편집·배포**하면 됨(루트 RELEASENOTE.md 는 제거 = A안).
+  파일 없으면 "No release notes available." **graceful 폴백(fatal 없음)**.
 - **수정/신규 파일**:
   - `etc/inc/common_ui.inc` `print_sidebar`: `$mk("release_note.php","Release Note","ic-lnb06")` 추가
     (Download Center 아래). 메뉴 하이라이트는 기존 `$mk` 의 `$inputlink===$file` 규칙으로 자동.
   - `usr/local/www/release_note.php` (신규): 릴리스노트 양식 파서(`rn_parse`) + 카드 렌더. 양식 =
-    상단 메타 → `X.Y.Z (YYYY-MM-DD)` 버전헤더 → `Beta: … · Stable: …` 채널줄 → `- TAG: text`
-    (NEW/CHANGED/FIXED/REMOVED) 불릿(들여쓰기 연속줄은 직전 불릿에 이어붙임). 버전별 흰 카드
-    (버전+날짜+최신 `LATEST` 배지+채널줄, 색상 태그칩, ≤600px 반응형). 스타일은 `<style>` 인라인
-    (관리자 라이트 테마, 외부 CSS 의존 최소). `htmlspecialchars` 이스케이프.
-  - `usr/local/www/release_note.md` (신규): 배포 트리용 릴리스노트 사본 = 페이지 데이터 소스.
+    상단 메타(타이틀+설명) → `X.Y.Z (YYYY-MM-DD)` 버전헤더(날짜 괄호로 서브라인과 구분) →
+    **자유 양식 서브라인**(헤더 직후 첫 비-불릿 줄을 verbatim 캡처 — `Beta … Stable: …` 등 무관) →
+    `- TAG: text`(NEW/CHANGED/FIXED/REMOVED) 불릿(들여쓰기 연속줄은 직전 불릿에 이어붙임). 버전별
+    흰 카드(버전+날짜+최신 `LATEST` 배지+서브라인, 색상 태그칩, ≤600px 반응형). 스타일 `<style>`
+    인라인(관리자 라이트 테마). `htmlspecialchars` 이스케이프.
+  - `usr/local/www/release_note.md` (신규, 단일 소스): 릴리스노트 데이터.
 - **배포 정합성**: `common_ui.inc` + `release_note.php` + `release_note.md` **3파일 일괄**. `.md` 누락 시
-  "No release notes" 표시. 루트 `RELEASENOTE.md` ↔ `usr/local/www/release_note.md` **동기화 유지**
-  (갱신 시 `cp RELEASENOTE.md usr/local/www/release_note.md`).
-- 검증: php -l(release_note.php·common_ui.inc) 통과 / 파서 스모크(헤더 4줄·버전 2개 1.1.3·1.1.38·
-  채널 감지·연속줄 이어붙임) 통과.
+  "No release notes" 표시. **유지보수 = `usr/local/www/release_note.md` 한 파일만 편집 후 배포**
+  (커밋만으로는 선상 미반영 — 별도 배포 필요).
+- 검증: php -l(release_note.php·common_ui.inc) 통과 / 파서 스모크(헤더 2줄·버전 2개 1.1.3/1.1.2·
+  날짜·자유 서브라인·연속줄 이어붙임) 통과.
 
 ### 36. 3D 스카이돔 바닥 세계지도를 dome 과 함께 yaw 회전 (develop `82fc3d4`)
 - **증상**: Antenna 3D 스카이돔(#33, Satellite 나침반 클릭 → 모달)을 드래그/자동궤도로 회전하면
