@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `92ae399` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`) — 커밋 `deb779c`) |
+| `develop` | `92ae399` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경) — 커밋 `c9bd917`) |
 | `main` | `369da8e` | **#1~#34 전부 반영 완료** (커밋 `369da8e`). 2026-06-16 develop→main 일괄 통합 |
 | `prod` | `7a7195f` | **#1~#34 전부 반영** (커밋 `7a7195f`). 2026-06-16 main→prod 배포 |
 
@@ -149,6 +149,9 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   - `captiveportal.inc`: `datacounter_kicklog/disconnect_user/process_kick_spool` 함수 3개 제거
 
 ### 4. IP 변경 시 자동 로그인 미동작 (develop 반영)
+> ⚠️ **#39(1b)로 동작 변경됨**: 아래 MAC 기반 자동이관(`try_migrate_session_by_mac`)은 공유기 NAT/
+> MAC클론 시 세션 탈취·핑퐁을 유발해 **폐지**됨. 현재 IP 변경 시 **자동로그인 안 하고 로그인 페이지로
+> 유도**(재로그인 시 자기 세션). 상세는 #39.
 - **원인**: `already_connected()`가 IP+MAC 정확 일치만 검사 → IP 바뀌면 재로그인 프롬프트
 - **수정**:
   - `captiveportal_migrate_session_ip()`: ipfw/pf/DB를 신IP로 일괄 갱신 (sessionid 유지)
@@ -1086,8 +1089,86 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - 검증: php -l + 런타임 하네스(투영 좌표 유한 / 바닥 텍스처 setTransform·drawImage / 경고게이트→동의→
   지도초기화 / 이미지오버레이 우선·error 시 밴드폴백 / covBand 토글) 전부 통과.
 
+### 38. terminaltype 미해석(현존 게이트웨이 없음) → 로그인 차단 + "antenna offline" (develop `c9bd917`)
+- **배경(잠재 버그 발견)**: `starlinkuser00023` 로그인 불가 진단 중, **로그인은 성공**(RADIUS accept,
+  쿼터 8%)인데 **트래픽 0**(INTERIM ZERO 2시간+ 지속)인 케이스 분석. ZERO/STOP-ZERO 의미는 "ipfw 인증
+  파이프가 이 IP에 0바이트 집계"(거부 아님, `datacounter_acct.sh:407/372`). 원인 후보 = **고정(pinned)
+  게이트웨이 미해석 시 라우팅 경로 3곳의 처리 불일치**.
+- **3경로 불일치(잠재 버그)**: 유저 `varusersterminaltype`(=게이트웨이 이름)이 비어있지 않은데 현존
+  WAN 게이트웨이(`cp_find_all_wan_gateways`: 활성·terminal_type 지정·비-VPN)로 해석 안 되면(disabled/
+  삭제/rename/오타):
+  - 로그인 `add_crew_linked_rule:5050`: null → `cp_gw_default` (**fail-open**, 통과)
+  - 풀싱크 `cp_sync_routing_tables:4791`: null → `cp_gw_default` (**fail-open**)
+  - 매분 크론 `cp_resync_pf_tables_only:4872`: pinned-unresolved → `continue`(어느 테이블에도 안 넣음,
+    **fail-closed 블랙홀**)
+  → 로그인 직후 <60초만 default로 통과 → 매분 크론이 테이블에서 빼서 **영구 트래픽 0**(조용한 블랙홀).
+  로그인됨·RADIUS accept·CP "연결됨"으로 보여 오진 유발(증상이 "끊김/안됨"으로 흩어짐). 타이밍 의존이라
+  "고장"이 아니라 "불안정"처럼 보임 — 유일 단서는 `wireless.log` 의 `PINNED ... unresolved` 한 줄.
+- **수정(#38, fail-closed로 통일 + 가시화)** `captiveportal.inc`:
+  - 신규 `antenna_gateway_online($username)`: terminaltype이 비어있지 않은데 현존 게이트웨이 리스트에
+    없으면 false. 공란/'auto'/사용자없음 → true. **empty-guard**(게이트웨이 리스트 못 읽으면 차단 안 함
+    = 구성 일시 미가용 시 전원 락아웃 방지 fail-open) + **strcasecmp**(케이스 드리프트 방어).
+  - 인증 게이트 `[1982]`: `$antenna_allowed && $antenna_online && !shutdown && !suspend` 일 때만
+    `authenticate_user`. (기존 `antenna_allowed`/`isPortalShutdown` 패턴과 동일 자리.)
+  - 실패 메시지 `[2037]`: `"The antenna is offline, please try later."` (기존 connected-page `3115` 문구
+    와 통일). 차단 시 `[CP Login] BLOCKED ... antenna offline` 로그(가시화).
+- **terminaltype "Auto" 저장값 확인**: GUI 드롭다운 "Auto" = `<option value="">`(빈 문자열,
+  `crew_account.php:138`). `manage_crew_wifi_account.inc:427` 의 `?: 'Auto'` 는 **목록 표시용 폴백**
+  (저장 안 함). → 정상 Auto 유저는 `''` 저장 → 통과. 리터럴 "auto"/"Auto"는 API/수동편집으로만 가능하나
+  strtolower 후 'auto' 처리 → 역시 통과. **Auto 유저는 절대 차단 안 됨**, pinned-unresolved 만 차단.
+  라우팅(`cp_resync_pf_tables_only`)도 `''`/`'auto'` 둘 다 `cp_gw_default` 로 동일 취급.
+- **검증**: php -l 통과 / 런타임 하네스 **8/8**(공란·auto·유저없음·현존·케이스차이현존 → 허용,
+  게이트웨이없음 → 차단, 빈리스트 → fail-open, username 케이스무시 → 차단).
+- **선상 판정**: `grep "PINNED.*<user>" wireless.log` 또는 config.xml varusersterminaltype 덤프로
+  disabled/rename된 게이트웨이 식별 후 GUI에서 활성화/이름 정정 → 정상화.
+- **범위 주의**: config에 "현존"(disabled/삭제/rename) 기준. dpinger상 down이지만 config엔 존재하는
+  게이트웨이는 `cp_find_all_wan_gateways`가 포함하므로 #38로 안 막힘(그건 `cp_shutdown_gateways`/
+  network_usage 담당). 로그인/풀싱크 경로의 default 흡수(fail-open)는 그대로 두되, #38이 로그인 자체를
+  막아 블랙홀이 생기지 않게 함.
+
+### 39. 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁 → MAC 자동이관 폐지(1b) (develop `c9bd917`)
+- **배경/질문**: 공유기 NAT 뒤 여러 기기가 같은 MAC으로 보일 때 다른 username 접속 동작 분석.
+  (#38 진단 로그의 `[MIGRATE]` 폭주 — MAC `3a:68:...` 고정·IP 5개 왕복 — 의 정체.)
+- **토폴로지 2종**:
+  - **Case A (진짜 NAT)**: 뒤 기기 전부 **IP 1개+MAC 1개** 공유 → pfSense 기기 구분 불가.
+  - **Case B (브리지+MAC클론/랜덤MAC충돌)**: **IP는 다른데 MAC만 같음** (위 핑퐁 로그 = Case B).
+- **Case A 동작** `portal_allow:3403`: 같은 IP면 기존 세션 sessionid **재사용**(`[3410]`) → 새 세션/
+  INSERT/회계 start 블록은 `if(!isset($sessionid))`(`[3490]`)라 **skip**. → **선착순 1명만 세션 주인**,
+  나머지는 무슨 ID로 로그인하든 그 세션 탑승(전원 트래픽이 1명 쿼터로 과금, 라우팅도 1명 terminaltype).
+  옵션 1b와 **무관**(마이그레이션 미관여, IP·MAC 동일이라 구조적 분리 불가).
+- **Case B 동작(버그)** `try_migrate_session_by_mac:4186`: index.php GET 경로(`[620]`)에서 **MAC만으로
+  매칭**하고 **기존 세션 username 그대로 사용**(새 로그인 ID 파라미터 없음) → 다른 기기가 포털만 열어도
+  남의 세션을 자기 IP로 이관 = ① 자격증명 없는 **세션 탈취** ② 세션이 기기 IP 사이 **핑퐁**(카운터 리셋
+  INTERIM ZERO/REGRESS·끊김).
+- **수정(1b)** `index.php`: IP+MAC 정확일치 실패 시의 **MAC 자동이관 호출 블록 제거**(`[616~]`).
+  IP 바뀌면 `$connectedSession===''` → 로그인 페이지 → 각자 자기 자격증명으로 POST 로그인(`[519~602]`)
+  → **자기 세션**. `captiveportal.inc try_migrate_session_by_mac` 함수는 보존(docblock에 "미호출/1b" 명시,
+  향후 쿠키·토큰 매칭과 재활성 가능).
+- **POST 로그인은 마이그레이션과 독립**: POST 경로(`519~602`)가 GET 마이그레이션 체크(`605~`)보다 먼저
+  실행·exit. 이관 거부해도 **자기 ID 로그인은 안 막힘** — Case B에선 자기 IP라 portal_allow same-IP
+  재사용에 안 걸려 **독립 세션 획득**(오히려 정상화).
+- **트레이드오프(수용)**: 진짜 단일기기 IP변경(#4)도 **1회 재로그인** 필요. stale 옛 IP 세션은 재로그인
+  시 `noconcurrentlogins='last'` 가 정리(`[3459~3470]`) → 누적 없음.
+- **#4 동작 변경**: "IP 변경 시 자동 로그인"(#4)은 이제 1b로 **자동로그인 안 함**(재로그인 유도)으로 바뀜.
+- **변형 후보(1a, 미채택)**: 쿠키/토큰 기반 이관 — 정상 단일기기 seamless 유지 + 탈취/핑퐁만 차단.
+  쿠키 지속 의존(OS 프로브 무쿠키 케이스는 로그인 페이지로 강등). 함수 보존으로 재활성 경로 남겨둠.
+- **검증**: php -l 통과(index.php·captiveportal.inc). 잔여 `$migrated` 참조 0.
+
 ## 다음 작업 대기 중
 
+- [x] **#38 커밋 완료(develop)**: terminaltype 미해석(현존 게이트웨이 없음) → 로그인 차단 +
+  "The antenna is offline, please try later." (잠재 3경로 불일치 블랙홀을 로그인 단계서 차단) — develop `c9bd917`. (main/prod 미반영)
+- [ ] #38 검증(선상): disabled/rename 게이트웨이에 pinned된 유저 로그인 시 "antenna is offline" 메시지 +
+  `[CP Login] BLOCKED` 로그 / Auto(빈값)·정상 게이트웨이 유저는 정상 로그인 / 게이트웨이 정정 후 정상화 /
+  `grep "PINNED.*<user>" wireless.log` 로 원인 게이트웨이 식별.
+- [x] **#39 커밋 완료(develop)**: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁 → MAC 자동이관
+  폐지(1b) — develop `c9bd917`. (main/prod 미반영)
+- [ ] #39 검증(선상): IP 변경 시 자동로그인 안 되고 로그인 페이지 표시(재로그인 시 자기 세션) /
+  `[MIGRATE]` 핑퐁 로그 소멸 / 같은 IP+MAC 연결유지는 영향 없음 / #4 자동로그인 편의 상실 체감 확인 /
+  공유기는 브리지/AP 모드 권장 안내.
+- [ ] #38/#39 배포 정합성: **index.php + captiveportal.inc 같은 리비전 일괄 배포**(버전 섞이면
+  undefined function fatal).
+- [ ] #38/#39 main 반영 대기: 명시 지시 시 병합.
 - [x] **#37 커밋 완료(develop)**: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) +
   단일 소스화(A안)·사용자 양식 파서(`deb779c`) — develop `deb779c`. (main/prod 미반영)
 - [ ] #37 검증(선상): 사이드바 "Release Note" 메뉴 → 1.1.3/1.1.2 카드 정상 렌더 / **3파일 일괄 배포**
