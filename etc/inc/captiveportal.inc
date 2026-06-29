@@ -1969,6 +1969,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                     } else {
                         $result=false;
                         $antenna_allowed = antenna_allowed($login);
+                        $antenna_online  = antenna_gateway_online($login);
                         $isPortalShutdown = false;
                         $schedule_suspended = false;
                         if (isset($config['captiveportal'][$cpzone]['terminate_duration'])){
@@ -1979,7 +1980,7 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                         if(get_suspend_timeschedule($login)) {
                             $schedule_suspended = true;
                         }
-                        if($antenna_allowed && !$isPortalShutdown && !$schedule_suspended) {
+                        if($antenna_allowed && $antenna_online && !$isPortalShutdown && !$schedule_suspended) {
                             $result = authenticate_user($login, $password, $authcfg, $attributes);
                         }
                     }
@@ -2033,6 +2034,9 @@ function captiveportal_authenticate_user(&$login = '', &$password = '', $clientm
                     }
                     else if (!$antenna_allowed){
                         $msg = "The antenna has been disabled due to the main policy";
+                    }
+                    else if (isset($antenna_online) && !$antenna_online){
+                        $msg = "The antenna is offline, please try later.";
                     }
                     else if ($isPortalShutdown){
                         $date = new DateTime();
@@ -2171,6 +2175,64 @@ function antenna_allowed($username)
     }
     return true;
 }
+
+/**
+ * 사용자의 지정 게이트웨이(varusersterminaltype = 게이트웨이 이름)가 현존하는
+ * WAN 게이트웨이 리스트에 있는지 검사한다(로그인 차단 게이트).
+ *
+ * terminaltype 이 비어있지 않은데 현존 게이트웨이(활성·terminal_type 지정·비-VPN,
+ * cp_find_all_wan_gateways 기준) 리스트에 없으면(=disabled/삭제/rename/오타) 해당
+ * 안테나가 사실상 오프라인이므로 로그인을 막는다. 그렇지 않으면 로그인은 성공하지만
+ * 매분 라우팅 재동기화 크론(cp_resync_pf_tables_only)이 이 유저를 어느 cp_gw_* 테이블에도
+ * 넣지 않아 "연결됨인데 트래픽 0"인 조용한 블랙홀이 된다(로그인/풀싱크/크론 3경로 불일치).
+ * 여기서 미리 차단해 사용자에게 "안테나 오프라인"을 명확히 알린다.
+ *
+ * 반환:
+ *   true  = 허용 — terminaltype 공란/'auto', 사용자 못 찾음, 게이트웨이 현존,
+ *           또는 게이트웨이 리스트 자체를 못 읽음(=전원 락아웃 방지 fail-open).
+ *   false = 차단 — 비어있지 않은 지정 게이트웨이가 현존 리스트에 없음.
+ */
+function antenna_gateway_online($username)
+{
+    global $config;
+
+    // 1) 사용자의 지정 게이트웨이 조회 (대소문자 무시 — 라우팅 케이스 드리프트 방어)
+    $terminaltype = null;
+    if (is_array($config['installedpackages']['freeradius']['config'] ?? null)) {
+        foreach ($config['installedpackages']['freeradius']['config'] as $value) {
+            if (strcasecmp((string)($value['varusersusername'] ?? ''), (string)$username) === 0) {
+                $terminaltype = strtolower(trim((string)($value['varusersterminaltype'] ?? '')));
+                break;
+            }
+        }
+    }
+
+    // 사용자 못 찾음 → 허용(인증 자체에서 거절될 것).
+    // 공란/'auto' → 기본(자동) 라우팅 → 허용.
+    if ($terminaltype === null || $terminaltype === '' || $terminaltype === 'auto') {
+        return true;
+    }
+
+    // 2) 현존 WAN 게이트웨이 리스트 확보.
+    //    empty-guard: 리스트를 못 읽었으면(빈 배열) 차단하지 않는다 — 구성 일시 미가용/
+    //    읽기 실패로 모든 고정 유저가 막히는 전원 락아웃 사고 방지(fail-open).
+    $all_gws = cp_find_all_wan_gateways();
+    if (!is_array($all_gws) || empty($all_gws)) {
+        return true;
+    }
+
+    // 3) 지정 게이트웨이가 현존 리스트에 있나? (대소문자 무시)
+    foreach ($all_gws as $gw) {
+        if (strcasecmp(trim((string)($gw['name'] ?? '')), $terminaltype) === 0) {
+            return true; // 현존 → 허용
+        }
+    }
+
+    // 4) 비어있지 않은 지정 게이트웨이가 현존하지 않음 → 안테나 오프라인 → 차단.
+    cp_wireless_log("[CP Login] BLOCKED user '{$username}' pinned gateway '{$terminaltype}' not in current WAN gateway list (antenna offline) — login denied");
+    return false;
+}
+
 function get_suspend_timeschedule($loginId) {
     global $config;
 
@@ -4114,7 +4176,11 @@ function captiveportal_migrate_session_ip($cpentry, $newip, $newmac) {
 
 /**
  * 동일 MAC·다른 IP 세션을 찾아 신IP 로 자동 마이그레이션한다.
- * (정확 일치(IP+MAC) 실패 시 index.php 에서 호출)
+ *
+ * ⚠️ 현재 호출되지 않음(1b): index.php 의 MAC 자동이관 호출을 폐지했다. MAC 만으로는
+ *    "같은 기기 IP변경" vs "공유기 NAT/MAC클론으로 인한 다른 기기"를 구분할 수 없어
+ *    세션 탈취·핑퐁을 유발하기 때문이다(상세는 index.php Case 2 주석). 함수는 향후
+ *    쿠키/토큰 기반 매칭과 함께 재활성화할 수 있도록 보존한다.
  *
  * quota 초과 사용자는 마이그레이션하지 않고 기존 세션을 정리한 뒤 false 반환
  * → 호출측에서 로그인 프롬프트 표시.
