@@ -45,7 +45,44 @@ if(session_auth()){
 function print_css_n_head(){
     global $config;
     $vesselinfo = $config['system']['vesselinfo'];
-    $rtnstr = '<title>';
+
+    // 다크모드 GPS 모드용 일출/일몰(civil twilight) 캐시 → CP_SUN 으로 주입.
+    //   cp_daynight_update.php 크론이 $config['daytimecheck'] 에 begin/end(UTC epoch)
+    //   또는 polar('day'/'night') 를 채운다. 없으면 ok:false → GPS 모드는 시스템 폴백.
+    $dtc = (isset($config['daytimecheck']) && is_array($config['daytimecheck']))
+        ? $config['daytimecheck'] : array();
+    $sun_ok     = false;
+    $sun_polar  = isset($dtc['polar'])  ? (string)$dtc['polar'] : '';
+    $sun_begin  = isset($dtc['begin'])  ? (int)$dtc['begin'] : 0;
+    $sun_end    = isset($dtc['end'])    ? (int)$dtc['end']   : 0;
+    $sun_nbegin = isset($dtc['nbegin']) ? (int)$dtc['nbegin'] : 0;
+    if ($sun_polar === 'day' || $sun_polar === 'night' || ($sun_begin > 0 && $sun_end > 0)) {
+        $sun_ok = true;
+    }
+    $cp_sun_js = json_encode(array(
+        'ok'     => $sun_ok,
+        'polar'  => $sun_polar,
+        'begin'  => $sun_begin,
+        'end'    => $sun_end,
+        'nbegin' => $sun_nbegin,
+    ));
+
+    // 다크모드 조기 적용(FOUC 방지): CSS 링크보다 먼저 실행되어 <html>에 클래스 부여.
+    //   모드(localStorage 'cp_theme'): auto(시스템)·gps(일출일몰)·light·dark. 기본 auto.
+    //   GPS 데이터 없으면 시스템(prefers-color-scheme)으로 폴백.
+    //   GPS 판정: dusk(end) 이전이면 dawn(begin) 이후가 낮, dusk 이후면 다음 dawn(nbegin) 전까지 밤.
+    $rtnstr  = '<script>window.CP_SUN=' . $cp_sun_js . ';</script>';
+    $rtnstr .= '<script>(function(){try{'
+        . 'var m=localStorage.getItem("cp_theme")||"auto";var d;var s=window.CP_SUN;'
+        . 'if(m==="dark"){d=true;}'
+        . 'else if(m==="light"){d=false;}'
+        . 'else if(m==="gps"&&s&&s.ok){'
+        .   'if(s.polar==="day"){d=false;}else if(s.polar==="night"){d=true;}'
+        .   'else{var n=Date.now()/1000;d=(n<s.end)?!(n>=s.begin):!(s.nbegin&&n>=s.nbegin);}'
+        . '}else{d=!!(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches);}'
+        . 'if(d){document.documentElement.className+=" dark";}'
+        . '}catch(e){}})();</script>';
+    $rtnstr .= '<title>';
     $rtnstr .= $vesselinfo['vesselname'];
     $rtnstr .= '</title>';
     $rtnstr .= '<meta http-equiv="Content-Type" content="text/html" charset="utf-8">';
@@ -64,6 +101,8 @@ function print_css_n_head(){
     $rtnstr .= '<link href="css/common.css" rel="stylesheet" type="text/css">';
     $rtnstr .= '<link href="css/components.css" rel="stylesheet" type="text/css">';
     $rtnstr .= '<link href="css/style.css" rel="stylesheet" type="text/css">';
+    $rtnstr .= '<!-- dark mode override (html.dark 스코프, 항상 로드) -->';
+    $rtnstr .= '<link href="css/dark.css" rel="stylesheet" type="text/css">';
     $rtnstr .= '<!-- jquery -->';
     $rtnstr .= '<script src="js/jquery.min.js"></script>';
     $rtnstr .= '<!-- dist/js -->';
@@ -183,6 +222,14 @@ function print_sidebar($inputlink)
     $rtnstr .= $mk("release_note.php", "Release Note", "ic-lnb06");
 
 
+    // 다크모드 토글 (전 페이지 공통 — 사이드바 메뉴 하단). 아이콘 자산 불필요(유니코드).
+    $rtnstr .= '<li class="theme-toggle-li" style="margin-top:16px;">'
+        . '<button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">'
+        . '<span class="tt-ic" aria-hidden="true">&#9790;</span>'
+        . '<span class="tt-label">Dark mode</span>'
+        . '</button>'
+        . '</li>';
+
     $rtnstr .= '<li style="margin-top:12px;">'
         . '<a href="/index.php?logout=1" title="Logout (' . $username . ')"">'
         . '  <i class="ic-lnb-logout"></i>'
@@ -249,6 +296,23 @@ function print_sidebar($inputlink)
         </div>
     </div>';
 
+    // ---- 타임존(GMT 오프셋) 팝업 ----
+    //  사이드바 "GMT n" 클릭 시 네이티브 prompt 대신 테마 팝업을 연다(다크 자동 대응).
+    //  -11 ~ +12, 30분(0.5) 단위 select(JS 가 채움). 제출은 위 gmtForm(POST gmt).
+    $rtnstr .= '<div class="popup layer pop-gmt" style="width:400px;">
+        <div class="pop-head"><p class="title">Set Timezone</p></div>
+        <div class="pop-cont">
+            <div class="form">
+                <div class="form-tit"><p class="tit">Time difference from GMT (-11 ~ +12, 30-min steps)</p></div>
+                <div class="form-cont mt10"><select class="select v1" id="gmtSelect"></select></div>
+            </div>
+            <div class="pop-foot">
+                <button type="button" class="btn md fill-mint" id="gmtApply"><i class="ic-submit"></i>Apply</button>
+                <button type="button" class="btn md fill-dark" onclick="popClose(\'pop-gmt\')"><i class="ic-cancel"></i>Cancel</button>
+            </div>
+        </div>
+    </div>';
+
     // ---- JS: gmtcheck POST를 CSRF 포함해서 안정적으로 ----
     $rtnstr .= '<script>
     (function(){
@@ -269,6 +333,76 @@ function print_sidebar($inputlink)
                 form.submit();
             });
         }
+
+        // 다크모드 토글: 4-state 순환 Auto→GPS→Light→Dark→Auto + localStorage(cp_theme).
+        //   Auto = OS prefers-color-scheme(실시간 추종). GPS = 현재 위치 일출/일몰(civil
+        //   twilight; CP_SUN). GPS 데이터 없으면 시스템 폴백. Light/Dark = 수동 고정.
+        //   조기 스크립트(print_css_n_head)가 첫 페인트를 이미 처리 → 여기선 토글/재평가.
+        var root = document.documentElement;
+        var tbtn = document.getElementById("theme-toggle");
+        var THEME_MODES = ["auto", "gps", "light", "dark"];
+        var THEME_META = {
+            auto:  { ic: "◐", label: "Auto" },
+            gps:   { ic: "◎", label: "GPS" },
+            light: { ic: "☀", label: "Light" },
+            dark:  { ic: "☾", label: "Dark" }
+        };
+        function cpThemeMode(){
+            var m = null;
+            try { m = localStorage.getItem("cp_theme"); } catch(e){}
+            return (THEME_MODES.indexOf(m) >= 0) ? m : "auto";
+        }
+        function cpSystemDark(){
+            return !!(window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+        }
+        function cpGpsDark(){
+            var s = window.CP_SUN;
+            if (s && s.ok) {
+                if (s.polar === "day")   { return false; }
+                if (s.polar === "night") { return true; }
+                var n = Date.now() / 1000;
+                // dusk(end) 이전: dawn(begin) 이후가 낮. dusk 이후: 다음 dawn(nbegin) 전까지 밤.
+                return (n < s.end) ? !(n >= s.begin) : !(s.nbegin && n >= s.nbegin);
+            }
+            return cpSystemDark();   // GPS 데이터 없음 → 시스템 폴백
+        }
+        function paintTheme(m){
+            m = m || cpThemeMode();
+            var meta = THEME_META[m] || THEME_META.auto;
+            var ic = tbtn ? tbtn.querySelector(".tt-ic") : null;
+            var lb = tbtn ? tbtn.querySelector(".tt-label") : null;
+            if (ic) { ic.innerHTML = meta.ic; }
+            if (lb) { lb.textContent = meta.label; }
+        }
+        function cpApplyTheme(){
+            var m = cpThemeMode(), dark;
+            if (m === "dark")       { dark = true; }
+            else if (m === "light") { dark = false; }
+            else if (m === "gps")   { dark = cpGpsDark(); }
+            else                    { dark = cpSystemDark(); }
+            root.classList.toggle("dark", dark);
+            paintTheme(m);
+        }
+        if (tbtn) {
+            tbtn.addEventListener("click", function(){
+                var next = THEME_MODES[(THEME_MODES.indexOf(cpThemeMode()) + 1) % THEME_MODES.length];
+                try { localStorage.setItem("cp_theme", next); } catch(e){}
+                cpApplyTheme();
+            });
+        }
+        // OS 테마 변경 실시간 반영(Auto 모드)
+        if (window.matchMedia) {
+            var mq = matchMedia("(prefers-color-scheme: dark)");
+            var onMq = function(){ if (cpThemeMode() === "auto") { cpApplyTheme(); } };
+            if (mq.addEventListener) { mq.addEventListener("change", onMq); }
+            else if (mq.addListener) { mq.addListener(onMq); }
+        }
+        // GPS/Auto 모드: 분 단위 재평가(일출/일몰 경계에서 자동 전환)
+        setInterval(function(){
+            var m = cpThemeMode();
+            if (m === "gps" || m === "auto") { cpApplyTheme(); }
+        }, 60000);
+        cpApplyTheme();
     })();
     </script>';
 

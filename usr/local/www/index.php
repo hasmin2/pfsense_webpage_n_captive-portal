@@ -50,9 +50,19 @@ foreach ($config['interfaces'] as $ifname => $ifcfg) {
     }
 }
 if(isset($_POST['gmt'])){
-    $config['time_offset_enabled']['time_offset'] = $_POST['gmt'];
-    write_config("time_offset changed to ", $config['time_offset_enabled']['time_offset']);
-    echo '<script> location.replace("processing.php?to=index.php");</script>';
+    // 입력 방어: 숫자만 허용 + 0.5(30분) 단위 스냅 + 범위 클램프(-11 ~ 12).
+    // 정수는 "9", 반시간대는 "9.5"/"-3.5" 로 표기(자동 TZ/표시부 포맷과 동일).
+    $gmt_in = trim($_POST['gmt']);                 // 주의: $g 는 pfSense 전역(경로배열) — 절대 덮지 말 것
+    if ($gmt_in !== '' && is_numeric($gmt_in)) {
+        $gf = round(((float)$gmt_in) * 2) / 2;     // 0.5 단위 스냅
+        if ($gf < -11) { $gf = -11; }
+        if ($gf > 12)  { $gf = 12; }
+        $gv = (floor($gf) == $gf) ? (string)(int)$gf : (string)$gf;
+        $config['time_offset_enabled']['time_offset'] = $gv;
+        write_config("time_offset changed to " . $gv);
+        echo '<script> location.replace("processing.php?to=index.php");</script>';
+        exit;
+    }
 }
 if(isset($_POST['gmtcheck'])){
     $config['time_offset_enabled']['gmtcheck'] = $_POST['gmtcheck'];
@@ -145,6 +155,48 @@ if($_POST['data_update']){
         'acu_view' => $acu_view,
         'fbb_view' => $fbb_view
         ));
+    exit(0);
+}
+
+// 일별 사용량 (Internet usage 타일 → "Daily usage" 막대그래프 모달)
+// wan_status 와 동일한 비-vpn 게이트웨이 목록을 만들어, 각 게이트웨이의
+// 인터페이스 device(if)를 metric 으로 InfluxDB 일별 합산을 1회 질의한다.
+if (isset($_POST['daily_usage'])) {
+    header('Content-Type: application/json');
+    $monthMode = (isset($_POST['range']) && $_POST['range'] === 'month');
+    $days = isset($_POST['days']) ? intval($_POST['days']) : 14;
+
+    // 게이트웨이 표시순서 보존: name => metric(인터페이스 if)
+    $order   = array();   // 표시 순서 [name, ...]
+    $metrics = array();   // name => metric
+    foreach ($gateways as $gname => $gateway) {
+        if (startswith($gateway['terminal_type'], 'vpn')) { continue; }
+        foreach ($config['interfaces'] as $ifname => $ifcfg) {
+            if ($gateway['interface'] === $ifcfg['if']) {
+                $order[]          = $gname;
+                $metrics[$gname]  = $ifcfg['if'];
+                break;
+            }
+        }
+    }
+
+    $resp = array('ok' => false, 'days' => $days, 'month' => $monthMode, 'order' => $order,
+                  'labels' => array(), 'series' => array());
+
+    if (function_exists('read_daily_usage_multi') && count($metrics) > 0) {
+        $data = read_daily_usage_multi(array_values($metrics), $days, 4, $monthMode);
+        if ($data !== false) {
+            // metric 키 → 게이트웨이 이름 키로 재매핑(표시명 기준)
+            $byName = array();
+            foreach ($metrics as $gname => $m) {
+                $byName[$gname] = isset($data['series'][$m]) ? $data['series'][$m] : array();
+            }
+            $resp['ok']     = true;
+            $resp['labels'] = $data['labels'];
+            $resp['series'] = $byName;
+        }
+    }
+    echo json_encode($resp);
     exit(0);
 }
 ////////////////////SIMPLE SELF API//////////////////////////
@@ -257,6 +309,23 @@ $cp_coverage_json = '{}';
             </div>
             <div id="cov-map"></div>
             <p class="cov-pos" id="cov-pos">Vessel position: --</p>
+        </div>
+    </div>
+    <!-- 일별 사용량 막대그래프 모달 (Internet usage 타일 → Daily usage) -->
+    <div id="daily-ov" role="dialog" aria-modal="true" aria-label="Daily internet usage">
+        <div class="daily-modal">
+            <div class="cov-head">
+                <h3>Daily internet usage</h3>
+                <button type="button" class="cov-close" id="daily-x" aria-label="Close">&times;</button>
+            </div>
+            <div class="daily-range" id="daily-range">
+                <button type="button" class="dr-btn on" data-range="month">This month</button>
+                <button type="button" class="dr-btn" data-days="7">7d</button>
+                <button type="button" class="dr-btn" data-days="14">14d</button>
+                <button type="button" class="dr-btn" data-days="30">30d</button>
+            </div>
+            <div id="daily-body"></div>
+            <p class="cov-pos">&#9432; Aggregated from SynerSAT Korea database &mdash; daily totals (rx+tx), vessel local day.</p>
         </div>
     </div>
     <div id="content">
@@ -400,6 +469,7 @@ $cp_coverage_json = '{}';
                                 </dt>
                                 <dd>
                                     <p id="wan_status" class="text"><?php echo $wan_status;?></p>
+                                    <button type="button" class="daily-usage-btn" id="daily_usage_btn">Daily usage</button>
                                 </dd>
                             </dl>
                             <dl class="tile-area">
@@ -602,6 +672,31 @@ $cp_coverage_json = '{}';
     #cov-map {width:100%; height:440px; border-radius:8px; background:#11203a;}
     .cov-msg {color:#cdd9ea; text-align:center; padding:46px 12px; font-size:14px; line-height:1.6;}
     .cov-pos {font-size:12px; color:#9fb6d4; margin:8px 0 0; text-align:center;}
+
+    /* === 일별 사용량 (Internet usage 타일 → Daily usage 막대그래프 모달) === */
+    .daily-usage-btn {display:block; margin:10px auto 0; height:30px; padding:0 14px; border-radius:8px;
+        font-size:12px; font-weight:700; cursor:pointer; border:1px solid #ced4da; background:#fff; color:#495057;}
+    .daily-usage-btn:hover {background:#f1f3f5; border-color:#adb5bd;}
+    #daily-ov {position:fixed; inset:0; background:rgba(8,12,20,.74); z-index:10000;
+        display:none; align-items:center; justify-content:center;}
+    #daily-ov.on {display:flex;}
+    .daily-modal {width:min(720px,96vw); max-height:92vh; overflow:auto; background:#0d1726;
+        border:1px solid #21344f; border-radius:14px; padding:12px 16px 14px;}
+    .daily-range {display:flex; gap:8px; margin-bottom:10px;}
+    .daily-range .dr-btn {height:28px; padding:0 12px; border-radius:7px; font-size:12px; font-weight:700;
+        cursor:pointer; border:1px solid #21344f; background:#11203a; color:#9fb6d4;}
+    .daily-range .dr-btn.on {background:#1976d2; border-color:#1976d2; color:#fff;}
+    .daily-gw {margin-bottom:14px;}
+    .daily-gw-head {display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px;}
+    .daily-gw-name {font-size:13px; font-weight:700; color:#e7eefc;}
+    .daily-gw-sum {font-size:12px; font-weight:600; color:#9fb6d4;}
+    .daily-chart {width:100%; height:118px; background:#0a192f; border:1px solid #21344f; border-radius:8px;}
+    .daily-bar {fill:#3aa0ff;}
+    .daily-bar.today {fill:#6f8aab;}
+    .daily-axis {stroke:#34507a; stroke-width:1;}
+    .daily-grid {stroke:#1a2c49; stroke-width:1; stroke-dasharray:3 3;}
+    .daily-lbl {fill:#7e95b4; font-size:8px;}
+    .daily-msg {color:#cdd9ea; text-align:center; padding:40px 12px; font-size:14px; line-height:1.6;}
     /* Position 미니맵 클릭 진입 힌트 */
     .pm-stage::after {content:'\2922 MAP'; position:absolute; left:7%; top:7%; z-index:3; font-size:9px;
         font-weight:700; color:#FFD75E; background:#343A40; border:1px solid #D4AF37; border-radius:6px;
@@ -1599,6 +1694,161 @@ $cp_coverage_json = '{}';
         warnOv.addEventListener('click',  function (e) { if (e.target === warnOv)  { warnOv.classList.remove('on'); } });
         if (noteOv) { noteOv.addEventListener('click', function (e) { if (e.target === noteOv) { noteOv.classList.remove('on'); } }); }
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { warnOv.classList.remove('on'); covOv.classList.remove('on'); if (noteOv) { noteOv.classList.remove('on'); } } });
+    })();
+    // ===================================================================
+    // ===================== 일별 사용량 막대그래프 =======================
+    // Internet usage 타일의 "Daily usage" 버튼 → 게이트웨이별 일별 rx+tx 합을
+    // 순수 SVG 막대로 표시(외부 라이브러리 0). 데이터는 daily_usage AJAX.
+    (function dailyUsage() {
+        var btn   = document.getElementById('daily_usage_btn');
+        var ov    = document.getElementById('daily-ov');
+        var body  = document.getElementById('daily-body');
+        var rangeWrap = document.getElementById('daily-range');
+        if (!btn || !ov || !body) { return; }
+        var NS = 'http://www.w3.org/2000/svg';
+        var curMode = { month: true }, loading = false;   // 기본값 = 이번 달
+
+        // 사용량을 단위 적응(MB meter): 1000MB 미만은 MB, 이상은 GB 로 표기
+        function fmtUnit(gb) {
+            var mb = gb * 1024;
+            if (mb < 1000) { return (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + 'MB'; }
+            return (gb < 10 ? gb.toFixed(2) : (gb < 100 ? gb.toFixed(1) : Math.round(gb))) + 'GB';
+        }
+        // 축 상한을 보기 좋은 값으로 올림(1/2/5 × 10^n)
+        function niceMax(v) {
+            if (v <= 0) { return 1; }
+            var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10));
+            var n = v / p;
+            var m = n <= 1 ? 1 : (n <= 2 ? 2 : (n <= 5 ? 5 : 10));
+            return m * p;
+        }
+
+        function renderChart(name, vals, labels, W) {
+            var gw = document.createElement('div');
+            gw.className = 'daily-gw';
+            var total = 0, i;
+            for (i = 0; i < vals.length; i++) { total += vals[i]; }
+            var head = document.createElement('div');
+            head.className = 'daily-gw-head';
+            var ns = document.createElement('span'); ns.className = 'daily-gw-name'; ns.textContent = name;
+            var ss = document.createElement('span'); ss.className = 'daily-gw-sum';  ss.textContent = 'total ' + fmtUnit(total);
+            head.appendChild(ns); head.appendChild(ss);
+            gw.appendChild(head);
+
+            var H = 118, AX = 46, padR = 8, padT = 8, padB = 16;
+            var n = vals.length;
+            var plotW = W - AX - padR, plotH = H - padT - padB;
+            var max = 0, k;
+            for (k = 0; k < n; k++) { if (vals[k] > max) { max = vals[k]; } }
+            var top = niceMax(max); // 축 상한(막대/눈금 공통 스케일)
+
+            var svg = document.createElementNS(NS, 'svg');
+            svg.setAttribute('class', 'daily-chart');
+            svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+
+            // 왼쪽 MB meter: 0/25/50/75/100% 가로 눈금선 + 단위 라벨
+            var grids = [0, 0.25, 0.5, 0.75, 1];
+            for (var gi = 0; gi < grids.length; gi++) {
+                var gy = padT + plotH - grids[gi] * plotH;
+                var gl = document.createElementNS(NS, 'line');
+                gl.setAttribute('class', grids[gi] === 0 ? 'daily-axis' : 'daily-grid');
+                gl.setAttribute('x1', AX); gl.setAttribute('y1', gy.toFixed(1));
+                gl.setAttribute('x2', W - padR); gl.setAttribute('y2', gy.toFixed(1));
+                svg.appendChild(gl);
+                var glt = document.createElementNS(NS, 'text');
+                glt.setAttribute('class', 'daily-lbl');
+                glt.setAttribute('x', (AX - 5).toFixed(1));
+                glt.setAttribute('y', (gy + 3).toFixed(1));
+                glt.setAttribute('text-anchor', 'end');
+                glt.textContent = fmtUnit(top * grids[gi]);
+                svg.appendChild(glt);
+            }
+
+            var slot = n > 0 ? plotW / n : plotW;
+            var bw = Math.max(2, slot * 0.64);
+            var labelEvery = Math.max(1, Math.ceil(n / 12));
+            for (var j = 0; j < n; j++) {
+                var bh = (vals[j] / top) * plotH;
+                if (bh < 0) { bh = 0; }
+                var x = AX + slot * j + (slot - bw) / 2;
+                var y = padT + plotH - bh;
+                var r = document.createElementNS(NS, 'rect');
+                r.setAttribute('class', (j === n - 1) ? 'daily-bar today' : 'daily-bar');
+                r.setAttribute('x', x.toFixed(1));
+                r.setAttribute('y', y.toFixed(1));
+                r.setAttribute('width', bw.toFixed(1));
+                r.setAttribute('height', bh.toFixed(1));
+                var ttl = document.createElementNS(NS, 'title');
+                ttl.textContent = (labels[j] || '') + ' : ' + fmtUnit(vals[j]);
+                r.appendChild(ttl);
+                svg.appendChild(r);
+                if (j % labelEvery === 0 || j === n - 1) {
+                    var tx = document.createElementNS(NS, 'text');
+                    tx.setAttribute('class', 'daily-lbl');
+                    tx.setAttribute('x', (x + bw / 2).toFixed(1));
+                    tx.setAttribute('y', (H - 4).toFixed(1));
+                    tx.setAttribute('text-anchor', 'middle');
+                    tx.textContent = labels[j] || '';
+                    svg.appendChild(tx);
+                }
+            }
+            gw.appendChild(svg);
+            return gw;
+        }
+
+        function render(resp) {
+            body.innerHTML = '';
+            if (!resp || !resp.ok) {
+                body.innerHTML = '<p class="daily-msg">Usage data is currently unavailable.<br>(database unreachable or timed out)</p>';
+                return;
+            }
+            var W = Math.max(320, body.clientWidth || 660);
+            var order = resp.order || [], any = false;
+            for (var i = 0; i < order.length; i++) {
+                var name = order[i];
+                var vals = (resp.series && resp.series[name]) ? resp.series[name] : [];
+                if (!vals.length) { continue; }
+                any = true;
+                body.appendChild(renderChart(name, vals, resp.labels || [], W));
+            }
+            if (!any) {
+                body.innerHTML = '<p class="daily-msg">No daily usage data for the selected period.</p>';
+            }
+        }
+
+        function load() {
+            if (loading) { return; }
+            loading = true;
+            body.innerHTML = '<p class="daily-msg">Loading…</p>';
+            var data = { daily_usage: 'true' };
+            if (curMode.month) { data.range = 'month'; }
+            else { data.days = curMode.days; }
+            $.ajax({
+                url: './index.php',
+                data: data,
+                type: 'POST', dataType: 'json',
+                success: function (resp) { loading = false; render(resp); },
+                error:   function () { loading = false; body.innerHTML = '<p class="daily-msg">Failed to load usage data.</p>'; }
+            });
+        }
+
+        btn.addEventListener('click', function () { ov.classList.add('on'); load(); });
+        var dx = document.getElementById('daily-x');
+        if (dx) { dx.addEventListener('click', function () { ov.classList.remove('on'); }); }
+        ov.addEventListener('click', function (e) { if (e.target === ov) { ov.classList.remove('on'); } });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && ov.classList.contains('on')) { ov.classList.remove('on'); } });
+        if (rangeWrap) {
+            rangeWrap.addEventListener('click', function (e) {
+                var b = e.target && e.target.closest ? e.target.closest('.dr-btn') : null;
+                if (!b) { return; }
+                var btns = rangeWrap.querySelectorAll('.dr-btn');
+                for (var i = 0; i < btns.length; i++) { btns[i].classList.remove('on'); }
+                b.classList.add('on');
+                if (b.hasAttribute('data-range')) { curMode = { month: true }; }
+                else { curMode = { days: parseInt(b.getAttribute('data-days'), 10) || 14 }; }
+                load();
+            });
+        }
     })();
     // ===================================================================
     function core_open(){

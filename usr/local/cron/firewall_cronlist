@@ -252,6 +252,15 @@
             "wday": "*",
             "who": "root",
             "command": "/usr/local/bin/php /usr/local/cron/cp_tz_offset_update.php > /dev/null"
+        },
+        {
+            "minute": "*/30",
+            "hour": "*",
+            "mday": "*",
+            "month": "*",
+            "wday": "*",
+            "who": "root",
+            "command": "/usr/local/bin/php /usr/local/cron/cp_daynight_update.php > /dev/null"
         }
 
     ]
