@@ -59,18 +59,23 @@ function print_css_n_head(){
     if ($sun_polar === 'day' || $sun_polar === 'night' || ($sun_begin > 0 && $sun_end > 0)) {
         $sun_ok = true;
     }
+    // 'now' = 박스의 현재 UTC epoch(권위 시각). day/night 판정은 클라이언트 브라우저
+    //   시계(Date.now, 선박 PC 는 타임존 오설정 흔함)가 아니라 이 값을 기준으로 한다.
+    //   (시스템은 항상 UTC, NTP 동기. 절대 epoch 비교라 offset 가산 불필요.)
     $cp_sun_js = json_encode(array(
         'ok'     => $sun_ok,
         'polar'  => $sun_polar,
         'begin'  => $sun_begin,
         'end'    => $sun_end,
         'nbegin' => $sun_nbegin,
+        'now'    => time(),
     ));
 
     // 다크모드 조기 적용(FOUC 방지): CSS 링크보다 먼저 실행되어 <html>에 클래스 부여.
     //   모드(localStorage 'cp_theme'): auto(시스템)·gps(일출일몰)·light·dark. 기본 auto.
     //   GPS 데이터 없으면 시스템(prefers-color-scheme)으로 폴백.
-    //   GPS 판정: dusk(end) 이전이면 dawn(begin) 이후가 낮, dusk 이후면 다음 dawn(nbegin) 전까지 밤.
+    //   GPS 판정: 박스 UTC 시각(s.now) 이 dusk(end) 이전이면 dawn(begin) 이후가 낮,
+    //   dusk 이후면 다음 dawn(nbegin) 전까지 밤. (조기 스크립트는 렌더 직후라 s.now 그대로 사용)
     $rtnstr  = '<script>window.CP_SUN=' . $cp_sun_js . ';</script>';
     $rtnstr .= '<script>(function(){try{'
         . 'var m=localStorage.getItem("cp_theme")||"auto";var d;var s=window.CP_SUN;'
@@ -78,7 +83,7 @@ function print_css_n_head(){
         . 'else if(m==="light"){d=false;}'
         . 'else if(m==="gps"&&s&&s.ok){'
         .   'if(s.polar==="day"){d=false;}else if(s.polar==="night"){d=true;}'
-        .   'else{var n=Date.now()/1000;d=(n<s.end)?!(n>=s.begin):!(s.nbegin&&n>=s.nbegin);}'
+        .   'else{var n=s.now||(Date.now()/1000);d=(n<s.end)?!(n>=s.begin):!(s.nbegin&&n>=s.nbegin);}'
         . '}else{d=!!(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches);}'
         . 'if(d){document.documentElement.className+=" dark";}'
         . '}catch(e){}})();</script>';
@@ -355,12 +360,24 @@ function print_sidebar($inputlink)
         function cpSystemDark(){
             return !!(window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
         }
+        // 판정용 "현재 UTC 시각": 박스가 렌더 때 준 CP_SUN.now(권위) + 페이지 로드 후
+        // 단조 경과시간(performance.now, 벽시계 무관). 선박 PC 시계 오설정 영향 제거.
+        // CP_SUN.now 없으면(구버전 캐시) Date.now 폴백.
+        var CP_PERF0 = (window.performance && performance.now) ? performance.now() : null;
+        function cpNowUtc(){
+            var s = window.CP_SUN;
+            if (s && s.now && CP_PERF0 !== null) {
+                return s.now + (performance.now() - CP_PERF0) / 1000;
+            }
+            if (s && s.now) { return s.now; }
+            return Date.now() / 1000;
+        }
         function cpGpsDark(){
             var s = window.CP_SUN;
             if (s && s.ok) {
                 if (s.polar === "day")   { return false; }
                 if (s.polar === "night") { return true; }
-                var n = Date.now() / 1000;
+                var n = cpNowUtc();
                 // dusk(end) 이전: dawn(begin) 이후가 낮. dusk 이후: 다음 dawn(nbegin) 전까지 밤.
                 return (n < s.end) ? !(n >= s.begin) : !(s.nbegin && n >= s.nbegin);
             }
