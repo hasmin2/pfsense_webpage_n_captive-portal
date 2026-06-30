@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `92ae399` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경) — 커밋 `c9bd917`) |
+| `develop` | `66ebfd7` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경)(`c9bd917`); #40: OpenVPN 재시작 크론을 watchdog 으로 안정화 — per-client·hang reap·비블로킹 락(try_lock)·ping timeout 바운드·위성 디바운스·로그 가시화 — 커밋 `66ebfd7`) |
 | `main` | `369da8e` | **#1~#34 전부 반영 완료** (커밋 `369da8e`). 2026-06-16 develop→main 일괄 통합 |
 | `prod` | `7a7195f` | **#1~#34 전부 반영** (커밋 `7a7195f`). 2026-06-16 main→prod 배포 |
 
@@ -1154,6 +1154,61 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   쿠키 지속 의존(OS 프로브 무쿠키 케이스는 로그인 페이지로 강등). 함수 보존으로 재활성 경로 남겨둠.
 - **검증**: php -l 통과(index.php·captiveportal.inc). 잔여 `$migrated` 참조 0.
 
+### 40. OpenVPN 재시작 크론을 watchdog 으로 안정화 — "일부 선박 미재시작" 교정 (develop `66ebfd7`)
+- **배경/증상**: `usr/local/cron/openvpn_restart_timeperiod_check.php`(매분 cron, [firewall_cronlist:218]
+  등록됨)가 **일부 선박에서 VPN 재시작을 정상 수행하지 않음**. 로직 검증 결과 결함 다수.
+- **이 크론의 2가지 용도**: ① liveness — 터널이 데이터 못 넘기면 재시작. ② 강제 플래그 —
+  관리자/경로전환(`manual_routing.widget.php` "Automatic" 분기 + `APIStatusOpenVPNRestart.inc` 가
+  `$config['openvpn']['openvpnrestart']=""` set)이 모든 client 즉시 재시작 → **Starlink↔VSAT 업링크
+  전환 후 새 경로 재바인딩**(선박 환경 핵심 용도).
+- **코어 함수 실측(pfSense 2.5.2 RELENG_2_5_2 소스 검증)**:
+  - `openvpn_get_active_clients()` = 비활성 제외 **모든** 설정 client + 상태. `status`: `down`(초기)→
+    `openvpn_get_client_status()`가 `up`/`connecting`/`waiting`/`reconnecting`. **`virtual_addr`는 연결
+    시에만 존재**(끊기면 키 부재). (함수명과 달리 "active=연결됨"이 아니라 "설정된 전부".)
+  - `openvpn_restart_by_vpnid($mode,$vpnid)` = `openvpn_get_settings`+`openvpn_restart`. 길게 block 안 함.
+  - `try_lock($lock,$timeout=5)` = pfSense **비블로킹 락 변형**. `lock('freeradius_user_config')`(PW
+    writer 가 쓰는 락)와 **같은 파일**(`$g['tmp_path']/{lock}.lock`)을 flock 하므로 상호배제 유지하며
+    블로킹 회피 가능. FreeBSD `ping -t`=전체 타임아웃(TTL 아님), `-c3` exit 0 = 3개 중 1개라도 응답.
+- **진단된 결함 → 수정**:
+  - **① `<?` 짧은 태그(형제 크론 중 유일)** → `<?php`. `short_open_tag=Off` 박스에서 **파일 전체가 평문
+    출력, 한 줄도 실행 안 됨**(silent 전체 사망) — "일부 선박"과 정확히 일치하는 잠재 증상.
+  - **② 다중 client last-wins 덮어쓰기**: `foreach{ $pingresult = ... }`가 매 반복 덮어써 **마지막
+    client 결과만** 반영. 첫 client down·마지막 up 이면 online 으로 오판→재시작 안 됨. → **per-client 판정**.
+  - **down client 빈 `-S` malformed ping**: down 이면 `virtual_addr` 부재 → `ping -S '' host`(우연히
+    offline 으로 잡히던 fragile 경로 + PHP 7.4 undefined-key Notice). → **status 기반 판정**(up+addr 일 때만 ping).
+  - **③ 싱글톤 가드(#26) hang → 영구 starvation**: `flock(LOCK_NB)` 가드는 프로세스 누적/OOM 은 막지만,
+    한 인스턴스가 hang 하면(`openvpn_restart_by_vpnid` wedge / 블로킹 `lock('freeradius_user_config')`에
+    다른 느린 writer 가 걸림) **그 좀비가 싱글톤 락을 계속 보유 → 이후 매분 exit(0)** → watchdog 자체
+    사망(재부팅 전까지 재시작 0회). **트레이드오프 = 과다실행 방지 ↔ 지속 재시도 보장의 상충.**
+    → 가드 유지 + **hang 한 선행 인스턴스 reap**: 락 파일에 `pid 시작시각` 기록, 후속 run 이 보유자가
+    `OVWD_STALE_HOLDER_SECS`(600s) 이상 '살아있고' 'ps command 가 이 스크립트'이면 TERM→KILL 후 락
+    재획득(watchdog self-recovery). 회수 대상은 ping/restart 에 멈춘 것일 뿐 config write 중이 아니라 안전.
+  - **블로킹 `lock('freeradius_user_config', LOCK_EX)`** → **`try_lock`(비블로킹, 10s)**. 못 잡으면 플래그
+    정리를 다음 주기로 미룸 → 싱글톤 잡은 채 블로킹 회피. 정리는 `parse_config(true)`+delta(키 1개)만
+    write → 동시 PW 변경 등 lost-update 안전(#22/#10 패턴 유지).
+  - **외부 명령 hang**: ping 을 `/usr/bin/timeout 12` 로 하드 바운드(+`/sbin/ping`/`timeout` 경로 부재 시
+    폴백 — 경로 없으면 `mwexec` rc=127 로 **모든 up client 거짓 실패→무더기 재시작** 사고 방지. ping `-t8`
+    내부 타임아웃이 2중 안전).
+  - **위성 단발 손실 false-restart(flapping)**: ping `-c3`(1개라도 응답=정상) + **연속
+    `OVWD_FAIL_THRESHOLD`(3)회 실패**해야 재시작 + 재시작 후 `OVWD_RESTART_COOLDOWN`(300s) 동안 같은 client
+    재시작 금지. 상태(fail 카운터·last-restart epoch)는 **`/var/run/openvpn_watchdog/` 파일**(config.xml
+    미사용 → lost-update 무관, #16 패턴). cron 매분이라 ~3분 확정 실패 후 재시작.
+  - **완전 silent(진단 불가가 곧 문제)**: `log_error("[openvpn-watchdog] …")` 로 재시작/reap/락실패 가시화.
+    매분 스팸·디스크풀(#24) 방지 위해 **평시 per-client 상태는 `/tmp/openvpn_watchdog_debug.on` 있을 때만**.
+- **동작 흐름(수정 후)**: liveness=`status==up`+`virtual_addr` 일 때 터널 경유 ping→연속 3실패+쿨다운 경과
+  시 **그 client 만** 재시작 / 강제 플래그=**모든 client 즉시**(쿨다운 무시·1회성) 후 플래그 정리.
+- **⚠️ 의도된 동작 변경**: 기존 ping 1회 실패 시 즉시 전체 재시작 → 이제 liveness 는 **~3분 디바운스**
+  (위성 flapping/#21 끊김 방지). 즉시성 원하면 `OVWD_FAIL_THRESHOLD=1`. **경로전환(플래그) 재시작은 변함없이
+  즉시** → manual_routing/Starlink↔VSAT 전환 동작 영향 없음.
+- **배포 정합성**: 이 크론은 **코어 함수에만 의존**(`openvpn_get_active_clients`/`openvpn_restart_by_vpnid`/
+  `try_lock`/`log_error`/`parse_config`/`write_config`) → repo 다른 파일과 **동시 배포 불필요**(버전 섞임
+  위험 없음). 함수 부재 시 로그 남기고 graceful exit.
+- **검증**: php -l 통과. 선상: `crontab -l | grep openvpn_restart`(등록) /
+  `clog /var/log/system.log | grep openvpn-watchdog`(RESTART/reap/락실패) / `touch
+  /tmp/openvpn_watchdog_debug.on`(per-client ping rc 상세, 끝나면 삭제) / hang 재현 시 10분 후 stale reap.
+- **튜닝 상수(파일 상단)**: `OVWD_FAIL_THRESHOLD`(3) · `OVWD_RESTART_COOLDOWN`(300) ·
+  `OVWD_STALE_HOLDER_SECS`(600) · `OVWD_LOCK_WAIT`(10) · `OVWD_PING_HOST`(`vpn-server.synersat.noc`).
+
 ## 다음 작업 대기 중
 
 - [x] **#38 커밋 완료(develop)**: terminaltype 미해석(현존 게이트웨이 없음) → 로그인 차단 +
@@ -1169,6 +1224,14 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - [ ] #38/#39 배포 정합성: **index.php + captiveportal.inc 같은 리비전 일괄 배포**(버전 섞이면
   undefined function fatal).
 - [ ] #38/#39 main 반영 대기: 명시 지시 시 병합.
+- [x] **#40 커밋 완료(develop)**: OpenVPN 재시작 크론을 watchdog 으로 안정화(per-client·hang reap·
+  비블로킹 락·timeout 바운드·위성 디바운스·로그 가시화) — develop `66ebfd7`. (main/prod 미반영)
+- [ ] #40 검증(선상): `crontab -l | grep openvpn_restart`(등록) / `clog /var/log/system.log | grep
+  openvpn-watchdog`(RESTART/reap/락실패 로그) / 경로전환(manual_routing "Automatic") 시 모든 client 즉시
+  재시작 / liveness 는 ~3분 후 재시작(즉시성 원하면 `OVWD_FAIL_THRESHOLD=1`) / hang 인스턴스 10분 후
+  자동 reap / 디버그: `touch /tmp/openvpn_watchdog_debug.on` 로 per-client ping rc 확인(끝나면 삭제).
+- [ ] #40 배포 정합성: **코어 함수에만 의존 → 단독 배포 가능**(repo 타 파일과 버전 섞임 무관).
+- [ ] #40 튜닝(필요 시): 파일 상단 `OVWD_FAIL_THRESHOLD`/`OVWD_RESTART_COOLDOWN`/`OVWD_STALE_HOLDER_SECS`.
 - [x] **#37 커밋 완료(develop)**: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) +
   단일 소스화(A안)·사용자 양식 파서(`deb779c`) — develop `deb779c`. (main/prod 미반영)
 - [ ] #37 검증(선상): 사이드바 "Release Note" 메뉴 → 1.1.3/1.1.2 카드 정상 렌더 / **3파일 일괄 배포**
