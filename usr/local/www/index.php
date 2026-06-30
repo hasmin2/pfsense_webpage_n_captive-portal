@@ -251,7 +251,7 @@ $cp_coverage_json = '{}';
                 <h3>Satellite coverage</h3>
                 <button type="button" class="cov-close" id="cov-x" aria-label="Close">&times;</button>
             </div>
-            <div class="cov-disc" id="cov-disc">&#9432; Coverage footprints from local database &mdash; for informational purposes only. Do not use for operational, comms, or navigational planning.</div>
+            <div class="cov-disc" id="cov-disc">&#9432; Coverage footprints provided by SynerSAT Korea &mdash; actual coverage may differ in real-world use.</div>
             <div class="cov-toggles" id="cov-toggles">
                 <!-- JS가 CP_COVERAGE_DB 키 기반으로 동적 생성 -->
             </div>
@@ -1473,7 +1473,7 @@ $cp_coverage_json = '{}';
             var disc = document.getElementById('cov-disc');
             if (disc) {
                 if (hasDb) {
-                    disc.textContent = 'ℹ Coverage footprints from local database — for informational purposes only. Do not use for operational, comms, or navigational planning.';
+                    disc.textContent = 'ℹ Coverage footprints provided by SynerSAT Korea — actual coverage may differ in real-world use.';
                     disc.classList.remove('approx');
                 } else {
                     disc.textContent = '⚠ APPROXIMATE / INDICATIVE ONLY — generic latitude bands, not actual operator footprints.';
