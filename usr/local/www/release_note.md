@@ -2,6 +2,24 @@ BlueWave Link — Release Notes
 
 Developed by SynerSAT Korea
 
+1.1.4 (2026-06-30)
+Beta (develop) · Stable: pending
+
+- FIXED: OpenVPN auto-restart reliability — the per-minute watchdog now
+  evaluates each VPN client independently (previously only the last
+  client was checked), recovers from a stuck previous run instead of
+  stalling indefinitely, and tolerates satellite packet loss (restarts
+  only after sustained failure, not a single dropped ping). Uplink-switch
+  (route-change) restarts remain immediate.
+- CHANGED: When an account is pinned to an antenna/gateway that no longer
+  exists (disabled, renamed, or removed), login is now blocked with
+  "The antenna is offline, please try later." instead of silently
+  connecting with no traffic. Auto and valid-gateway users are unaffected.
+- CHANGED: On IP change the portal now shows the login page (logging back
+  in restores your own session) rather than auto-migrating by MAC. This
+  stops session hijack / ping-pong behind shared-NAT or MAC-clone routers;
+  routers are best used in bridge / access-point mode.
+
 1.1.3 (2026-06-21)
 Beta 1.1.40-Beta Stable: 1.1.3-Stable
 
