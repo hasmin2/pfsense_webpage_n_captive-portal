@@ -347,7 +347,7 @@ function print_sidebar($inputlink)
         var tbtn = document.getElementById("theme-toggle");
         var THEME_MODES = ["auto", "gps", "light", "dark"];
         var THEME_META = {
-            auto:  { ic: "◐", label: "Auto" },
+            auto:  { ic: "◐", label: "System" },
             gps:   { ic: "◎", label: "GPS" },
             light: { ic: "☀", label: "Light" },
             dark:  { ic: "☾", label: "Dark" }
