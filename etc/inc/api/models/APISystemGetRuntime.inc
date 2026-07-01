@@ -94,12 +94,12 @@ class APISystemGetRuntime extends APIModel {
             $result["core_temp"] = round($sum / count($m[1]), 2);
         }
 
-        # core_uptime = /proc/uptime 첫 필드(초)
+        # core_uptime = /proc/uptime 첫 필드 → 정수 초 (DB core_uptime = INT)
         $uptimeTrim = trim($uptimeText);
         if ($uptimeTrim !== "") {
             $tok = preg_split('/\s+/', $uptimeTrim);
             if (isset($tok[0]) && is_numeric($tok[0])) {
-                $result["core_uptime"] = floatval($tok[0]);
+                $result["core_uptime"] = intval(floatval($tok[0]));
             }
         }
 

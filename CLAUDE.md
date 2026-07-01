@@ -1297,9 +1297,10 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   - 모델 `etc/inc/api/models/APISystemGetRuntime.inc` (신규): `action()` 이
     `{fw_uptime, core_temp, core_uptime}` 반환.
     - `fw_uptime`(int) = `sysctl -n kern.boottime` 의 `sec` 파싱 → `time()-boot` 경과초. 실패/음수 `0`.
-    - `core_temp`(float|null)/`core_uptime`(float|null) = `__get_core_state()`: **sshpass 로 코어 서버
+    - `core_temp`(float|null)/`core_uptime`(int|null, 초) = `__get_core_state()`: **sshpass 로 코어 서버
       (`192.168.209.210`, `synersatroot`/`P@ssw0rd`, 상수 하드코딩) SSH** → `sensors; echo ===UPTIME===;
-      cat /proc/uptime` 1회 실행. `Core N: +NN.N` 정규식 평균(℃, 소수2), uptime 첫 필드(초). **어떤 실패
+      cat /proc/uptime` 1회 실행. `Core N: +NN.N` 정규식 평균(℃, 소수2), uptime 첫 필드 **정수 초**
+      (DB `core_uptime`=INT). **어떤 실패
       (sshpass/ssh 미설치·연결 실패·파싱 실패)에도 예외 없이 null 로 degrade**(`file_exists` 가드 +
       `escapeshellarg` + `ConnectTimeout=10` + `2>/dev/null`).
   - 엔드포인트 `etc/inc/api/endpoints/APISystemRuntime.inc` (신규): `url=/api/v1/system/runtime`,
@@ -1307,8 +1308,10 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   - 웹루트 로더 `usr/local/www/api/v1/system/runtime/index.php` (신규): `APISystemRuntime()->listen()`.
 - **오토로드**: API 프레임워크(`api/framework/*`, 박스의 pfSense-API 패키지가 제공, 리포엔 없음)가
   클래스명으로 모델을 오토로드 → 엔드포인트에서 모델 `require_once` 불필요.
-- **응답 예**: `{"code":200,"status":"ok","data":{"fw_uptime":274353,"core_temp":39.0,"core_uptime":1234567.89}}`.
+- **응답 예**: `{"code":200,"status":"ok","data":{"fw_uptime":274353,"core_temp":39.0,"core_uptime":1234567}}`.
   코어 서버 도달 불가 시 `core_temp`/`core_uptime` 은 `null`(fw_uptime 은 정상).
+- **DB 스키마 정합(vessel_system_state)**: `core_temp`=FLOAT, `core_uptime`=INT, `fw_uptime`=INT,
+  `vessel_imo`=INT(유니크키). 파이프라인 바인딩 = core_temp `setDouble`, core_uptime/fw_uptime `setInt`.
 - **StreamSets 파이프라인 연동(리포 밖 아티팩트)**: `[User Pipeline Smartbox Vessel Basic Query...]`
   Groovy(`GroovyEvaluator_04`)에서 **SSH 코드 전부 제거** → `safeHttpGet(".../runtime")` 응답
   `data`(객체)에서 `fw_uptime`/`core_temp`/`core_uptime` 추출해
