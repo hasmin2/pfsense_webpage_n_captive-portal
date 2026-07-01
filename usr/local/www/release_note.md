@@ -17,6 +17,8 @@ Beta (develop) · Stable: pending — version TBD (merge with next batch)
   timezone no longer overrides a manually set half-hour offset.
 - FIXED: Saving a timezone no longer leaves a stray numbered folder in the system
   web directory (an internal config dump was being written there).
+- NEW: System runtime API — GET /api/v1/system/runtime returns the box uptime
+  (time since last boot) as "N days HH:MM:SS".
 
 1.1.4 (2026-06-30)
 Beta (develop) · Stable: pending

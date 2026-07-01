@@ -1289,6 +1289,25 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `write_config()` → 동시 PW 변경 등과 lost-update 가능(#22/#30 패턴). 필요 시 동일 락 패턴으로 하드닝.
 - **검증**: php -l 통과(crew_account.php·prepaid_account.php). 배포: 두 www 파일(+.inc 는 무변경).
 
+### 46. GET `/api/v1/system/runtime` — 박스 uptime 을 timedate 형식으로 반환 (develop 미커밋)
+- **요구**: `/api/v1/system/runtime` GET 시 pfSense 의 runtime(부팅 이후 uptime)을 `"N days HH:MM:SS"`
+  형식 문자열로 반환.
+- **구현 (기존 pfSense-API 엔드포인트 패턴 3파일)**:
+  - 모델 `etc/inc/api/models/APISystemGetRuntime.inc` (신규): `sysctl -n kern.boottime` →
+    `"{ sec = <epoch>, usec = ... } ..."` 에서 `preg_match('/sec\s*=\s*(\d+)/')` 로 부팅 epoch 파싱 →
+    `time() - boot` 경과초 → `sprintf("%d days %02d:%02d:%02d", days, h, m, s)`. 파싱 실패/음수는 `0`
+    (fatal 없음). 권한 `["page-all","page-dashboard-all"]`(읽기 전용).
+  - 엔드포인트 `etc/inc/api/endpoints/APISystemRuntime.inc` (신규): `url=/api/v1/system/runtime`,
+    `get()` 만 정의(`APISystemGetRuntime()->call()`). POST 없음.
+  - 웹루트 로더 `usr/local/www/api/v1/system/runtime/index.php` (신규): `APISystemRuntime()->listen()`.
+- **오토로드**: API 프레임워크(`api/framework/*`, 박스의 pfSense-API 패키지가 제공, 리포엔 없음)가
+  클래스명으로 모델을 오토로드 → 엔드포인트에서 모델 `require_once` 불필요(기존 `APISystemLanState`
+  등과 동일 규약).
+- **응답 예**: `GET /api/v1/system/runtime` → `{"code":200,"status":"ok","data":"3 days 04:12:33"}`.
+- **검증**: 3파일 php -l 통과 + 파싱·포맷 로직 단독 실행으로 `3 days 04:12:33` 정확 출력 확인.
+- **배포 정합성**: 3파일 일괄. 신규 엔드포인트라 pfSense-API 가 URL 인식하도록 API 재빌드 필요할 수
+  있음(웹루트 index.php 존재 시 대부분 그대로 서빙).
+
 ## 다음 작업 대기 중
 
 - [x] **#41 커밋 완료(develop)**: 다크모드 — System(OS)/GPS(일출일몰 civil twilight)/Light/Dark 4-state,
