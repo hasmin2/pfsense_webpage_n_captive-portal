@@ -23,22 +23,11 @@ class APISystemGetRuntime extends APIModel {
         $this->privileges = ["page-all", "page-dashboard-all"];
     }
     public function action() {
-        return APIResponse\get(0, $this->__get_runtime());
+        # 부팅 이후 경과 시간(uptime)을 초 단위 정수로 반환
+        return APIResponse\get(0, $this->__get_uptime_seconds());
     }
 
-    # 부팅 이후 경과 시간(uptime)을 "N days HH:MM:SS" 형식으로 반환
-    private function __get_runtime() {
-        $uptime = $this->__get_uptime_seconds();
-
-        $days  = intval($uptime / 86400);
-        $hours = intval(($uptime % 86400) / 3600);
-        $mins  = intval(($uptime % 3600) / 60);
-        $secs  = intval($uptime % 60);
-
-        return sprintf("%d days %02d:%02d:%02d", $days, $hours, $mins, $secs);
-    }
-
-    # kern.boottime sysctl 로 부팅 시각을 읽어 현재까지 경과 초 계산
+    # kern.boottime sysctl 로 부팅 시각을 읽어 현재까지 경과 초(정수) 계산
     private function __get_uptime_seconds() {
         $boottime = "";
         exec("/sbin/sysctl -n kern.boottime 2>/dev/null", $out);
