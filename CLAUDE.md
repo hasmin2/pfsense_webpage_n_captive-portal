@@ -1274,6 +1274,21 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **교훈**: pfSense PHP 에서 `$g`(경로 전역)·`$config` 는 예약 전역 — 지역변수로 절대 재사용 금지. 워크트리 참고 메모리화.
 - **검증**: php -l, `$g` 대입 잔존 0. 선상: 웹루트 숫자폴더 삭제 + nginx 로그 확인 + (노출 시) 비밀값 교체 권장.
 
+### 45. Crew/Prepaid Accounts — description 을 blank(빈 문자열)로 저장 시 미반영 (develop 미커밋)
+- **증상**: Crew Accounts(및 Prepaid Accounts) 표의 인라인 description 편집에서 값을 **빈칸으로 지우고
+  확정하면 저장이 안 됨**(옛 값 유지). 비어있지 않은 값은 정상 저장.
+- **근본 원인**: 인라인 편집 폼(`manage_crew_wifi_account.inc:569~575`)은 `description`(텍스트, 빈값 가능)
+  + hidden `userid` 를 POST 하는데, 핸들러가 **값의 truthiness** 로 게이트:
+  `if ($_POST['description'] && $_POST['userid'])` → 빈 문자열은 falsy → `set_description()` 미도달 →
+  조용히 무시.
+- **수정 (2파일, 동일)**: 게이트를 `if (isset($_POST['description']) && !empty($_POST['userid']))` 로 변경.
+  빈 description 은 정당한 값이므로 `isset` 로 판정, `userid` 는 여전히 필수(스케줄러 폼처럼 userid 만
+  있고 description 없는 POST 와 구분). `crew_account.php:127` + `prepaid_account.php:112`.
+  `set_description()`(`manage_crew_wifi_account.inc:616`)는 이미 빈 문자열을 정상 기록 → 게이트만이 원인.
+- **미수정(범위 밖, 후속 후보)**: `set_description()` 가 lock/`parse_config(true)` 없이 stale 스냅샷
+  `write_config()` → 동시 PW 변경 등과 lost-update 가능(#22/#30 패턴). 필요 시 동일 락 패턴으로 하드닝.
+- **검증**: php -l 통과(crew_account.php·prepaid_account.php). 배포: 두 www 파일(+.inc 는 무변경).
+
 ## 다음 작업 대기 중
 
 - [x] **#41 커밋 완료(develop)**: 다크모드 — System(OS)/GPS(일출일몰 civil twilight)/Light/Dark 4-state,
