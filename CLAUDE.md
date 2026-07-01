@@ -1289,34 +1289,38 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `write_config()` → 동시 PW 변경 등과 lost-update 가능(#22/#30 패턴). 필요 시 동일 락 패턴으로 하드닝.
 - **검증**: php -l 통과(crew_account.php·prepaid_account.php). 배포: 두 www 파일(+.inc 는 무변경).
 
-### 46. GET `/api/v1/system/runtime` — 박스 uptime 을 초 단위 정수로 반환 + 파이프라인 vessel_system_state 적재 (develop 미커밋)
-- **요구**: `/api/v1/system/runtime` GET 시 pfSense 의 runtime(부팅 이후 uptime)을 **초 단위 정수**로 반환.
-  (초기엔 `"N days HH:MM:SS"` 문자열로 구현했다가, 파이프라인이 FLOAT/INT 컬럼에 넣기 쉽도록 **초 정수**로 변경.)
+### 46. GET `/api/v1/system/runtime` — fw_uptime(초) + core_temp/core_uptime(코어 서버 SSH) 반환 + 파이프라인 적재 (develop 미커밋)
+- **요구**: `/api/v1/system/runtime` GET 시 (1) pfSense 부팅 이후 uptime(초), (2) 선내 코어 서버(CentOS)
+  `sensors` 온도 평균, (3) 코어 서버 `/proc/uptime`(초)를 **API(PHP/inc) 안에서 읽어** 함께 반환.
+  코어 조회는 **파이프라인이 아니라 pfSense API 가** 수행(사용자 명시). data 는 스칼라 → **객체**로 변경됨.
 - **구현 (기존 pfSense-API 엔드포인트 패턴 3파일)**:
-  - 모델 `etc/inc/api/models/APISystemGetRuntime.inc` (신규): `sysctl -n kern.boottime` →
-    `"{ sec = <epoch>, usec = ... } ..."` 에서 `preg_match('/sec\s*=\s*(\d+)/')` 로 부팅 epoch 파싱 →
-    `time() - boot` 경과초(정수) 반환. 파싱 실패/음수는 `0` (fatal 없음). 권한
-    `["page-all","page-dashboard-all"]`(읽기 전용).
+  - 모델 `etc/inc/api/models/APISystemGetRuntime.inc` (신규): `action()` 이
+    `{fw_uptime, core_temp, core_uptime}` 반환.
+    - `fw_uptime`(int) = `sysctl -n kern.boottime` 의 `sec` 파싱 → `time()-boot` 경과초. 실패/음수 `0`.
+    - `core_temp`(float|null)/`core_uptime`(float|null) = `__get_core_state()`: **sshpass 로 코어 서버
+      (`192.168.209.210`, `synersatroot`/`P@ssw0rd`, 상수 하드코딩) SSH** → `sensors; echo ===UPTIME===;
+      cat /proc/uptime` 1회 실행. `Core N: +NN.N` 정규식 평균(℃, 소수2), uptime 첫 필드(초). **어떤 실패
+      (sshpass/ssh 미설치·연결 실패·파싱 실패)에도 예외 없이 null 로 degrade**(`file_exists` 가드 +
+      `escapeshellarg` + `ConnectTimeout=10` + `2>/dev/null`).
   - 엔드포인트 `etc/inc/api/endpoints/APISystemRuntime.inc` (신규): `url=/api/v1/system/runtime`,
-    `get()` 만 정의(`APISystemGetRuntime()->call()`). POST 없음.
+    `get()` 만 정의. POST 없음.
   - 웹루트 로더 `usr/local/www/api/v1/system/runtime/index.php` (신규): `APISystemRuntime()->listen()`.
 - **오토로드**: API 프레임워크(`api/framework/*`, 박스의 pfSense-API 패키지가 제공, 리포엔 없음)가
-  클래스명으로 모델을 오토로드 → 엔드포인트에서 모델 `require_once` 불필요(기존 `APISystemLanState`
-  등과 동일 규약).
-- **응답 예**: `GET /api/v1/system/runtime` → `{"code":200,"status":"ok","data":274353}` (초).
-- **StreamSets 파이프라인 연동(리포 밖 아티팩트)**: `[User Pipeline Smartbox Vessel Basic Query...]` 의
-  Groovy 스테이지(`GroovyEvaluator_04`)에서 `SynerSAT.vessel_system_state (vessel_imo, core_temp,
-  core_uptime, fw_uptime)` 에 **upsert**(`ON DUPLICATE KEY UPDATE` 3컬럼 — vessel_imo 유니크키 기준):
-  - `fw_uptime`(int) = `safeHttpGet("http://${vpnIp}/api/v1/system/runtime")` 의 `data`(초 정수).
-  - `core_temp`(float) / `core_uptime`(float) = **중앙 코어 서버 `synersatroot@192.168.209.210`(P@ssw0rd,
-    하드코딩) SSH**(`safeSshRead`=sshpass, 정규식 없이 파싱): `sensors` 의 `Core N` 온도 **평균(℃)** +
-    `cat /proc/uptime` 첫 필드(초). 배치당 1회 조회(중앙 박스라 전 vessel 공통). SDC 호스트에 `sshpass` 필요.
-  - 기존 DB 트랜잭션(vessel_data/position/gateway_history) 안에 통합. 셋 다 없으면 해당 레코드 system_state
-    skip; 일부만 있으면 나머지는 NULL. (이 JSON 파이프라인 파일은 리포 밖이라 미커밋.)
-- **검증**: 3파일 php -l 통과 + 파싱 로직 단독 실행으로 초 정수 출력 확인.
-- **배포 정합성**: 3파일 일괄. 신규 엔드포인트라 pfSense-API 가 URL 인식하도록 API 재빌드 필요할 수
-  있음(웹루트 index.php 존재 시 대부분 그대로 서빙). 파이프라인은 SDC 에 별도 import + `vessel_system_state`
-  테이블 존재/`vessel_imo` 유니크키 필요(테이블 스키마는 사용자 관리).
+  클래스명으로 모델을 오토로드 → 엔드포인트에서 모델 `require_once` 불필요.
+- **응답 예**: `{"code":200,"status":"ok","data":{"fw_uptime":274353,"core_temp":39.0,"core_uptime":1234567.89}}`.
+  코어 서버 도달 불가 시 `core_temp`/`core_uptime` 은 `null`(fw_uptime 은 정상).
+- **StreamSets 파이프라인 연동(리포 밖 아티팩트)**: `[User Pipeline Smartbox Vessel Basic Query...]`
+  Groovy(`GroovyEvaluator_04`)에서 **SSH 코드 전부 제거** → `safeHttpGet(".../runtime")` 응답
+  `data`(객체)에서 `fw_uptime`/`core_temp`/`core_uptime` 추출해
+  `SynerSAT.vessel_system_state (vessel_imo, core_temp, core_uptime, fw_uptime)` 에 **upsert**
+  (`ON DUPLICATE KEY UPDATE` 3컬럼, vessel_imo 유니크키). **방어**: `data` 가 Map 이면 3필드, 스칼라
+  (구버전 API)면 fw_uptime 만; API 부재/비200/오류 시 셋 다 null → 있는 값만 저장, 전부 null 이면 skip.
+  기존 DB 트랜잭션 안에 통합.
+- **검증**: 모델 php -l 통과 + core 파싱(평균℃/uptime 초) 단독 실행 확인 + 파이프라인 JSON 유효성·SSH
+  잔재 0·중괄호 균형 검사 통과.
+- **배포 정합성**: API 3파일 일괄. **코어 조회는 pfSense 박스에 `sshpass`(`/usr/local/bin/sshpass`) 설치 +
+  박스→`192.168.209.210:22` 도달 필요**(없으면 core_* 만 null 로 degrade, fw_uptime·파이프라인 무영향).
+  파이프라인은 SDC 에 재import + `vessel_system_state`/`vessel_imo` 유니크키 필요(테이블 스키마 사용자 관리).
 
 ## 다음 작업 대기 중
 

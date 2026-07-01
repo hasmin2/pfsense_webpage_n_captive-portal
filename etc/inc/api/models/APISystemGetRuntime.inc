@@ -17,14 +17,26 @@ require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 
 class APISystemGetRuntime extends APIModel {
+    # 코어 서버(선내 CentOS) SSH 접속 정보 (내부망 신뢰 구간, 하드코딩)
+    const CORE_HOST = "192.168.209.210";
+    const CORE_USER = "synersatroot";
+    const CORE_PASS = "P@ssw0rd";
+
     # Create our method constructor
     public function __construct() {
         parent::__construct();
         $this->privileges = ["page-all", "page-dashboard-all"];
     }
     public function action() {
-        # 부팅 이후 경과 시간(uptime)을 초 단위 정수로 반환
-        return APIResponse\get(0, $this->__get_uptime_seconds());
+        # fw_uptime = pfSense 부팅 이후 경과 초(정수)
+        # core_temp / core_uptime = 코어 서버(192.168.209.210) sensors / /proc/uptime (실패 시 null)
+        $core = $this->__get_core_state();
+        $data = array(
+            "fw_uptime"   => $this->__get_uptime_seconds(),
+            "core_temp"   => $core["core_temp"],
+            "core_uptime" => $core["core_uptime"],
+        );
+        return APIResponse\get(0, $data);
     }
 
     # kern.boottime sysctl 로 부팅 시각을 읽어 현재까지 경과 초(정수) 계산
@@ -42,6 +54,56 @@ class APISystemGetRuntime extends APIModel {
         }
 
         return 0;
+    }
+
+    # 코어 서버에 SSH(sshpass) 로 접속해 sensors(코어 온도 평균℃) + /proc/uptime(초) 조회.
+    # 어떤 실패(도구 부재/연결 실패/파싱 실패)에도 예외 없이 null 로 degrade.
+    private function __get_core_state() {
+        $result = array("core_temp" => null, "core_uptime" => null);
+
+        $sshpass = "/usr/local/bin/sshpass";
+        $ssh     = "/usr/bin/ssh";
+        # sshpass/ssh 미설치 시 조용히 degrade (core_* = null)
+        if (!file_exists($sshpass) || !file_exists($ssh)) {
+            return $result;
+        }
+
+        $remote = "sensors; echo ===UPTIME===; cat /proc/uptime";
+        $cmd = $sshpass . " -p " . escapeshellarg(self::CORE_PASS) . " " . $ssh .
+               " -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" .
+               " -o ConnectTimeout=10 -o BatchMode=no" .
+               " " . escapeshellarg(self::CORE_USER . "@" . self::CORE_HOST) .
+               " " . escapeshellarg($remote) . " 2>/dev/null";
+
+        $out = array();
+        exec($cmd, $out);
+        if (empty($out)) {
+            return $result;
+        }
+        $text  = implode("\n", $out);
+        $parts = explode("===UPTIME===", $text, 2);
+        $sensorsText = isset($parts[0]) ? $parts[0] : "";
+        $uptimeText  = isset($parts[1]) ? $parts[1] : "";
+
+        # core_temp = "Core N: +39.0°C" 들의 평균(℃)
+        if (preg_match_all('/^\s*Core\s+\d+:\s*\+?(-?\d+(?:\.\d+)?)/mi', $sensorsText, $m) && count($m[1]) > 0) {
+            $sum = 0.0;
+            foreach ($m[1] as $t) {
+                $sum += floatval($t);
+            }
+            $result["core_temp"] = round($sum / count($m[1]), 2);
+        }
+
+        # core_uptime = /proc/uptime 첫 필드(초)
+        $uptimeTrim = trim($uptimeText);
+        if ($uptimeTrim !== "") {
+            $tok = preg_split('/\s+/', $uptimeTrim);
+            if (isset($tok[0]) && is_numeric($tok[0])) {
+                $result["core_uptime"] = floatval($tok[0]);
+            }
+        }
+
+        return $result;
     }
 }
 
