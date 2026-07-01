@@ -1305,11 +1305,14 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   등과 동일 규약).
 - **응답 예**: `GET /api/v1/system/runtime` → `{"code":200,"status":"ok","data":274353}` (초).
 - **StreamSets 파이프라인 연동(리포 밖 아티팩트)**: `[User Pipeline Smartbox Vessel Basic Query...]` 의
-  Groovy 스테이지(`GroovyEvaluator_04`)에 `safeHttpGet("http://${vpnIp}/api/v1/system/runtime")` 추가 →
-  `data`(초 정수)를 `SynerSAT.vessel_system_state (vessel_imo, core_temp, core_uptime, fw_uptime)` 에
-  **`fw_uptime`(int) 로 upsert**(`ON DUPLICATE KEY UPDATE fw_uptime` — vessel_imo 유니크키 기준).
-  `core_temp`/`core_uptime` 은 현재 소스 없음 → NULL. 기존 DB 트랜잭션(vessel_data/position/gateway_history)
-  안에 통합. runtime 응답 없으면 해당 레코드만 system_state skip. (이 JSON 파이프라인 파일은 리포 밖이라 미커밋.)
+  Groovy 스테이지(`GroovyEvaluator_04`)에서 `SynerSAT.vessel_system_state (vessel_imo, core_temp,
+  core_uptime, fw_uptime)` 에 **upsert**(`ON DUPLICATE KEY UPDATE` 3컬럼 — vessel_imo 유니크키 기준):
+  - `fw_uptime`(int) = `safeHttpGet("http://${vpnIp}/api/v1/system/runtime")` 의 `data`(초 정수).
+  - `core_temp`(float) / `core_uptime`(float) = **중앙 코어 서버 `synersatroot@192.168.209.210`(P@ssw0rd,
+    하드코딩) SSH**(`safeSshRead`=sshpass, 정규식 없이 파싱): `sensors` 의 `Core N` 온도 **평균(℃)** +
+    `cat /proc/uptime` 첫 필드(초). 배치당 1회 조회(중앙 박스라 전 vessel 공통). SDC 호스트에 `sshpass` 필요.
+  - 기존 DB 트랜잭션(vessel_data/position/gateway_history) 안에 통합. 셋 다 없으면 해당 레코드 system_state
+    skip; 일부만 있으면 나머지는 NULL. (이 JSON 파이프라인 파일은 리포 밖이라 미커밋.)
 - **검증**: 3파일 php -l 통과 + 파싱 로직 단독 실행으로 초 정수 출력 확인.
 - **배포 정합성**: 3파일 일괄. 신규 엔드포인트라 pfSense-API 가 URL 인식하도록 API 재빌드 필요할 수
   있음(웹루트 index.php 존재 시 대부분 그대로 서빙). 파이프라인은 SDC 에 별도 import + `vessel_system_state`
