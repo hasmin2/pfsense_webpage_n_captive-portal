@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `66ebfd7` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경)(`c9bd917`); #40: OpenVPN 재시작 크론을 watchdog 으로 안정화 — per-client·hang reap·비블로킹 락(try_lock)·ping timeout 바운드·위성 디바운스·로그 가시화 — 커밋 `66ebfd7`) |
+| `develop` | `66ebfd7` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경)(`c9bd917`); #40: OpenVPN 재시작 크론을 watchdog 으로 안정화 — per-client·hang reap·비블로킹 락(try_lock)·ping timeout 바운드·위성 디바운스·로그 가시화 — 커밋 `66ebfd7`; #41: 다크모드 System(OS)/GPS(일출일몰 civil twilight, 박스 UTC 판정)/Light/Dark 4-state·9페이지공통(print_css_n_head)·dark.css·cp_daynight.inc+크론·외부 day/night API 삭제(`ab95701`·`81c9423`·`e089710`); #42: Daily usage 막대그래프(InfluxDB 일별 rx+tx, This month 기본·MB meter, `ab95701`); #43: GMT 타임존 테마 팝업 + 30분(0.5) 단위 + cp_tz 가드 truthy(`ab95701`); #44: GMT 저장 시 전역 `$g` 오염→웹루트 숫자폴더+config.xml 덤프 버그 수정(`$g`→`$gmt_in`, 보안, `ab95701`)) |
 | `main` | `369da8e` | **#1~#34 전부 반영 완료** (커밋 `369da8e`). 2026-06-16 develop→main 일괄 통합 |
 | `prod` | `7a7195f` | **#1~#34 전부 반영** (커밋 `7a7195f`). 2026-06-16 main→prod 배포 |
 
@@ -1209,8 +1209,91 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **튜닝 상수(파일 상단)**: `OVWD_FAIL_THRESHOLD`(3) · `OVWD_RESTART_COOLDOWN`(300) ·
   `OVWD_STALE_HOLDER_SECS`(600) · `OVWD_LOCK_WAIT`(10) · `OVWD_PING_HOST`(`vpn-server.synersat.noc`).
 
+### 41. 다크모드 — System/GPS(일출일몰)/Light/Dark 토글 (develop `ab95701`·`81c9423`·`e089710`)
+- **요구**: 다크모드 버튼을 전 웹페이지 공통 적용. 이후 시스템 테마 연동(기본) + GPS 일출/일몰 연동으로 확대.
+- **단일 진입점**: 모든 커스텀 SynerSAT 페이지(9개: index/crew_account/prepaid_account/network_control/
+  download_center/terminal/lan_svrstatus/crew_status/release_note)가 `common_ui.inc` `print_css_n_head()`
+  (CSS·jQuery emit) + `print_sidebar()` 를 거침 → **두 함수만 수정해 9페이지 동시 적용**. stock pfSense·
+  캡티브포털은 별도 테마라 범위 제외.
+- **CSS**: `usr/local/www/css/dark.css` **신규**(`html.dark` 스코프 오버라이드). 기존 CSS 6종은 색 하드코딩
+  (변수 미사용)이라 구조요소(body·사이드바·타일·테이블·팝업·폼·버튼)별로 다크색 재지정. 라이트 모드 영향 0.
+- **토글 4-state 순환**: `System`(OS `prefers-color-scheme`, 기본)→`GPS`(일출일몰)→`Light`→`Dark`.
+  localStorage `cp_theme`(auto/gps/light/dark, 내부키는 auto 유지). 사이드바 메뉴 하단 버튼(유니코드 아이콘).
+  - **FOUC 방지**: `print_css_n_head` 최상단 인라인 스크립트가 CSS 링크보다 먼저 실행 → 첫 페인트 전 `html.dark` 설정.
+  - System 모드: `matchMedia change` 리스너로 OS 전환 실시간 반영. 표시 라벨은 "System"(내부키 auto)(`e089710`).
+- **GPS 모드(오프라인 일출/일몰, civil twilight)**:
+  - `etc/inc/cp_daynight.inc` 신규 — PHP7.4 내장 `date_sun_info()` 로 현재 위치 civil twilight(태양 -6°)
+    begin/end 계산(극지 백야/극야는 polar='day'/'night'). 인터넷 0 (#29 철학).
+  - `usr/local/cron/cp_daynight_update.php` 신규(매30분) — influx GPS(VSAT vesselposition→FBB 폴백) →
+    civil times → `$config['daytimecheck']`(begin/end/**nbegin**=다음날 dawn) 캐시. 변경시만 write(#22 패턴),
+    flock 가드(#26), (0,0)/불통 시 마지막값 유지. `firewall_cronlist` 등록.
+  - `print_css_n_head` 가 daytimecheck 를 `CP_SUN`(begin/end/nbegin/polar/**now**)으로 주입 → 클라 판정.
+    dusk(end) 이전엔 dawn(begin) 이후가 낮, dusk 이후엔 nbegin 전까지 밤(자정 넘김 wrap 처리).
+  - **판정 기준시각 = 박스 UTC(`CP_SUN.now`=`time()`)** — 클라 `Date.now()`(선박 PC 타임존 오설정 흔함)
+    대신 박스 권위 UTC + `performance.now()` 단조 경과. 절대 epoch 비교라 offset 가산 불필요(`81c9423`).
+  - GPS 데이터 없으면(daytimecheck 빈값) System(OS) 폴백.
+- **외부 day/night 푸시 API 삭제**: `APIServicesDayTimeCheck`(엔드포인트)/`APIServicesWriteDayTimeCheck`(모델)/
+  URL 핸들러 3파일 제거(레포 소비처 없던 외부 푸시 → GPS 오프라인 계산으로 대체, #29 동형). 이중 writer 해소.
+- **화면밝기/조도센서 연동은 불가**(웹 표준 부재·HTTP 컨텍스트) — 시스템 테마 연동이 한계.
+- **검증**: php -l, 주입 JS 문법, 24h 사이클(부산 새벽 DARK/일출후 LIGHT/일몰후 DARK)·박스UTC 종단·극지 polar 통과.
+- **배포 정합성**: `common_ui.inc`+`css/dark.css`+`cp_daynight.inc`+`cp_daynight_update.php`+`firewall_cronlist`
+  (API로 cron 등록) 일괄. dark.css 누락 시 토글은 떠도 색 미변경(fatal 없음). 브라우저 Ctrl+F5(캐시).
+
+### 42. Daily usage — Internet usage 타일 일별 사용량 막대그래프 (develop `ab95701`)
+- **요구**: Main Panel(`index.php`) "Internet usage" 타일에 일별 사용량 버튼 → 막대그래프.
+- **데이터**: `get_datausage_from_db` 와 동일 InfluxDB(`192.168.209.210:8086`, db=acustatus, measurement=traffic,
+  필드 `{if}_rx`/`{if}_tx`)를 월합산 대신 `GROUP BY time(1d)` 로 일별 질의.
+  - `terminal_status.inc` `read_daily_usage_multi($metrics,$days,$timeout,$monthMode)` 신규 — 여러 게이트웨이를
+    **단일 쿼리**로(SELECT 순서=컬럼 위치 매핑), 하루 경계는 선박 GMT 오프셋(현지 자정), monthMode 는 현지 월(MM) 필터.
+- **AJAX** `index.php` `if(isset($_POST['daily_usage']))` — wan_status 와 동일 비-vpn 게이트웨이 목록. `function_exists` 가드.
+- **UI**: 모달 + 범위 토글 **This month(기본)/7d/14d/30d**, 좌측 **MB meter**(0/25/50/75/100% 눈금, 단위 적응
+  MB<1000<GB), 순수 SVG 막대(외부 라이브러리 0), 게이트웨이별 독립 Y스케일, 막대 호버 툴팁, 버튼 중앙정렬.
+- **검증**: php -l, 일자라벨/오프셋/컬럼매핑/month 경계 절삭/SVG 문법 통과.
+- **배포**: `index.php`+`terminal_status.inc` 일괄(가드 있어 fatal 없으나 미배포 시 버튼 무동작).
+
+### 43. GMT 타임존 — 네이티브 prompt → 테마 팝업 + 30분(0.5) 단위 (develop `ab95701`)
+- **요구**: 사이드바 "GMT n" 클릭 시 뜨던 네이티브 `prompt()` 를 사이트 테마 팝업으로 교체 + **30분(.5) 단위** 지원.
+- **수정**: `common.js` 핸들러가 `prompt`/`parseInt`(30분 절삭 원인) 제거 → 기존 `.popup` 컴포넌트 재사용
+  (`pop-gmt`, common_ui.inc) + `-11~+12` 0.5단위 select(47개, JS 생성). `.popup` 재사용이라 다크 테마 자동 적용.
+- **백엔드**(`index.php` gmt POST): 입력 정규화 — 숫자만 + 0.5 스냅 + 범위 클램프 + 정수 "9"/반시간대 "9.5"/"-3.5" 포맷.
+- **연계 수정**: `cp_tz_offset_update.php` 수동모드 가드를 `gmtcheck==='1'` 엄격비교 → `!empty()` truthy 통일
+  (사이드바 표시와 동일). 비-'1' truthy 값에도 자동 TZ 갱신 차단 → 수동 반시간대 선택이 정수로 덮이는 것 방지.
+- **한계(수용)**: 반시간대 저장·사이드바 표시는 정상이나 CP 로컬시간/미니맵 시계 계산은 기존부터 정수시간만 지원(30분 절사, #29).
+- **검증**: php -l, node --check, select 47개(9.5/-3.5 포함)·정규화·truthy 가드 통과.
+
+### 44. GMT 저장 시 웹루트에 숫자폴더+config.xml 덤프 (전역 `$g` 오염, 보안) (develop `ab95701`)
+- **증상**: 타임존 선택·저장 후 `/usr/local/www/` 에 **마지막 선택 오프셋 이름의 폴더**가 생기고, 내부에 전체
+  config.xml 덤프(루트 태그가 `<pfsense>` 아닌 `<1>` 등 숫자)가 들어감. 웹루트라 비밀값(admin 해시·RADIUS
+  secret·API key·VPN 키·MySQL creds) **노출 위험**.
+- **근본 원인(진범)**: #43 입력검증 추가 시 지역변수를 `$g = trim($_POST['gmt'])` 로 명명 → **pfSense 전역
+  경로배열 `$g`**(핸들러 상단 `global $config, $g;`)를 오프셋 문자열로 덮음. 직후 `write_config()` 가 깨진
+  `$g` 로 경로 생성: PHP 에서 문자열에 `$g['cf_conf_path']` 등 문자열키 접근 → 정수0 캐스팅 → **첫 글자** 반환
+  (`"1"['xml_rootobj']`→`"1"` = 루트 `<1>`; `"1"['cf_conf_path']`→`"1"` = CWD(웹루트) 아래 상대폴더 "1").
+- **진단**: 멀티에이전트 워크플로우가 `$g` clobber 를 특정. 결정적 단서 = 덤프 루트 `<1>` = `$g` 가 문자열 "1" 임을 증명.
+- **수정**: 지역변수명을 `$g` → `$gmt_in` 으로 변경(전역 오염 제거). write_config 2번째 인자(offset)도 제거(단일 인자화).
+- **교훈**: pfSense PHP 에서 `$g`(경로 전역)·`$config` 는 예약 전역 — 지역변수로 절대 재사용 금지. 워크트리 참고 메모리화.
+- **검증**: php -l, `$g` 대입 잔존 0. 선상: 웹루트 숫자폴더 삭제 + nginx 로그 확인 + (노출 시) 비밀값 교체 권장.
+
 ## 다음 작업 대기 중
 
+- [x] **#41 커밋 완료(develop)**: 다크모드 — System(OS)/GPS(일출일몰 civil twilight)/Light/Dark 4-state,
+  9페이지 공통(print_css_n_head), dark.css, 오프라인 일출일몰(cp_daynight.inc+크론), 박스 UTC 시각 판정,
+  외부 day/night API 삭제 — develop `ab95701`·`81c9423`·`e089710`. (main/prod 미반영)
+- [ ] #41 검증(선상): 토글 4단계 동작 / GPS 모드 낮=Light·밤=Dark(박스 UTC 기준) / System 모드 OS 추종 /
+  `window.CP_SUN` 콘솔 확인(ok:true·now/begin/end) / `$config['daytimecheck']` 채워짐 +
+  `clog /var/log/system.log | grep "DAYNIGHT AUTO"` / Ctrl+F5 캐시.
+- [ ] #41 배포 정합성: `common_ui.inc`+`css/dark.css`+`cp_daynight.inc`+`cp_daynight_update.php`+
+  `firewall_cronlist`(API로 cron 등록) 일괄. 페이지별 인라인 `<style>`(release_note 카드 등) 다크 폴리시 후속.
+- [x] **#42 커밋 완료(develop)**: Daily usage 막대그래프(This month 기본/7/14/30d, MB meter) — develop `ab95701`.
+- [ ] #42 검증(선상): 게이트웨이별 일별 막대 표시 / **일별 합이 월 타일 값과 대략 일치**(traffic rx/tx 델타 전제) /
+  `index.php`+`terminal_status.inc` 일괄 배포.
+- [x] **#43 커밋 완료(develop)**: GMT 타임존 테마 팝업 + 30분(0.5) 단위 + cp_tz 가드 truthy — develop `ab95701`.
+- [ ] #43 검증(선상): "GMT n" 클릭 → 테마 팝업 / 9.5 등 반시간대 저장·표시 / 자동 TZ 가 수동 반시간대 안 덮음 /
+  `index.php`+`common.js`+`common_ui.inc` 일괄 배포 + Ctrl+F5.
+- [x] **#44 커밋 완료(develop)**: GMT 저장 시 전역 `$g` 오염 → 웹루트 숫자폴더+config.xml 덤프 버그 수정
+  (`$g`→`$gmt_in`) — develop `ab95701`. (보안: 웹루트 config 노출)
+- [ ] #44 검증(선상): 타임존 저장 후 `/usr/local/www/` 에 숫자폴더 미생성 / 기존 숫자폴더 삭제 완료 /
+  nginx 접근로그로 외부 다운로드 흔적 확인 → 있으면 RADIUS secret/API key 등 교체.
 - [x] **#38 커밋 완료(develop)**: terminaltype 미해석(현존 게이트웨이 없음) → 로그인 차단 +
   "The antenna is offline, please try later." (잠재 3경로 불일치 블랙홀을 로그인 단계서 차단) — develop `c9bd917`. (main/prod 미반영)
 - [ ] #38 검증(선상): disabled/rename 게이트웨이에 pinned된 유저 로그인 시 "antenna is offline" 메시지 +

@@ -2,6 +2,22 @@ BlueWave Link — Release Notes
 
 Developed by SynerSAT Korea
 
+0.0.0-pending (2026-07-01)
+Beta (develop) · Stable: pending — version TBD (merge with next batch)
+
+- NEW: Dark mode — a sidebar toggle cycles System / GPS / Light / Dark. "System"
+  follows your device's light/dark setting; "GPS" automatically switches to dark
+  between dusk and dawn at the vessel's current position (computed offline, no
+  internet). Applies across all console pages.
+- NEW: Daily internet usage graph — the "Internet usage" tile has a "Daily usage"
+  button showing a per-gateway daily bar chart (This month by default, plus 7 / 14 /
+  30-day ranges) with a usage scale on the left.
+- CHANGED: Timezone (GMT) selection now opens an in-page dialog matching the theme
+  and supports 30-minute (half-hour) offsets (e.g. GMT +9.5). The automatic GPS-based
+  timezone no longer overrides a manually set half-hour offset.
+- FIXED: Saving a timezone no longer leaves a stray numbered folder in the system
+  web directory (an internal config dump was being written there).
+
 1.1.4 (2026-06-30)
 Beta (develop) · Stable: pending
 
