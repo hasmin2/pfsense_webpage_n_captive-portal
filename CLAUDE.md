@@ -1325,6 +1325,32 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   박스→`192.168.209.210:22` 도달 필요**(없으면 core_* 만 null 로 degrade, fw_uptime·파이프라인 무영향).
   파이프라인은 SDC 에 재import + `vessel_system_state`/`vessel_imo` 유니크키 필요(테이블 스키마 사용자 관리).
 
+### 47. 게이트웨이 저장 시 [CP Routing] 룰 자동 재동기화 (게이트웨이 이름 변경 대응) (develop 미커밋)
+- **배경/요구**: 게이트웨이 이름을 바꾸면 `[CP Routing]` floating 룰이 **옛 이름(`cp_gw_{oldname}`)으로
+  남아** 실제 게이트웨이 구성과 불일치. 그간 재구성은 배포 스크립트(리포 밖 `update.sh`)가 부르는
+  `cp_routing_setup.php` 수동/배포 실행에만 의존. → **게이트웨이 저장(`system_gateways_edit.php`) 시점에
+  자동 동기화**하도록 요청.
+- **호출 함수 선택(중요)**: `cp_routing_setup.php`(배포 스크립트)는 **create-only**(존재하면 skip, 삭제
+  안 함)라 rename 마다 옛 이름 alias·룰이 **고아로 누적**됨. 대신 **완전 재동기화** 함수
+  `cp_sync_routing_tables()`(→ `cp_refresh_pass_rules()`)를 호출 — `array_diff` 로 `need_add`/`need_remove`
+  계산해 **옛 이름 룰 제거 + 새 이름 룰 생성 + pfctl 테이블 재적재**([captiveportal.inc:4640·4834]).
+- **수정 (`usr/local/www/system_gateways_edit.php`)**: 저장 핸들러에서 `save_gateway($_POST,$realid)` 직후
+  (리다이렉트 전)에 `cp_sync_routing_tables()` 호출. `captiveportal.inc` lazy require +
+  `function_exists`/`file_exists` 가드(버전 섞임·미탑재 시 fatal 없이 skip).
+- **in-process 호출(핵심)**: 별도 `php` 프로세스로 띄우지 **않음**. `save_gateway()`가 이미
+  `write_config("Gateway settings changed")`([gwlb.inc:2295])로 새 이름을 메모리 `$config`에 반영했으므로,
+  같은 프로세스에서 그 위에 동작 → **stale 스냅샷 lost-update(#10/#22/#30) 회피**. 별도 프로세스면
+  자기 `parse_config()` 스냅샷으로 동시 PW 변경 등을 되돌릴 위험이 있어 금지.
+- **잦은 호출 안전성**: `cp_refresh_pass_rules()`는 **멱등**(기대셋==현재셋이면 조기 return, no-op),
+  **변경 시에만 write_config**, 재귀 방지 위해 직접 `filter_configure()` 대신 **비동기 `send_event("filter
+  reload")`** 사용([captiveportal.inc:4717·4767·4773]). 게이트웨이 저장은 관리자 저빈도 행위라 성능 무관.
+- **범위(의도적 제외)**: 이번 변경은 **CP 룰 동기화만**. 유저 `varusersterminaltype`(옛 게이트웨이 이름
+  바인딩) 이관은 **미포함**(사용자가 별도 처리). rename 실운영 시 유저 terminal_type 을 새 이름으로 바꾸지
+  않으면 해당 유저는 #38(antenna offline)로 로그인 차단 + 라우팅 fail-closed 되므로 GUI 에서 별도 갱신 필요.
+- **검증**: `php -l` 통과.
+- **배포 정합성**: `system_gateways_edit.php` + `captiveportal.inc`(cp_sync_routing_tables 정의) **같은
+  리비전 일괄** 배포(가드 있어 fatal 은 없으나 미탑재 시 동기화 skip).
+
 ## 다음 작업 대기 중
 
 - [x] **#41 커밋 완료(develop)**: 다크모드 — System(OS)/GPS(일출일몰 civil twilight)/Light/Dark 4-state,

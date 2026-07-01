@@ -110,6 +110,22 @@ if ($_POST['save']) {
 
 	if (count($input_errors) == 0) {
 		save_gateway($_POST, $realid);
+
+		/* 게이트웨이 이름/구성 변경 시 [CP Routing] alias·룰을 현재 게이트웨이
+		 * 기준으로 재동기화한다(옛 이름 cp_gw_* 룰 제거 + 신 이름 룰 생성 +
+		 * pfctl 테이블 재적재). save_gateway() 가 이미 write_config 로 새 이름을
+		 * $config 에 반영했으므로 반드시 in-process 로 호출한다 — 별도 php
+		 * 프로세스로 띄우면 stale 스냅샷 lost-update 위험(#10/#22/#30).
+		 * cp_refresh_pass_rules() 는 멱등(변경 없으면 no-op)이라 매 저장 호출 안전.
+		 * 버전 섞임/미탑재 방어를 위해 function_exists 가드. */
+		if (!function_exists('cp_sync_routing_tables') &&
+		    file_exists('/etc/inc/captiveportal.inc')) {
+			require_once("captiveportal.inc");
+		}
+		if (function_exists('cp_sync_routing_tables')) {
+			cp_sync_routing_tables();
+		}
+
 		header("Location: system_gateways.php");
 		exit;
 	} else {

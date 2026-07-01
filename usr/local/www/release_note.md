@@ -19,6 +19,9 @@ Beta (develop) · Stable: pending — version TBD (merge with next batch)
   web directory (an internal config dump was being written there).
 - NEW: System runtime API — GET /api/v1/system/runtime returns firewall uptime
   (seconds) plus core-server temperature and uptime (read on-box via SSH).
+- FIXED: Renaming a gateway now automatically re-syncs the internal captive-portal
+  routing rules to the new name (old-name rules removed, new-name rules created)
+  when the gateway is saved, instead of leaving stale rules behind.
 
 1.1.4 (2026-06-30)
 Beta (develop) · Stable: pending
