@@ -3,7 +3,7 @@
 // -----------------------------------------------------------------------------
 // SDC 가 코어 박스(CentOS)에서 로컬 실행된다는 전제.
 // CPU 코어 평균온도(sensors)와 시스템 uptime(/proc/uptime 초)을 로컬 InfluxDB 의
-// acustatus.coresystem measurement 로 기록한다.
+// core_status.coresystem measurement 로 기록한다.
 // pfSense runtime API(APISystemGetRuntime.inc)가 이 measurement 를 읽어
 // core_temp / core_uptime 을 반환한다. (SSH/sshpass 회피 — FreeBSD 미지원 대응)
 //
@@ -16,7 +16,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 // 코어 박스에서 로컬 실행이므로 loopback. (192.168.209.210 도 동일 호스트라 가능)
-def INFLUX_URL = 'http://127.0.0.1:8086/write?db=acustatus&precision=s'
+def INFLUX_URL = 'http://127.0.0.1:8086/write?db=core_status&precision=s'   // core_status DB (사전 CREATE DATABASE 필요)
 
 // ── 셸 명령 실행(타임아웃 가드), 실패 시 null ──────────────────────────────
 def runCmd = { List cmd, long timeoutMs ->

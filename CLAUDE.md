@@ -1301,12 +1301,12 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
     - `core_temp`(float|null)/`core_uptime`(int|null, 초) = `__get_core_state()` → **로컬 InfluxDB 조회**
       (`__influx_query_latest`, self-contained curl+InfluxQL, `cp_tz_offset_update.php` 패턴 동일).
       쿼리 `select last(core_temp) as core_temp, last(core_uptime) as core_uptime from coresystem
-      where time > now() - 10m` (db `acustatus`, 2초 타임아웃). **`server_module.inc` 는 top-level
+      where time > now() - 10m` (db `core_status` — ACU 용 `acustatus` 와 분리, 2초 타임아웃). **`server_module.inc` 는 top-level
       `require_once(openvpn.inc)` 라 API 컨텍스트에 fatal 위험 → 인라인 헬퍼로 회피.** -1/음수 센티널은
       null 로 취급, 실패/데이터없음/10분 초과 stale → null degrade(예외 없음). SSH·sshpass·하드코딩
       비밀번호 전부 제거(보안 개선).
   - **코어 박스 writer(리포 밖 배포물, 두 형태 중 택1)** — 둘 다 `sensors` `Core N` 평균온도 +
-    `/proc/uptime` 정수 초를 로컬 InfluxDB `acustatus.coresystem` 에 write. 읽힌 필드만 기록(실패 필드
+    `/proc/uptime` 정수 초를 로컬 InfluxDB `core_status.coresystem` 에 write. 읽힌 필드만 기록(실패 필드
     생략 → `last()` 가 직전 정상값 유지):
     - `tools/coresystem_influx_write.sh`: cron(매분) 셸. line protocol `coresystem core_temp=..,core_uptime=..i <ts>`
       (precision=s), `curl -sS -m 2 --connect-timeout 2`. 의존: lm_sensors·curl.
@@ -1341,8 +1341,11 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `bash -n` + sensors 파싱 단독 실행(4코어 평균 40.00, uptime 정수) / 파이프라인 JSON 유효.
 - **배포 정합성**:
   - API 3파일 일괄(모델만 바뀜; 엔드포인트/로더 무변경). **sshpass 불필요**(제거됨).
-  - **코어 값 유입 전제 = 코어 박스에 `tools/coresystem_influx_write.sh` 크론 설치**(lm_sensors·curl).
-    미설치면 `coresystem` measurement 가 없어 API `core_*`=null → 파이프라인 -1 저장. (fw_uptime·파이프라인 자체는 정상.)
+  - **InfluxDB 에 `core_status` DB 선생성 필요**: InfluxDB 1.x 는 write 시 DB 를 자동생성하지 않음
+    (없으면 404 "database not found"). 코어 박스에서 `influx -execute 'CREATE DATABASE core_status'` 1회.
+    (measurement `coresystem` 은 첫 write 시 자동 생성.)
+  - **코어 값 유입 전제 = 코어 박스에 writer(`tools/coresystem_influx_write.sh` 또는 `.groovy`) 설치**(lm_sensors·curl).
+    미설치/미실행이면 `coresystem` 데이터가 없어 API `core_*`=null → 파이프라인 -1 저장. (fw_uptime·파이프라인 자체는 정상.)
   - pfSense 박스 → `192.168.209.210:8086`(InfluxDB) 도달 필요(기존 GPS/ACU 조회와 동일 경로라 이미 열림).
   - 파이프라인은 SDC 재import + `vessel_system_state`/`vessel_imo` 유니크키 + **INT 컬럼 SIGNED** 필요(위 주의).
 

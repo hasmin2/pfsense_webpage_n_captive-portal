@@ -19,7 +19,7 @@ require_once("api/framework/APIResponse.inc");
 class APISystemGetRuntime extends APIModel {
     # 코어 서버 텔레메트리를 읽는 로컬 InfluxDB (선내 LAN, 무인증 — repo 관례와 동일)
     const CORE_INFLUX_BASE = "http://192.168.209.210:8086";
-    const CORE_INFLUX_DB   = "acustatus";
+    const CORE_INFLUX_DB   = "core_status";
     const CORE_MEASUREMENT  = "coresystem";
 
     # Create our method constructor

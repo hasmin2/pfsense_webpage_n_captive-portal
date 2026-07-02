@@ -2,7 +2,7 @@
 # coresystem_influx_write.sh
 # -----------------------------------------------------------------------------
 # 코어 박스(CentOS, 192.168.209.210)에서 실행. CPU 코어 평균온도(sensors)와
-# 시스템 uptime(/proc/uptime 초)을 로컬 InfluxDB 의 acustatus.coresystem measurement 로 기록한다.
+# 시스템 uptime(/proc/uptime 초)을 로컬 InfluxDB 의 core_status.coresystem measurement 로 기록한다.
 # pfSense runtime API(APISystemGetRuntime.inc)가 이 measurement 를 읽어
 # core_temp / core_uptime 을 반환한다. (SSH/sshpass 회피 — FreeBSD 미지원 대응)
 #
@@ -15,7 +15,7 @@
 # -----------------------------------------------------------------------------
 
 # 코어 박스에서 로컬 실행이므로 loopback. (192.168.209.210 도 동일 호스트라 가능)
-INFLUX_URL="http://127.0.0.1:8086/write?db=acustatus&precision=s"
+INFLUX_URL="http://127.0.0.1:8086/write?db=core_status&precision=s"   # core_status DB (사전 CREATE DATABASE 필요)
 
 # 1) CPU 코어 온도 평균(℃). "Core N: +39.0°C (high=+105 ...)" 에서 콜론 뒤 첫 숫자(실측 온도)만 추출해 평균.
 #    (grep -Eo 로 뽑으면 high/crit 값까지 섞이므로 sed 로 라인당 첫 값만.)
