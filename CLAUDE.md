@@ -1155,8 +1155,11 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **검증**: php -l 통과(index.php·captiveportal.inc). 잔여 `$migrated` 참조 0.
 
 ### 40. OpenVPN 재시작 크론을 watchdog 으로 안정화 — "일부 선박 미재시작" 교정 (develop `66ebfd7`)
-- **배경/증상**: `usr/local/cron/openvpn_restart_timeperiod_check.php`(매분 cron, [firewall_cronlist:218]
+- **배경/증상**: `usr/local/cron/openvpn_restart_timeperiod_check.php`(cron, [firewall_cronlist:211~]
   등록됨)가 **일부 선박에서 VPN 재시작을 정상 수행하지 않음**. 로직 검증 결과 결함 다수.
+  - **스케줄(2026-07-02 변경, 의도됨)**: `minute` `*`(매분) → `0`(매시 정각, 시간당 1회). 매분 점검이 불필요하다는
+    판단(사용자 확인). **트레이드오프**: liveness 재시작 판정이 시간당 1회 → 디바운스(연속 실패 threshold)와 겹쳐
+    VPN 끊김 복구가 최대 ~1시간 지연 가능. 더 빠른 복구가 필요하면 `minute` 을 `*` 로 되돌릴 것.
 - **이 크론의 2가지 용도**: ① liveness — 터널이 데이터 못 넘기면 재시작. ② 강제 플래그 —
   관리자/경로전환(`manual_routing.widget.php` "Automatic" 분기 + `APIStatusOpenVPNRestart.inc` 가
   `$config['openvpn']['openvpnrestart']=""` set)이 모든 client 즉시 재시작 → **Starlink↔VSAT 업링크
