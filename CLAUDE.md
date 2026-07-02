@@ -1308,8 +1308,9 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **파이프라인(리포 밖, 구현 반영)**: 메인 서버 SDC Groovy(`GroovyEvaluator_04`)가
   `SynerSAT.vessel_system_state (vessel_imo, core_temp, core_uptime, fw_uptime)` 적재.
   - `fw_uptime` = runtime API(`data` 스칼라/객체 모두 방어).
-  - **`core_temp`/`core_uptime` = 메인 서버에서 `sshpass -p P@ssw0rd ssh synersatroot@${vpnIp}` 로
+  - **`core_temp`/`core_uptime` = 메인 서버에서 `sshpass -p P@ssw0rd ssh -p 21022 synersatroot@${vpnIp}` 로
     `sensors`(`Core N` 평균℃) + `cat /proc/uptime`(정수 초) 실행 → stdout 파싱**(`===UP===` 구분자).
+    (SSH 포트 **21022**.)
     `sensors` 라벨은 `Core <정수>:` 만 채택(Voltage/Frequency 등 제외). 타임아웃 5초
     (`ConnectTimeout=5` + `waitForOrKill(5000)`), **미취득/실패 시 0 기본값**.
   - -1 센티널 폐기 → 모든 미취득값 0 → **unsigned INT 컬럼이어도 롤백 없음**(이전 "저장 안됨" 원인 해소).
