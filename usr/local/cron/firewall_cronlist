@@ -209,7 +209,7 @@
             "command": "/usr/local/bin/php /usr/local/cron/crew_prepaidmonthlyusage_reset_check.php"
         },
         {
-            "minute": "*",
+            "minute": "0",
             "hour": "*",
             "mday": "*",
             "month": "*",
