@@ -1,0 +1,108 @@
+@charset "utf-8";
+
+/*-------------------------------------------------------------------
+   다크모드 오버라이드
+   - 이 파일은 항상 로드되지만, 실제 색은 <html class="dark"> 일 때만 적용된다.
+   - 토글/지속성: 사이드바 "Dark mode" 버튼 + localStorage('cp_theme').
+     조기 적용(FOUC 방지) 스크립트는 common_ui.inc print_css_n_head() 에 있음.
+   - 색이 CSS 변수로 안 되어 있어(하드코딩) 구조 요소별로 다시 지정한다.
+   - 사이드바(#001621)는 원래 다크라 거의 그대로 두고 텍스트/표면만 보정.
+   - 범위: print_css_n_head/print_sidebar 를 쓰는 커스텀 콘솔 9개 페이지.
+     (stock pfSense / 캡티브포털은 별도 테마라 제외)
+-------------------------------------------------------------------*/
+
+/* =========================================================
+   다크모드 토글 버튼 (라이트/다크 양쪽 — 사이드바가 항상 다크이므로
+   테마와 무관하게 다크 사이드바에 맞춘 스타일)
+   ========================================================= */
+.theme-toggle-li { padding: 0 30px; }
+.theme-toggle {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 44px; padding: 0 14px; border-radius: 10px;
+    background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .14);
+    color: #CED4DA; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: background .15s, border-color .15s;
+}
+.theme-toggle:hover { background: rgba(255, 255, 255, .12); }
+.theme-toggle .tt-ic { font-size: 16px; line-height: 1; }
+html.dark .theme-toggle {
+    background: rgba(56, 217, 169, .14); border-color: rgba(56, 217, 169, .42); color: #9FE9D2;
+}
+html.dark .theme-toggle:hover { background: rgba(56, 217, 169, .22); }
+
+/* =========================================================
+   이하 모든 규칙은 html.dark 스코프 (라이트 모드엔 영향 0)
+   ========================================================= */
+
+/* --- 기본 표면/텍스트 --- */
+html.dark body { color: #DFE5EC; background-color: #0E1622; }
+html.dark #wrapper { background-color: #0E1622; }
+
+/* --- 상단 헤드라인 바 --- */
+html.dark #wrapper #content .headline-wrap {
+    background-color: #16212F;
+    border-bottom: 1px solid #28384C;
+    box-shadow: none;
+}
+
+/* --- 타일 카드 (Main Panel 등) --- */
+html.dark .tile-area,
+html.dark .private-wrap .tile-wrap .tile-area { background-color: #16212F; }
+html.dark .private-wrap .tile-wrap .tile-area dd { border-top-color: #28384C; }
+
+/* --- 데이터 테이블 (.list-wrap.v1) --- */
+html.dark .list-wrap.v1 table thead tr th { background-color: #33445A; color: #FFFFFF; }
+html.dark .list-wrap.v1 table tbody tr {
+    background-color: #16212F;
+    border-bottom-color: #243246;
+}
+html.dark .list-wrap.v1 table tbody tr td { color: #DFE5EC; }
+html.dark .list-wrap.v1 table tbody tr td span { color: #9AA7B5; }
+/* 선택행(mint)·해당 텍스트는 원본 유지(어두운 글자가 mint 위에 정상) */
+
+/* 모바일: 카드형 행/버튼바 흰 배경 보정 */
+html.dark .list-wrap.v1 table tbody tr { background-color: #16212F; }
+html.dark .list-top .btn-area { background-color: #16212F; }
+
+/* --- 팝업(공통) --- */
+html.dark .popup { background-color: #16212F; }
+/* .pop-head(#343A40) 는 원래 다크라 유지 */
+html.dark .popup .pop-cont + .pop-foot,
+html.dark .popup .pop-foot { border-top-color: #28384C; }
+html.dark .pop-set-terminal .override-list { background-color: #0F1A28; }
+
+/* --- 폼 요소 --- */
+html.dark input[type="text"],
+html.dark input[type="password"],
+html.dark .spinner input {
+    background-color: #0F1A28; border-color: #3A4D63; color: #DFE5EC;
+}
+html.dark .select.v1 {
+    background-color: #0F1A28; border-color: #3A4D63; color: #DFE5EC;
+}
+html.dark .spinner [class^='btn-'] { background-color: #243246; }
+/* 라디오/체크 라벨 텍스트(#343A40) → 밝게 */
+html.dark .radio.v1 input[type="radio"] + label p,
+html.dark .check.v1 input[type="checkbox"] + label p { color: #DFE5EC; }
+/* 페이지별 placeholder(검은 반투명)를 밝게 */
+html.dark #downspeed::placeholder,
+html.dark #upspeed::placeholder,
+html.dark #timelimit::placeholder { color: rgba(255, 255, 255, .35); }
+
+/* --- 버튼: 흰 배경 라인형 → 다크 표면(색상 텍스트/테두리는 유지) --- */
+html.dark .btn.line-mint,
+html.dark .btn.line-red,
+html.dark .btn.line-gray { background-color: #16212F; }
+html.dark .btn.line-gray:disabled { background-color: #16212F; }
+html.dark .btn-login { background-color: #16212F; }
+
+/* --- 구분선 --- */
+html.dark .line.v1 { border-top-color: #28384C; }
+
+/* --- #28 Daily usage 버튼(흰 배경) 다크 보정 --- */
+html.dark .daily-usage-btn {
+    background-color: #1B2940; color: #CDD9EA; border-color: #34507A;
+}
+html.dark .daily-usage-btn:hover { background-color: #22324D; border-color: #406387; }
+
+/* index.php 의 커버리지/일별/3D 모달은 이미 자체 다크 스타일이라 무수정 */

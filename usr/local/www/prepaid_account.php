@@ -109,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['userid'], $_POST['sch
 }
 
 
-if ($_POST['description'] && $_POST['userid']) {
+if (isset($_POST['description']) && !empty($_POST['userid'])) {
     $description=$_POST['description'];
     $userid=$_POST['userid'];
     set_description($userid, $description);

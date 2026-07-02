@@ -37,9 +37,12 @@ if (!function_exists('cp_tz_offset_hours') || !function_exists('cp_tz_format_off
 
 global $config;
 
-// 수동 타임존 모드면 자동 갱신 금지 (사이드바 체크박스 / API 와 동일 규약)
-if (!empty($config['time_offset_enabled']['gmtcheck']) &&
-    (string)$config['time_offset_enabled']['gmtcheck'] === '1') {
+// 수동 타임존 모드면 자동 갱신 금지.
+//   가드는 사이드바 표시(!empty)와 동일한 truthy 의미로 판정한다. gmtcheck 가
+//   '1' 이 아닌 다른 truthy 값(레거시/API 저장)이어도 "Manual" 로 취급해 자동
+//   갱신을 막아야 수동 0.5(반시간대) 선택이 정수로 덮어써지지 않는다.
+//   ('0'/''/미설정 = 자동 모드 → 진행)
+if (!empty($config['time_offset_enabled']['gmtcheck'])) {
     echo "manual timezone enabled, no action\n";
     exit(0);
 }
@@ -151,10 +154,9 @@ $applied = false;
 $cnf_lock = lock('freeradius_user_config', LOCK_EX);
 try {
     $config = parse_config(true);
-    // 락 대기 중 수동 모드로 바뀌었을 수 있음 — 재확인
+    // 락 대기 중 수동 모드로 바뀌었을 수 있음 — 재확인 (truthy = 수동 → 적용 금지)
     // (exit 는 finally 를 타지 않으므로 락 안에서는 플래그만 세우고 빠져나온다)
-    if (empty($config['time_offset_enabled']['gmtcheck']) ||
-        (string)$config['time_offset_enabled']['gmtcheck'] !== '1') {
+    if (empty($config['time_offset_enabled']['gmtcheck'])) {
         if (!isset($config['time_offset_enabled']) || !is_array($config['time_offset_enabled'])) {
             $config['time_offset_enabled'] = array();
         }
