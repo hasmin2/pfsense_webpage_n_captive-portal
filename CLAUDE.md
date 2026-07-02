@@ -1311,8 +1311,10 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
     - `tools/coresystem_influx_write.sh`: cron(매분) 셸. line protocol `coresystem core_temp=..,core_uptime=..i <ts>`
       (precision=s), `curl -sS -m 2 --connect-timeout 2`. 의존: lm_sensors·curl.
     - `tools/coresystem_influx_write.groovy`: **StreamSets Groovy Evaluator**(SDC 가 코어 박스에서 로컬
-      실행 전제). `sensors`/`/proc/uptime` 을 Groovy 로 읽어 HTTP POST(2초 타임아웃)로 write. timestamp
-      생략(InfluxDB 서버시각 부여 → 코어 시계오차 무관), 소수점 `Locale.US` 고정. 배치당 1회. 트리거/크론은 사용자 구성.
+      실행 전제). `sensors`/`/proc/uptime` 을 Groovy 로 읽어 HTTP POST(2초 타임아웃)로 write. 배치당 1회.
+      트리거/크론은 사용자 구성. 소수점 `Locale.US` 고정.
+  - **timestamp = 현재 시각을 5분(300초) 경계로 내림**(precision=s, sh·groovy 공통). 같은 5분 버킷은 동일
+    timestamp → InfluxDB 가 같은 포인트로 덮어씀(버킷당 1점). traffic(5분) 데이터와 정렬.
   - 엔드포인트 `etc/inc/api/endpoints/APISystemRuntime.inc` (신규): `url=/api/v1/system/runtime`,
     `get()` 만 정의. POST 없음.
   - 웹루트 로더 `usr/local/www/api/v1/system/runtime/index.php` (신규): `APISystemRuntime()->listen()`.

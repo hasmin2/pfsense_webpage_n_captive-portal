@@ -16,7 +16,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 // 코어 박스에서 로컬 실행이므로 loopback. (192.168.209.210 도 동일 호스트라 가능)
-def INFLUX_URL = 'http://127.0.0.1:8086/write?db=acustatus'
+def INFLUX_URL = 'http://127.0.0.1:8086/write?db=acustatus&precision=s'
 
 // ── 셸 명령 실행(타임아웃 가드), 실패 시 null ──────────────────────────────
 def runCmd = { List cmd, long timeoutMs ->
@@ -103,7 +103,8 @@ def influxWrite = { String line ->
 }
 
 // ── 배치당 1회: 수집 → line protocol → write ────────────────────────────────
-// timestamp 는 생략 → InfluxDB 가 수신(서버) 시각을 부여(코어 박스 시계 오차 무관).
+// timestamp = 현재 시각을 5분(300초) 경계로 내림(precision=s). 같은 5분 버킷은
+// 동일 timestamp → InfluxDB 가 같은 포인트로 덮어씀(버킷당 1점).
 // core_uptime 은 정수 필드 → 'i' 접미사. 소수점 표기는 Locale.US 고정(콤마 방지).
 def collectAndWrite = {
     def temp = parseCoreTemp(runCmd(['bash', '-c', 'sensors'], 5000L))
@@ -118,7 +119,9 @@ def collectAndWrite = {
         return
     }
 
-    def line = 'coresystem ' + fields.join(',')
+    long nowSec = System.currentTimeMillis().intdiv(1000L)   // 현재 epoch 초
+    long ts     = nowSec.intdiv(300L) * 300L                 // 5분 경계로 내림
+    def line = 'coresystem ' + fields.join(',') + ' ' + ts
     if (influxWrite(line)) {
         sdc.log.info('coresystem write ok: {}', line)
     }

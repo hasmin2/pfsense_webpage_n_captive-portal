@@ -52,7 +52,8 @@ if [ -z "$FIELDS" ]; then
   exit 0
 fi
 
-TS="$(date +%s)"
+# 현재 시각을 5분(300초) 경계로 내림 (같은 버킷은 동일 timestamp → 같은 포인트 덮어씀)
+TS="$(( $(date +%s) / 300 * 300 ))"
 LINE="coresystem ${FIELDS} ${TS}"
 
 # 로컬 LAN 타임아웃 가드 (repo 관례: curl -sS -m 2 --connect-timeout 2)
