@@ -1312,9 +1312,13 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   코어 서버 도달 불가 시 `core_temp`/`core_uptime` 은 `null`(fw_uptime 은 정상).
 - **DB 스키마 정합(vessel_system_state)**: `core_temp`=FLOAT, `core_uptime`=INT, `fw_uptime`=INT,
   `vessel_imo`=INT(유니크키). 파이프라인 바인딩 = core_temp `setDouble`, core_uptime/fw_uptime `setInt`.
+- **인증(중요)**: pfSense-API 는 GET 도 `client-id`/`client-token` 필요. 파이프라인 runtime GET 은
+  **URL 쿼리스트링**으로 전달(`?client-id=<fw_id>&client-token=<fw_pw>`, URLEncoder 인코딩). 자격증명은
+  레코드 `fw_id`/`fw_pw` 우선, 없으면 `gatewaystatusbody`(ping POST 가 쓰는 동일 자격) JSON 에서 추출·폴백.
+  (프레임워크가 GET payload=$_GET 에서 auth 를 읽으므로 **API 코드 변경 불필요**.) 누락 시 data 미유입의 원인이었음.
 - **StreamSets 파이프라인 연동(리포 밖 아티팩트)**: `[User Pipeline Smartbox Vessel Basic Query...]`
-  Groovy(`GroovyEvaluator_04`)에서 **SSH 코드 전부 제거** → `safeHttpGet(".../runtime")` 응답
-  `data`(객체)에서 `fw_uptime`/`core_temp`/`core_uptime` 추출해
+  Groovy(`GroovyEvaluator_04`)에서 **SSH 코드 전부 제거** → `safeHttpGet(".../runtime?client-id=…&client-token=…")`
+  응답 `data`(객체)에서 `fw_uptime`/`core_temp`/`core_uptime` 추출해
   `SynerSAT.vessel_system_state (vessel_imo, core_temp, core_uptime, fw_uptime)` 에 **upsert**
   (`ON DUPLICATE KEY UPDATE` 3컬럼, vessel_imo 유니크키). **방어**: `data` 가 Map 이면 3필드, 스칼라
   (구버전 API)면 fw_uptime 만; API 부재/비200/오류 시 셋 다 null → 있는 값만 저장, 전부 null 이면 skip.
