@@ -1306,7 +1306,9 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **인증**: pfSense-API 는 GET 도 `client-id`/`client-token` 필요 → 파이프라인이 URL 쿼리스트링으로 전달
   (`?client-id=<fw_id>&client-token=<fw_password>`). 프레임워크가 GET `$_GET` 에서 auth 를 읽음(API 코드 무변경).
 - **파이프라인(리포 밖, 구현 반영)**: 메인 서버 SDC Groovy(`GroovyEvaluator_04`)가
-  `SynerSAT.vessel_system_state (vessel_imo, core_temp, core_uptime, fw_uptime)` 적재.
+  `SynerSAT.vessel_system_state (timestamp, vessel_imo, core_temp, core_uptime, fw_uptime)` 적재.
+  - `timestamp` = 레코드 시각(`datetime.time`)을 **5분(300000ms) 경계로 내림** → `new Timestamp(...)`.
+    ON DUPLICATE 도 timestamp 갱신(vessel_imo 유니크면 최신시각, `(vessel_imo,timestamp)` 유니크면 이력). **테이블에 `timestamp`(DATETIME) 컬럼 필요(사용자 관리).**
   - `fw_uptime` = runtime API(`data` 스칼라/객체 모두 방어).
   - **`core_temp`/`core_uptime` = 메인 서버에서 `sshpass -p P@ssw0rd ssh -p 21022 synersatroot@${vpnIp}` 로
     `sensors`(`Core N` 평균℃) + `cat /proc/uptime`(정수 초) 실행 → stdout 파싱**(`===UP===` 구분자).
