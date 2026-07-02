@@ -1289,65 +1289,28 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `write_config()` → 동시 PW 변경 등과 lost-update 가능(#22/#30 패턴). 필요 시 동일 락 패턴으로 하드닝.
 - **검증**: php -l 통과(crew_account.php·prepaid_account.php). 배포: 두 www 파일(+.inc 는 무변경).
 
-### 46. GET `/api/v1/system/runtime` — fw_uptime(초) + core_temp/core_uptime(코어 서버 InfluxDB) 반환 + 파이프라인 적재 (develop 미커밋)
-- **요구/이력**: `/api/v1/system/runtime` GET 이 (1) pfSense uptime(초), (2) 선내 코어 서버(CentOS) CPU
-  온도, (3) 코어 uptime(초)를 함께 반환. **최초 SSH(sshpass) 로 코어 조회 → FreeBSD/pfSense 엔 sshpass
-  가 없어 실패** → **D안: 코어 박스가 InfluxDB 에 기록하고 API 는 기존 InfluxDB 조회로 읽음**으로 전환
-  (코드베이스 InfluxDB 읽기/쓰기 패턴 멀티에이전트 전수조사 후 확정). data 는 객체.
-- **구현 (기존 pfSense-API 엔드포인트 패턴 3파일)**:
-  - 모델 `etc/inc/api/models/APISystemGetRuntime.inc` (신규): `action()` 이
-    `{fw_uptime, core_temp, core_uptime}` 반환.
-    - `fw_uptime`(int) = `sysctl -n kern.boottime` 의 `sec` 파싱 → `time()-boot` 경과초. 실패/음수 `0`.
-    - `core_temp`(float|null)/`core_uptime`(int|null, 초) = `__get_core_state()` → **로컬 InfluxDB 조회**
-      (`__influx_query_latest`, self-contained curl+InfluxQL, `cp_tz_offset_update.php` 패턴 동일).
-      쿼리 `select last(core_temp) as core_temp, last(core_uptime) as core_uptime from coresystem
-      where time > now() - 10m` (db `core_status` — ACU 용 `acustatus` 와 분리, 2초 타임아웃). **`server_module.inc` 는 top-level
-      `require_once(openvpn.inc)` 라 API 컨텍스트에 fatal 위험 → 인라인 헬퍼로 회피.** -1/음수 센티널은
-      null 로 취급, 실패/데이터없음/10분 초과 stale → null degrade(예외 없음). SSH·sshpass·하드코딩
-      비밀번호 전부 제거(보안 개선).
-  - **코어 박스 writer(리포 밖 배포물, 두 형태 중 택1)** — 둘 다 `sensors` `Core N` 평균온도 +
-    `/proc/uptime` 정수 초를 로컬 InfluxDB `core_status.coresystem` 에 write. 읽힌 필드만 기록(실패 필드
-    생략 → `last()` 가 직전 정상값 유지):
-    - `tools/coresystem_influx_write.sh`: cron(매분) 셸. line protocol `coresystem core_temp=..,core_uptime=..i <ts>`
-      (precision=s), `curl -sS -m 2 --connect-timeout 2`. 의존: lm_sensors·curl.
-    - `tools/coresystem_influx_write.groovy`: **StreamSets Groovy Evaluator**(SDC 가 코어 박스에서 로컬
-      실행 전제). `sensors`/`/proc/uptime` 을 Groovy 로 읽어 HTTP POST(2초 타임아웃)로 write. 배치당 1회.
-      트리거/크론은 사용자 구성. 소수점 `Locale.US` 고정.
-  - **timestamp = 현재 시각을 5분(300초) 경계로 내림**(precision=s, sh·groovy 공통). 같은 5분 버킷은 동일
-    timestamp → InfluxDB 가 같은 포인트로 덮어씀(버킷당 1점). traffic(5분) 데이터와 정렬.
-  - 엔드포인트 `etc/inc/api/endpoints/APISystemRuntime.inc` (신규): `url=/api/v1/system/runtime`,
-    `get()` 만 정의. POST 없음.
-  - 웹루트 로더 `usr/local/www/api/v1/system/runtime/index.php` (신규): `APISystemRuntime()->listen()`.
-- **오토로드**: API 프레임워크(`api/framework/*`, 박스의 pfSense-API 패키지가 제공, 리포엔 없음)가
-  클래스명으로 모델을 오토로드 → 엔드포인트에서 모델 `require_once` 불필요.
-- **응답 예**: `{"code":200,"status":"ok","data":{"fw_uptime":274353,"core_temp":39.0,"core_uptime":1234567}}`.
-  코어 서버 도달 불가 시 `core_temp`/`core_uptime` 은 `null`(fw_uptime 은 정상).
-- **DB 스키마 정합(vessel_system_state)**: `core_temp`=FLOAT, `core_uptime`=INT, `fw_uptime`=INT,
-  `vessel_imo`=INT(유니크키). 파이프라인 바인딩 = core_temp `setDouble`, core_uptime/fw_uptime `setInt`.
-  **주의**: 파이프라인은 값 null 시 **-1 센티널**을 넣으므로 `core_uptime`/`fw_uptime` INT 컬럼은 반드시
-  **SIGNED**(부호 있음)여야 함(UNSIGNED 면 -1 저장 실패→행 롤백→데이터 미유입). core_temp FLOAT 는 무관.
-- **인증(중요)**: pfSense-API 는 GET 도 `client-id`/`client-token` 필요. 파이프라인 runtime GET 은
-  **URL 쿼리스트링**으로 전달(`?client-id=<fw_id>&client-token=<fw_password>`, URLEncoder 인코딩). 자격증명은
-  레코드 `fw_id`/`fw_password` 우선, 없으면 `gatewaystatusbody`(ping POST 가 쓰는 동일 자격) JSON 에서 추출·폴백.
-  (프레임워크가 GET payload=$_GET 에서 auth 를 읽으므로 **API 코드 변경 불필요**.) 누락 시 data 미유입의 원인이었음.
-- **StreamSets 파이프라인 연동(리포 밖 아티팩트)**: `[User Pipeline Smartbox Vessel Basic Query...]`
-  Groovy(`GroovyEvaluator_04`)에서 **SSH 코드 전부 제거** → `safeHttpGet(".../runtime?client-id=…&client-token=…")`
-  응답 `data`(객체)에서 `fw_uptime`/`core_temp`/`core_uptime` 추출해
-  `SynerSAT.vessel_system_state (vessel_imo, core_temp, core_uptime, fw_uptime)` 에 **upsert**
-  (`ON DUPLICATE KEY UPDATE` 3컬럼, vessel_imo 유니크키). **방어**: `data` 가 Map 이면 3필드, 스칼라
-  (구버전 API)면 fw_uptime 만; API 부재/비200/오류 시 셋 다 null → 있는 값만 저장, 전부 null 이면 skip.
-  기존 DB 트랜잭션 안에 통합.
-- **검증**: 모델 php -l 통과 / InfluxQL last() 쿼리·인라인 헬퍼(cp_tz 패턴 동일) / writer 셸
-  `bash -n` + sensors 파싱 단독 실행(4코어 평균 40.00, uptime 정수) / 파이프라인 JSON 유효.
-- **배포 정합성**:
-  - API 3파일 일괄(모델만 바뀜; 엔드포인트/로더 무변경). **sshpass 불필요**(제거됨).
-  - **InfluxDB 에 `core_status` DB 선생성 필요**: InfluxDB 1.x 는 write 시 DB 를 자동생성하지 않음
-    (없으면 404 "database not found"). 코어 박스에서 `influx -execute 'CREATE DATABASE core_status'` 1회.
-    (measurement `coresystem` 은 첫 write 시 자동 생성.)
-  - **코어 값 유입 전제 = 코어 박스에 writer(`tools/coresystem_influx_write.sh` 또는 `.groovy`) 설치**(lm_sensors·curl).
-    미설치/미실행이면 `coresystem` 데이터가 없어 API `core_*`=null → 파이프라인 -1 저장. (fw_uptime·파이프라인 자체는 정상.)
-  - pfSense 박스 → `192.168.209.210:8086`(InfluxDB) 도달 필요(기존 GPS/ACU 조회와 동일 경로라 이미 열림).
-  - 파이프라인은 SDC 재import + `vessel_system_state`/`vessel_imo` 유니크키 + **INT 컬럼 SIGNED** 필요(위 주의).
+### 46. GET `/api/v1/system/runtime` — fw_uptime(초)만 반환 (core_temp/core_uptime 은 메인서버 파이프라인 SSH) (develop 미커밋)
+- **최종 설계**: `/api/v1/system/runtime` GET → **pfSense uptime(초, 정수 스칼라)만** 반환.
+  `core_temp`/`core_uptime` 은 **API 가 다루지 않음** — 메인 서버 파이프라인이 코어 박스에 **직접 SSH** 로 취득(사용자 담당).
+- **이력(폐기)**: ① SSH-in-API(sshpass) → FreeBSD 미지원으로 폐기. ② InfluxDB 경유(코어가 InfluxDB write,
+  API 가 조회) → StreamSets 보안 제약(`.execute()`/파일읽기 차단)으로 코어측 writer 운용 불가 → **전면 폐기**.
+  InfluxDB 조회 로직·상수·writer 스크립트(`tools/coresystem_influx_write.{sh,groovy}`)·`core_status` DB 접근 모두 제거.
+- **구현 (pfSense-API 엔드포인트 3파일)**:
+  - 모델 `etc/inc/api/models/APISystemGetRuntime.inc`: `action()` 이 `__get_uptime_seconds()`
+    (=`sysctl -n kern.boottime` 의 `sec` 파싱 → `time()-boot`, 실패/음수 `0`) 를 **스칼라**로 반환. core 로직 없음.
+  - 엔드포인트 `etc/inc/api/endpoints/APISystemRuntime.inc`: `url=/api/v1/system/runtime`, `get()` 만.
+  - 웹루트 로더 `usr/local/www/api/v1/system/runtime/index.php`: `APISystemRuntime()->listen()`.
+- **응답 예**: `{"code":200,"status":"ok","data":274353}` (초).
+- **오토로드**: 프레임워크(`api/framework/*`, 박스 pfSense-API 패키지 제공)가 클래스명으로 모델 오토로드
+  → 엔드포인트에서 모델 `require_once` 불필요.
+- **인증**: pfSense-API 는 GET 도 `client-id`/`client-token` 필요 → 파이프라인이 URL 쿼리스트링으로 전달
+  (`?client-id=<fw_id>&client-token=<fw_password>`). 프레임워크가 GET `$_GET` 에서 auth 를 읽음(API 코드 무변경).
+- **파이프라인(리포 밖, 사용자 담당)**: `SynerSAT.vessel_system_state (vessel_imo, core_temp, core_uptime,
+  fw_uptime)` 적재 — `fw_uptime` 은 이 runtime API 에서, **`core_temp`/`core_uptime` 은 코어 박스에 직접
+  SSH** 로 취득해 저장(메인 서버 파이프라인 측 구성). DB: core_temp FLOAT / core_uptime·fw_uptime INT /
+  vessel_imo 유니크키. null 시 -1 센티널을 쓰면 INT 컬럼은 **SIGNED** 필요.
+- **검증**: 모델 php -l 통과. InfluxDB/writer 관련 파일·로직 전면 제거 확인.
+- **배포 정합성**: API 3파일(모델만 변경). **sshpass·InfluxDB·`core_status` DB·writer 스크립트 전부 불필요.**
 
 ### 47. 게이트웨이 저장 시 [CP Routing] 룰 자동 재동기화 (게이트웨이 이름 변경 대응) (develop 미커밋)
 - **배경/요구**: 게이트웨이 이름을 바꾸면 `[CP Routing]` floating 룰이 **옛 이름(`cp_gw_{oldname}`)으로
