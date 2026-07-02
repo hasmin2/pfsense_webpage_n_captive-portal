@@ -1331,9 +1331,11 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **남은 미해결(후속)**: `fw_uptime = 0` 전 행 — runtime API 미배포/미응답 추정. 한 척에서
   `curl "http://<vpnIp>/api/v1/system/runtime?client-id=<fw_id>&client-token=<fw_password>"` → 숫자면 정상,
   404=엔드포인트 미배포, 401/403=자격증명. API 3파일 배포 후 재확인 필요.
-- **릴리스**: 이 배치(#41~#46) 패치노트 헤더 = **`2026-07-02 Update`** (버전번호 제거, 날짜+제목 형식).
-  이를 위해 `release_note.php` 파서(`rn_is_version_header`)가 기존 `X.Y.Z (날짜)` 외 **`YYYY-MM-DD [제목]`**
-  헤더도 인식하도록 확장(날짜형은 통째로 version 표시, date 빈값). `usr/local/www/release_note.md` + `release_note.php` 일괄.
+- **릴리스**: 이 배치(#41~#46) 패치노트 = 헤더 **`2026-07-02 Update`**(버전번호 제거, 날짜+제목) +
+  서브라인 **`Beta 1.1.49-Beta · Stable: 1.1.3-Stable`**(베타/스테이블 버전은 서브라인에 유지). 이를 위해
+  `release_note.php` 파서(`rn_is_version_header`)가 기존 `X.Y.Z (날짜)` 외 **`YYYY-MM-DD [제목]`** 헤더도
+  인식하도록 확장(날짜형은 통째로 version 표시, date 빈값; 서브라인은 기존대로 헤더 다음 첫 줄).
+  `usr/local/www/release_note.md` + `release_note.php` 일괄 배포.
 
 ### 47. 게이트웨이 저장 시 [CP Routing] 룰 자동 재동기화 (게이트웨이 이름 변경 대응) (develop 미커밋)
 - **배경/요구**: 게이트웨이 이름을 바꾸면 `[CP Routing]` floating 룰이 **옛 이름(`cp_gw_{oldname}`)으로

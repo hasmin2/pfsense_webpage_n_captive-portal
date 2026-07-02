@@ -3,6 +3,7 @@ BlueWave Link — Release Notes
 Developed by SynerSAT Korea
 
 2026-07-02 Update
+Beta 1.1.49-Beta · Stable: 1.1.3-Stable
 
 - NEW: Dark mode — a sidebar toggle cycles System / GPS / Light / Dark. "System"
   follows your device's light/dark setting; "GPS" automatically switches to dark
