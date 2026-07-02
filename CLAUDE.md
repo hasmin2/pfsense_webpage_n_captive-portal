@@ -1319,6 +1319,20 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   - 전제: **메인 SDC 호스트에 `sshpass` 설치** + SDC→각 선박 `vpnIp` SSH 도달. per-record 실행이라 SSH 최대 ~5초/척.
 - **검증**: 모델 php -l 통과. InfluxDB/writer 관련 파일·로직 전면 제거 확인.
 - **배포 정합성**: API 3파일(모델만 변경). **sshpass·InfluxDB·`core_status` DB·writer 스크립트 전부 불필요.**
+- **timestamp**: 파이프라인이 `vessel_system_state.timestamp` = 레코드 시각 **5분(300000ms) 내림**으로 적재
+  (`(datetime.time).intdiv(300000L)*300000L`, `setTimestamp`). **테이블에 `timestamp`(DATETIME) 컬럼 필요**
+  (없으면 `Field 'timestamp' doesn't have a default value` — 신버전 파이프라인 재import 필요).
+- **core_uptime "이상값" 오해 해소(선상 실측 결론)**: 한 선박 `core_uptime≈15,290,432`(≈177일)이 과대해 보였으나
+  **버그 아님** — `cat /proc/uptime` 첫 필드(=커널 monotonic uptime) 그대로이며, `last reboot`(utmp, wall-clock)
+  이 **부팅 2026-01-06 → 176일 23시간(≈15,290,880초)** 로 **/proc/uptime 과 초 단위까지 일치**. 현재 날짜
+  2026-07-02 기준 실제로 ~177일 가동. (앞서 본 `10584`(3h)은 **다른 선박의, 방금 재부팅된 core 박스** — 전
+  core 박스 hostname 이 `core` 라 혼동.) clocksource sysfs 부재는 컨테이너류 환경 탓이고 dmesg TSC 정상
+  (`Switched to clocksource tsc`, unstable 경고 없음). → **파싱·박스·clock 모두 정상, core_uptime 은 초 단위 참값.**
+- **남은 미해결(후속)**: `fw_uptime = 0` 전 행 — runtime API 미배포/미응답 추정. 한 척에서
+  `curl "http://<vpnIp>/api/v1/system/runtime?client-id=<fw_id>&client-token=<fw_password>"` → 숫자면 정상,
+  404=엔드포인트 미배포, 401/403=자격증명. API 3파일 배포 후 재확인 필요.
+- **릴리스**: 이 배치(#41~#46) 패치노트 = **1.1.5 (2026-07-02) / Beta 1.1.49-Beta · Stable: 1.1.3-Stable**
+  (`usr/local/www/release_note.md`).
 
 ### 47. 게이트웨이 저장 시 [CP Routing] 룰 자동 재동기화 (게이트웨이 이름 변경 대응) (develop 미커밋)
 - **배경/요구**: 게이트웨이 이름을 바꾸면 `[CP Routing]` floating 룰이 **옛 이름(`cp_gw_{oldname}`)으로
