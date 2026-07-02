@@ -1305,10 +1305,14 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
       `require_once(openvpn.inc)` 라 API 컨텍스트에 fatal 위험 → 인라인 헬퍼로 회피.** -1/음수 센티널은
       null 로 취급, 실패/데이터없음/10분 초과 stale → null degrade(예외 없음). SSH·sshpass·하드코딩
       비밀번호 전부 제거(보안 개선).
-  - **코어 박스 writer(리포 밖 배포물)** `tools/coresystem_influx_write.sh`: CentOS 코어 박스에서 크론
-    (매분) — `sensors` `Core N` 평균온도 + `/proc/uptime` 정수 초를 로컬 InfluxDB `acustatus.coresystem`
-    에 line protocol 로 write(`coresystem core_temp=..,core_uptime=..i <ts>`, precision=s). 읽힌 필드만
-    기록(실패 필드 생략 → `last()` 가 직전 정상값 유지). `curl -sS -m 2 --connect-timeout 2`. 의존: lm_sensors·curl.
+  - **코어 박스 writer(리포 밖 배포물, 두 형태 중 택1)** — 둘 다 `sensors` `Core N` 평균온도 +
+    `/proc/uptime` 정수 초를 로컬 InfluxDB `acustatus.coresystem` 에 write. 읽힌 필드만 기록(실패 필드
+    생략 → `last()` 가 직전 정상값 유지):
+    - `tools/coresystem_influx_write.sh`: cron(매분) 셸. line protocol `coresystem core_temp=..,core_uptime=..i <ts>`
+      (precision=s), `curl -sS -m 2 --connect-timeout 2`. 의존: lm_sensors·curl.
+    - `tools/coresystem_influx_write.groovy`: **StreamSets Groovy Evaluator**(SDC 가 코어 박스에서 로컬
+      실행 전제). `sensors`/`/proc/uptime` 을 Groovy 로 읽어 HTTP POST(2초 타임아웃)로 write. timestamp
+      생략(InfluxDB 서버시각 부여 → 코어 시계오차 무관), 소수점 `Locale.US` 고정. 배치당 1회. 트리거/크론은 사용자 구성.
   - 엔드포인트 `etc/inc/api/endpoints/APISystemRuntime.inc` (신규): `url=/api/v1/system/runtime`,
     `get()` 만 정의. POST 없음.
   - 웹루트 로더 `usr/local/www/api/v1/system/runtime/index.php` (신규): `APISystemRuntime()->listen()`.
