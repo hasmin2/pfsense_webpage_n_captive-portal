@@ -1289,20 +1289,26 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `write_config()` → 동시 PW 변경 등과 lost-update 가능(#22/#30 패턴). 필요 시 동일 락 패턴으로 하드닝.
 - **검증**: php -l 통과(crew_account.php·prepaid_account.php). 배포: 두 www 파일(+.inc 는 무변경).
 
-### 46. GET `/api/v1/system/runtime` — fw_uptime(초) + core_temp/core_uptime(코어 서버 SSH) 반환 + 파이프라인 적재 (develop 미커밋)
-- **요구**: `/api/v1/system/runtime` GET 시 (1) pfSense 부팅 이후 uptime(초), (2) 선내 코어 서버(CentOS)
-  `sensors` 온도 평균, (3) 코어 서버 `/proc/uptime`(초)를 **API(PHP/inc) 안에서 읽어** 함께 반환.
-  코어 조회는 **파이프라인이 아니라 pfSense API 가** 수행(사용자 명시). data 는 스칼라 → **객체**로 변경됨.
+### 46. GET `/api/v1/system/runtime` — fw_uptime(초) + core_temp/core_uptime(코어 서버 InfluxDB) 반환 + 파이프라인 적재 (develop 미커밋)
+- **요구/이력**: `/api/v1/system/runtime` GET 이 (1) pfSense uptime(초), (2) 선내 코어 서버(CentOS) CPU
+  온도, (3) 코어 uptime(초)를 함께 반환. **최초 SSH(sshpass) 로 코어 조회 → FreeBSD/pfSense 엔 sshpass
+  가 없어 실패** → **D안: 코어 박스가 InfluxDB 에 기록하고 API 는 기존 InfluxDB 조회로 읽음**으로 전환
+  (코드베이스 InfluxDB 읽기/쓰기 패턴 멀티에이전트 전수조사 후 확정). data 는 객체.
 - **구현 (기존 pfSense-API 엔드포인트 패턴 3파일)**:
   - 모델 `etc/inc/api/models/APISystemGetRuntime.inc` (신규): `action()` 이
     `{fw_uptime, core_temp, core_uptime}` 반환.
     - `fw_uptime`(int) = `sysctl -n kern.boottime` 의 `sec` 파싱 → `time()-boot` 경과초. 실패/음수 `0`.
-    - `core_temp`(float|null)/`core_uptime`(int|null, 초) = `__get_core_state()`: **sshpass 로 코어 서버
-      (`192.168.209.210`, `synersatroot`/`P@ssw0rd`, 상수 하드코딩) SSH** → `sensors; echo ===UPTIME===;
-      cat /proc/uptime` 1회 실행. `Core N: +NN.N` 정규식 평균(℃, 소수2), uptime 첫 필드 **정수 초**
-      (DB `core_uptime`=INT). **어떤 실패
-      (sshpass/ssh 미설치·연결 실패·파싱 실패)에도 예외 없이 null 로 degrade**(`file_exists` 가드 +
-      `escapeshellarg` + `ConnectTimeout=10` + `2>/dev/null`).
+    - `core_temp`(float|null)/`core_uptime`(int|null, 초) = `__get_core_state()` → **로컬 InfluxDB 조회**
+      (`__influx_query_latest`, self-contained curl+InfluxQL, `cp_tz_offset_update.php` 패턴 동일).
+      쿼리 `select last(core_temp) as core_temp, last(core_uptime) as core_uptime from coresystem
+      where time > now() - 10m` (db `acustatus`, 2초 타임아웃). **`server_module.inc` 는 top-level
+      `require_once(openvpn.inc)` 라 API 컨텍스트에 fatal 위험 → 인라인 헬퍼로 회피.** -1/음수 센티널은
+      null 로 취급, 실패/데이터없음/10분 초과 stale → null degrade(예외 없음). SSH·sshpass·하드코딩
+      비밀번호 전부 제거(보안 개선).
+  - **코어 박스 writer(리포 밖 배포물)** `tools/coresystem_influx_write.sh`: CentOS 코어 박스에서 크론
+    (매분) — `sensors` `Core N` 평균온도 + `/proc/uptime` 정수 초를 로컬 InfluxDB `acustatus.coresystem`
+    에 line protocol 로 write(`coresystem core_temp=..,core_uptime=..i <ts>`, precision=s). 읽힌 필드만
+    기록(실패 필드 생략 → `last()` 가 직전 정상값 유지). `curl -sS -m 2 --connect-timeout 2`. 의존: lm_sensors·curl.
   - 엔드포인트 `etc/inc/api/endpoints/APISystemRuntime.inc` (신규): `url=/api/v1/system/runtime`,
     `get()` 만 정의. POST 없음.
   - 웹루트 로더 `usr/local/www/api/v1/system/runtime/index.php` (신규): `APISystemRuntime()->listen()`.
@@ -1312,9 +1318,11 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   코어 서버 도달 불가 시 `core_temp`/`core_uptime` 은 `null`(fw_uptime 은 정상).
 - **DB 스키마 정합(vessel_system_state)**: `core_temp`=FLOAT, `core_uptime`=INT, `fw_uptime`=INT,
   `vessel_imo`=INT(유니크키). 파이프라인 바인딩 = core_temp `setDouble`, core_uptime/fw_uptime `setInt`.
+  **주의**: 파이프라인은 값 null 시 **-1 센티널**을 넣으므로 `core_uptime`/`fw_uptime` INT 컬럼은 반드시
+  **SIGNED**(부호 있음)여야 함(UNSIGNED 면 -1 저장 실패→행 롤백→데이터 미유입). core_temp FLOAT 는 무관.
 - **인증(중요)**: pfSense-API 는 GET 도 `client-id`/`client-token` 필요. 파이프라인 runtime GET 은
-  **URL 쿼리스트링**으로 전달(`?client-id=<fw_id>&client-token=<fw_pw>`, URLEncoder 인코딩). 자격증명은
-  레코드 `fw_id`/`fw_pw` 우선, 없으면 `gatewaystatusbody`(ping POST 가 쓰는 동일 자격) JSON 에서 추출·폴백.
+  **URL 쿼리스트링**으로 전달(`?client-id=<fw_id>&client-token=<fw_password>`, URLEncoder 인코딩). 자격증명은
+  레코드 `fw_id`/`fw_password` 우선, 없으면 `gatewaystatusbody`(ping POST 가 쓰는 동일 자격) JSON 에서 추출·폴백.
   (프레임워크가 GET payload=$_GET 에서 auth 를 읽으므로 **API 코드 변경 불필요**.) 누락 시 data 미유입의 원인이었음.
 - **StreamSets 파이프라인 연동(리포 밖 아티팩트)**: `[User Pipeline Smartbox Vessel Basic Query...]`
   Groovy(`GroovyEvaluator_04`)에서 **SSH 코드 전부 제거** → `safeHttpGet(".../runtime?client-id=…&client-token=…")`
@@ -1323,11 +1331,14 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   (`ON DUPLICATE KEY UPDATE` 3컬럼, vessel_imo 유니크키). **방어**: `data` 가 Map 이면 3필드, 스칼라
   (구버전 API)면 fw_uptime 만; API 부재/비200/오류 시 셋 다 null → 있는 값만 저장, 전부 null 이면 skip.
   기존 DB 트랜잭션 안에 통합.
-- **검증**: 모델 php -l 통과 + core 파싱(평균℃/uptime 초) 단독 실행 확인 + 파이프라인 JSON 유효성·SSH
-  잔재 0·중괄호 균형 검사 통과.
-- **배포 정합성**: API 3파일 일괄. **코어 조회는 pfSense 박스에 `sshpass`(`/usr/local/bin/sshpass`) 설치 +
-  박스→`192.168.209.210:22` 도달 필요**(없으면 core_* 만 null 로 degrade, fw_uptime·파이프라인 무영향).
-  파이프라인은 SDC 에 재import + `vessel_system_state`/`vessel_imo` 유니크키 필요(테이블 스키마 사용자 관리).
+- **검증**: 모델 php -l 통과 / InfluxQL last() 쿼리·인라인 헬퍼(cp_tz 패턴 동일) / writer 셸
+  `bash -n` + sensors 파싱 단독 실행(4코어 평균 40.00, uptime 정수) / 파이프라인 JSON 유효.
+- **배포 정합성**:
+  - API 3파일 일괄(모델만 바뀜; 엔드포인트/로더 무변경). **sshpass 불필요**(제거됨).
+  - **코어 값 유입 전제 = 코어 박스에 `tools/coresystem_influx_write.sh` 크론 설치**(lm_sensors·curl).
+    미설치면 `coresystem` measurement 가 없어 API `core_*`=null → 파이프라인 -1 저장. (fw_uptime·파이프라인 자체는 정상.)
+  - pfSense 박스 → `192.168.209.210:8086`(InfluxDB) 도달 필요(기존 GPS/ACU 조회와 동일 경로라 이미 열림).
+  - 파이프라인은 SDC 재import + `vessel_system_state`/`vessel_imo` 유니크키 + **INT 컬럼 SIGNED** 필요(위 주의).
 
 ### 47. 게이트웨이 저장 시 [CP Routing] 룰 자동 재동기화 (게이트웨이 이름 변경 대응) (develop 미커밋)
 - **배경/요구**: 게이트웨이 이름을 바꾸면 `[CP Routing]` floating 룰이 **옛 이름(`cp_gw_{oldname}`)으로
@@ -1351,6 +1362,13 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **범위(의도적 제외)**: 이번 변경은 **CP 룰 동기화만**. 유저 `varusersterminaltype`(옛 게이트웨이 이름
   바인딩) 이관은 **미포함**(사용자가 별도 처리). rename 실운영 시 유저 terminal_type 을 새 이름으로 바꾸지
   않으면 해당 유저는 #38(antenna offline)로 로그인 차단 + 라우팅 fail-closed 되므로 GUI 에서 별도 갱신 필요.
+- **삭제 경로(의도적 미훅 — 사용자 결정)**: 게이트웨이 **삭제**는 목록 페이지 `system_gateways.php`
+  (스톡, 리포 밖)에서 처리되어 이 훅이 안 걸린다. **삭제 즉시 동기화는 넣지 않음**. 다만
+  `cp_refresh_pass_rules()`가 편집 대상이 아니라 **현존 게이트웨이 기준 전역 diff**(need_remove)라,
+  삭제된 게이트웨이의 고아 `cp_gw_*` 룰은 **이후 아무 게이트웨이나 저장/편집하면** 함께 정리됨
+  (+ CP 재구성/부팅 시 `captiveportal_configure` 훅도 정리). **엣지**: 마지막(관리대상) 게이트웨이까지
+  삭제해 목록이 비면 `cp_refresh_pass_rules` 의 `if (empty($all_gws)) return;` 가드로 정리 안 됨
+  (게이트웨이가 하나라도 다시 존재해야 정리).
 - **검증**: `php -l` 통과.
 - **배포 정합성**: `system_gateways_edit.php` + `captiveportal.inc`(cp_sync_routing_tables 정의) **같은
   리비전 일괄** 배포(가드 있어 fatal 은 없으나 미탑재 시 동기화 skip).
