@@ -1331,8 +1331,9 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **남은 미해결(후속)**: `fw_uptime = 0` 전 행 — runtime API 미배포/미응답 추정. 한 척에서
   `curl "http://<vpnIp>/api/v1/system/runtime?client-id=<fw_id>&client-token=<fw_password>"` → 숫자면 정상,
   404=엔드포인트 미배포, 401/403=자격증명. API 3파일 배포 후 재확인 필요.
-- **릴리스**: 이 배치(#41~#46) 패치노트 = **1.1.5 (2026-07-02) / Beta 1.1.49-Beta · Stable: 1.1.3-Stable**
-  (`usr/local/www/release_note.md`).
+- **릴리스**: 이 배치(#41~#46) 패치노트 헤더 = **`2026-07-02 Update`** (버전번호 제거, 날짜+제목 형식).
+  이를 위해 `release_note.php` 파서(`rn_is_version_header`)가 기존 `X.Y.Z (날짜)` 외 **`YYYY-MM-DD [제목]`**
+  헤더도 인식하도록 확장(날짜형은 통째로 version 표시, date 빈값). `usr/local/www/release_note.md` + `release_note.php` 일괄.
 
 ### 47. 게이트웨이 저장 시 [CP Routing] 룰 자동 재동기화 (게이트웨이 이름 변경 대응) (develop 미커밋)
 - **배경/요구**: 게이트웨이 이름을 바꾸면 `[CP Routing]` floating 룰이 **옛 이름(`cp_gw_{oldname}`)으로
@@ -1413,8 +1414,9 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - [ ] #37 검증(선상): 사이드바 "Release Note" 메뉴 → 1.1.3/1.1.2 카드 정상 렌더 / **3파일 일괄 배포**
   (common_ui.inc + release_note.php + release_note.md; `.md` 누락 시 "No release notes").
 - [ ] #37 유지보수: 패치노트 갱신은 **단일 소스 `usr/local/www/release_note.md` 한 파일만 편집**
-  (루트 RELEASENOTE.md 는 제거됨). 양식 = `X.Y.Z (날짜)` 헤더 + 자유 양식 서브라인(Beta/Stable 등) +
-  `- TAG:` 불릿. **커밋만으로는 선상 미반영 — 별도 배포 필요**(deploy 가 usr/local/www/ 트리를 박스로 올림).
+  (루트 RELEASENOTE.md 는 제거됨). 양식 = 헤더(`X.Y.Z (날짜)` **또는** 날짜형 `YYYY-MM-DD [제목]` — `1.1.5(#46)`
+  에서 파서 확장) + 선택적 서브라인(Beta/Stable 등) + `- TAG:`(NEW/CHANGED/FIXED/REMOVED) 불릿.
+  **커밋만으로는 선상 미반영 — 별도 배포 필요**(deploy 가 usr/local/www/ 트리를 박스로 올림).
 - [x] **#36 커밋 완료(develop)**: 3D 스카이돔 바닥 세계지도를 dome 과 함께 yaw 회전 — develop `82fc3d4`. (main/prod 미반영)
 - [ ] #36 검증(선상): 3D 돔 드래그/자동궤도 회전 시 바닥 세계지도가 와이어·위성·본선·NESW 와 **함께 회전**·정합 / GPS 없을 때 흐린 채움 유지.
 - [x] **#35 커밋 완료(develop)**: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업 — develop `c72b1d2`→최종 `2c23248`. (main/prod 미반영 — 명시 지시 시 병합)

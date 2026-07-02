@@ -78,10 +78,18 @@ function rn_parse($md) {
     return array('header' => $header, 'versions' => $versions);
 }
 
-// 버전 헤더 줄: "X.Y[.Z][-suffix] (날짜)" — 날짜 괄호가 있어야 서브라인과 구분됨
+// 헤더 줄 판정 — 두 형식 허용:
+//   (1) 버전형 "X.Y[.Z][-suffix] (날짜)" (날짜 괄호가 서브라인과 구분)
+//   (2) 날짜형 "YYYY-MM-DD [제목]" (버전번호 없이 날짜+제목만; 예: "2026-07-02 Update")
 function rn_is_version_header($s) {
-    return (bool) preg_match(
-        '/^\d+\.\d+(?:\.\d+)?(?:-[A-Za-z0-9]+)?\s*\([^)]+\)\s*$/', trim($s));
+    $s = trim($s);
+    if (preg_match('/^\d+\.\d+(?:\.\d+)?(?:-[A-Za-z0-9]+)?\s*\([^)]+\)\s*$/', $s)) {
+        return true;
+    }
+    if (preg_match('/^\d{4}-\d{2}-\d{2}\b/', $s)) {
+        return true;
+    }
+    return false;
 }
 
 // 헤더 줄에서 "(날짜)" 분리 → array(version, date)
