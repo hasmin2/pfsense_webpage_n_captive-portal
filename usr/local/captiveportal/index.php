@@ -613,16 +613,15 @@ if (is_array($sessionInfo) && array_key_exists(5, $sessionInfo)) {
 	$connectedUser = (string)($sessionInfo[4] ?? '');
 }
 
-// Case 2: 정확 일치(IP+MAC) 실패 시, 동일 MAC·다른 IP 세션을 신IP 로 마이그레이션한다.
-// (DHCP 등으로 IP 만 바뀐 같은 기기 → 재인증 없이 자동 로그인)
-// quota 초과 사용자는 마이그레이션 거부 → 아래 로그인 프롬프트로 떨어진다.
-if ($connectedSession === '' && $macfilter && !empty($clientmac)) {
-	$migrated = captiveportal_try_migrate_session_by_mac($clientip, $clientmac);
-	if (is_array($migrated) && array_key_exists(5, $migrated)) {
-		$connectedSession = (string)$migrated[5];
-		$connectedUser = (string)($migrated[4] ?? '');
-	}
-}
+// Case 2 (제거됨 — 1b): 과거에는 IP+MAC 정확일치 실패 시 "동일 MAC·다른 IP" 세션을
+// 신IP 로 자동 이관해 재인증 없이 통과시켰다(#4 IP변경 자동로그인). 그러나 공유기 NAT /
+// MAC 클로닝 / 랜덤 MAC 충돌로 "같은 MAC = 서로 다른 기기·유저"가 되면, MAC 만으로 매칭하는
+// 자동이관이 ① 남의 인증 세션을 자격증명 없이 탈취하고 ② 세션을 기기 IP 사이에서 핑퐁시켜
+// 카운터 리셋·끊김을 유발했다. MAC 만으로는 "같은 기기 IP변경" vs "다른 기기"를 구분할 수
+// 없으므로 자동이관을 폐지한다. IP 가 바뀌면 아래 $connectedSession==='' 분기로 떨어져
+// 로그인 페이지가 뜨고, 각 사용자는 자기 자격증명으로 POST 로그인해 자기 세션을 받는다.
+// (기존 stale 세션은 idle_timeout / noconcurrentlogins='last' 재로그인 시 정리됨.)
+// 재활성화하려면 captiveportal_try_migrate_session_by_mac() 를 쿠키/토큰 매칭과 함께 쓸 것.
 
 if ($connectedSession==='') {
 

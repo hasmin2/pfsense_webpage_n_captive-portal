@@ -104,20 +104,56 @@ document.addEventListener("DOMContentLoaded", function() {
     const gmtText = document.getElementById("gmt-modify");
     const gmtForm = document.getElementById("gmtForm");
     const gmtVal  = document.getElementById("gmtVal");
-    gmtText.addEventListener("click", function() {
-        let current = parseInt(gmtText.innerText.replace("GMT", "").trim()) || 0;
-        let input = prompt("Please input time difference regarding current location (-11 ~ 12):", current);
-        if (input !== null) {
-            let val = parseInt(input, 10);
-            if (!isNaN(val) && val >= -11 && val <= 12) {
-                gmtText.innerText = "GMT " + val;
-                gmtVal.value = val;      // hidden input 값 세팅
-                gmtForm.submit();        // form 전송 (페이지 이동 발생)
-            } else {
-                alert("Please input correct range of number (-11 ~ 12)");
-            }
+    if (!gmtText || !gmtForm || !gmtVal) { return; }
+
+    const gmtSelect = document.getElementById("gmtSelect");
+    const gmtApply  = document.getElementById("gmtApply");
+
+    // 숫자 → 저장 포맷("9","9.5","-3.5"). 정수는 소수점 없이.
+    function fmtOffset(n) { return (Math.floor(n) === n) ? String(n) : String(n); }
+    // 드롭다운 라벨: "GMT 0" / "GMT +9" / "GMT +9.5" / "GMT -3.5"
+    function labelOffset(n) {
+        if (n === 0) { return "GMT 0"; }
+        return "GMT " + (n > 0 ? "+" : "") + fmtOffset(n);
+    }
+    // 현재 표시값 → 0.5 스냅된 숫자
+    function currentOffset() {
+        var v = parseFloat(String(gmtText.innerText).replace(/GMT/i, "").trim());
+        if (isNaN(v)) { v = 0; }
+        v = Math.round(v * 2) / 2;
+        if (v < -11) { v = -11; }
+        if (v > 12)  { v = 12; }
+        return v;
+    }
+
+    // -11 ~ +12, 30분(0.5) 단위 select 채우기 (1회)
+    if (gmtSelect && gmtSelect.options.length === 0) {
+        for (var n = -11; n <= 12 + 1e-9; n += 0.5) {
+            var nn = Math.round(n * 2) / 2;          // FP 누적 방지
+            var o = document.createElement("option");
+            o.value = fmtOffset(nn);
+            o.textContent = labelOffset(nn);
+            gmtSelect.appendChild(o);
         }
+    }
+
+    // "GMT n" 클릭 → 테마 팝업 열기(현재값 선택)
+    gmtText.addEventListener("click", function() {
+        if (gmtSelect) { gmtSelect.value = fmtOffset(currentOffset()); }
+        if (typeof popOpenAndDim === "function") { popOpenAndDim("pop-gmt", true); }
     });
+
+    // Apply → hidden form 제출(POST gmt) → index.php 가 스냅/정규화 후 저장
+    if (gmtApply && gmtSelect) {
+        gmtApply.addEventListener("click", function() {
+            var val = parseFloat(gmtSelect.value);
+            if (isNaN(val) || val < -11 || val > 12) { return; }
+            val = Math.round(val * 2) / 2;
+            gmtText.innerText = "GMT " + fmtOffset(val);  // 제출 전 즉시 반영(리로드로 최종 갱신)
+            gmtVal.value = fmtOffset(val);
+            gmtForm.submit();
+        });
+    }
 });
 
 

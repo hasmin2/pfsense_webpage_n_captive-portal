@@ -11,9 +11,9 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `10aeaea` | **#1~#33 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강 — 커밋 `10aeaea`) |
-| `main` | `775066c` | **#1~#33 전부 반영 완료** (merge 커밋 `db8be52` + docs `775066c`, develop 트리와 콘텐츠 동일). 2026-06-16 develop→main 일괄 통합 |
-| `prod` | `4eb63ac` | **#1~#33 전부 반영** (merge 커밋 `4eb63ac`). 2026-06-16 main→prod 배포 |
+| `develop` | `66ebfd7` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경)(`c9bd917`); #40: OpenVPN 재시작 크론을 watchdog 으로 안정화 — per-client·hang reap·비블로킹 락(try_lock)·ping timeout 바운드·위성 디바운스·로그 가시화 — 커밋 `66ebfd7`; #41: 다크모드 System(OS)/GPS(일출일몰 civil twilight, 박스 UTC 판정)/Light/Dark 4-state·9페이지공통(print_css_n_head)·dark.css·cp_daynight.inc+크론·외부 day/night API 삭제(`ab95701`·`81c9423`·`e089710`); #42: Daily usage 막대그래프(InfluxDB 일별 rx+tx, This month 기본·MB meter, `ab95701`); #43: GMT 타임존 테마 팝업 + 30분(0.5) 단위 + cp_tz 가드 truthy(`ab95701`); #44: GMT 저장 시 전역 `$g` 오염→웹루트 숫자폴더+config.xml 덤프 버그 수정(`$g`→`$gmt_in`, 보안, `ab95701`)) |
+| `main` | `369da8e` | **#1~#34 전부 반영 완료** (커밋 `369da8e`). 2026-06-16 develop→main 일괄 통합 |
+| `prod` | `7a7195f` | **#1~#34 전부 반영** (커밋 `7a7195f`). 2026-06-16 main→prod 배포 |
 
 > **develop 최근 작업 묶음(#13확장·#15~#17)**: 배포 시 구룰 자동 purge + 로그인 유지 마이그레이션
 > (`4df5de3`), phantom CP zone 제거·즉시정리(`9bc6053`·`9476e47`), getsession 무효리셋 가드 +
@@ -149,6 +149,9 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   - `captiveportal.inc`: `datacounter_kicklog/disconnect_user/process_kick_spool` 함수 3개 제거
 
 ### 4. IP 변경 시 자동 로그인 미동작 (develop 반영)
+> ⚠️ **#39(1b)로 동작 변경됨**: 아래 MAC 기반 자동이관(`try_migrate_session_by_mac`)은 공유기 NAT/
+> MAC클론 시 세션 탈취·핑퐁을 유발해 **폐지**됨. 현재 IP 변경 시 **자동로그인 안 하고 로그인 페이지로
+> 유도**(재로그인 시 자기 세션). 상세는 #39.
 - **원인**: `already_connected()`가 IP+MAC 정확 일치만 검사 → IP 바뀌면 재로그인 프롬프트
 - **수정**:
   - `captiveportal_migrate_session_ip()`: ipfw/pf/DB를 신IP로 일괄 갱신 (sessionid 유지)
@@ -969,6 +972,100 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - 검증: php -l + 단위/런타임 하네스(다건 수집·키보호·방어정규화·timeperiod 분해/케이스수렴·del 재사용·폴백) 통과.
 - **배포 정합성**: 5파일 일괄(APIFreeRadiusUser{Create,Update,Delete}.inc + manage_crew_wifi_account.inc + crew_account.php).
 
+### 34. API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정 (develop `92ae399` / main `369da8e` / prod `7a7195f`)
+- **israndompw true/false 정규화 (API + 웹 공통)**: 기존 `"randpwd"` 문자열 값을 `true`/`false` 불리언으로 전환.
+  PHP 함정(`"false"` 문자열은 truthy) 대비 명시 falsy 목록 `['','0','false','no','off']` 적용.
+  구값 `"randpwd"` 는 truthy 라 **자동 하위호환** 유지.
+  - `manage_crew_wifi_account.inc` `create_wifi_user`: `if ($israndompw === "randpwd")` → `$do_randpw` 정규화 판정.
+  - `crew_account.php`: checkbox `value="randpwd"` → `value="true"`.
+  - `APIFreeRadiusUserCreate.inc` 단건 경로: `__validate_username()` 내 `israndompw` 주입 로직 신규 추가
+    (6자리 숫자 난수 생성, `create_wifi_user` 와 동일 알고리즘). bulk 경로는 `create_wifi_user` 내부가 처리.
+  - `APIFreeRadiusUserUpdate.inc` `update_userinfo()`: `israndompw=true` → 사용자마다 독립 6자리 난수 생성,
+    `israndompw=false` → 비밀번호를 `"1111"` 로 초기화(명시적 리셋), `israndompw` 미지정 → 비밀번호 무변경.
+- **Update `freeradius_lastbasedata` timerange 폴백 + foreach 버그 수정** (`APIFreeRadiusUserUpdate.inc`):
+  - 기존: `freeradius_lastbasedata`(MB 단위 파일 직접 쓰기) 블록이 `foreach($userentry)` 루프 **안**에 있어
+    config 키(~20개) 순회마다 파일을 N번 반복 open·write. 또한 `maxtotaloctetstimerange` 가 페이로드에 없으면
+    동작 안 됨.
+  - 수정: 블록을 foreach **밖**(루프 종료 후)으로 이동. `timerange` 는 페이로드 미포함 시 **기존 config 값
+    자동 폴백**(`varusersmaxtotaloctetstimerange`).
+- **#23 step3-A radcheck 동기화 (Create 단건 + Update israndompw 경로)**:
+  - Create 단건: `action()` 에서 `freeradius_radcheck_sync_users()` 호출(비밀번호 있을 때).
+  - Update: `israndompw` 명시 시(true→난수/false→1111) `_radcheck_entries` 누적 → `action()` 에서 일괄 sync.
+- **Topup delta 가감 (`APIFreeRadiusUserTopup.inc`)**:
+  - 신규 필드 `freeradius_lastbasedata`(MB 단위 정수, 양수=+, 음수=-): used-octets **베이스 파일**만 직접 수정.
+    세션 파일(`used-octets-{user}-{SID}`)은 건드리지 않음 → datacounter_auth.sh 합산이므로 delta 즉시 반영.
+    하한 0(음수 방지). 기존 태그명 `freeradius_usageadjust` 에서 변경.
+  - `freeradius_maxtotaloctets`(쿼터 증감)와 `freeradius_lastbasedata`(사용량 증감)를 **독립 필드**로 분리.
+    둘 다 0이면 해당 블록 skip(로그에도 미포함).
+  - **로그 0값 가드**: 두 필드 모두 값이 0이면 로그 문자열에서 제외(기존 `quota+0MB` 오출력 차단).
+- **3D 안테나 스카이돔 좌우 반전 수정** (`usr/local/www/index.php`):
+  - `pitch = +0.74`(남쪽 아래 시점 → 북이 화면 하단에 표시) → `pitch = -0.74`(북쪽 위 시점 → 북이 화면 상단).
+  - `yaw = -0.5` → `yaw = 0`(초기 정면 정렬).
+- **배포 정합성**: `APIFreeRadiusUserCreate.inc` + `APIFreeRadiusUserUpdate.inc` + `APIFreeRadiusUserTopup.inc`
+  + `manage_crew_wifi_account.inc` + `crew_account.php` + `index.php` **6파일 일괄 배포**.
+- 검증: php -l 전부 통과 / israndompw 정규화·6자리 난수·1111 리셋·lastbasedata foreach 버그·delta 가감·0값 가드
+  런타임 하네스 통과.
+
+### 37. Release Note 사이드바 메뉴 + 패치노트 표시 페이지 (develop `1f0c4da`)
+- **요구**: 사이드바에 "Release Note" 메뉴를 넣고, 패치노트(릴리스노트)를 사용자가 보기 좋은 양식으로 표시.
+- **데이터 소스 = 단일 마크다운(배포 트리 내)**: 배포 스크립트가 repo 에 없고 루트 파일은 배포 트리
+  (`usr/`, `etc/`) **밖**이라 선상 미배포 → **단일 소스 `usr/local/www/release_note.md`** (배포 트리 내)
+  하나만 두고 페이지가 이를 파싱. **이 파일만 편집·배포**하면 됨(루트 RELEASENOTE.md 는 제거 = A안).
+  파일 없으면 "No release notes available." **graceful 폴백(fatal 없음)**.
+- **수정/신규 파일**:
+  - `etc/inc/common_ui.inc` `print_sidebar`: `$mk("release_note.php","Release Note","ic-lnb06")` 추가
+    (Download Center 아래). 메뉴 하이라이트는 기존 `$mk` 의 `$inputlink===$file` 규칙으로 자동.
+  - `usr/local/www/release_note.php` (신규): 릴리스노트 양식 파서(`rn_parse`) + 카드 렌더. 양식 =
+    상단 메타(타이틀+설명) → `X.Y.Z (YYYY-MM-DD)` 버전헤더(날짜 괄호로 서브라인과 구분) →
+    **자유 양식 서브라인**(헤더 직후 첫 비-불릿 줄을 verbatim 캡처 — `Beta … Stable: …` 등 무관) →
+    `- TAG: text`(NEW/CHANGED/FIXED/REMOVED) 불릿(들여쓰기 연속줄은 직전 불릿에 이어붙임). 버전별
+    흰 카드(버전+날짜+최신 `LATEST` 배지+서브라인, 색상 태그칩, ≤600px 반응형). 스타일 `<style>`
+    인라인(관리자 라이트 테마). `htmlspecialchars` 이스케이프.
+  - `usr/local/www/release_note.md` (신규, 단일 소스): 릴리스노트 데이터.
+- **배포 정합성**: `common_ui.inc` + `release_note.php` + `release_note.md` **3파일 일괄**. `.md` 누락 시
+  "No release notes" 표시. **유지보수 = `usr/local/www/release_note.md` 한 파일만 편집 후 배포**
+  (커밋만으로는 선상 미반영 — 별도 배포 필요).
+- 검증: php -l(release_note.php·common_ui.inc) 통과 / 파서 스모크(헤더 2줄·버전 2개 1.1.3/1.1.2·
+  날짜·자유 서브라인·연속줄 이어붙임) 통과.
+
+### 36. 3D 스카이돔 바닥 세계지도를 dome 과 함께 yaw 회전 (develop `82fc3d4`)
+- **증상**: Antenna 3D 스카이돔(#33, Satellite 나침반 클릭 → 모달)을 드래그/자동궤도로 회전하면
+  dome(와이어·위성·본선·NESW 라벨)만 돌고 **바닥 세계지도(`world_minimap.jpg`)는 안 돌아 따로 놂**.
+- **원인**: `drawFloor()` 의 바닥 텍스처 `setTransform` 이 **yaw=0 고정**이었음(기존 주석 "바닥 지도는
+  항상 N=위/E=오른쪽 고정 — 정방위 표시" = 의도적 고정). dome 좌표는 `P(az,el)` 에서 yaw 회전을 적용하나
+  바닥만 회전에서 빠져 있었다.
+- **수정 (`usr/local/www/index.php` `drawFloor()`)**: dome 투영 `P()` 와 **동일한 yaw 회전**을 바닥 아핀에
+  적용. 이미지px(ix,iy)→본선기준 EN 오프셋→yaw 회전(E1,N1)→화면 `x=cx+E1*R, y=cy+N1*sin(pitch)*R`.
+  본선(vx,vy)은 디스크 중심(cx,cy)에 고정되어 그 둘레로 회전. **yaw=0 이면 기존 변환과 동일(회귀 없음)**.
+  - setTransform 6계수: `a=k·cosY, b=ks·sinY, c=k·sinY, d=-ks·cosY,
+    e=cx−k(cosY·vx+sinY·vy), f=cy+ks(cosY·vy−sinY·vx)` (×dpr). `k=R/ppu, ks=R·sin(pitch)/ppu`.
+- **검증**: node 수치 하네스 — 본선이 yaw 무관하게 정확히 중심 고정 + 지도상 방위 `a`·거리 `FLOOR_SPAN_HALF`(16°)
+  지점이 dome 수평선 링 `P(a,0)` 와 **픽셀오차 0** 일치(yaw 0/0.5/−0.8/1.2), 북쪽점 yaw 추종 확인. php -l 통과.
+
+### 35. 위성 커버리지 맵 — NexusWave gateway 존재 시에만 커버리지 노출 (develop `c72b1d2`→최종 `2c23248`)
+- **요구(최종)**: #33 커버리지 맵(Position 미니맵 클릭 → `⤢ MAP` 모달)에서 **월드맵은 항상 열되**,
+  **커버리지 오버레이는 NexusWave gateway 가 있을 때만** 렌더. 없으면 커버리지 미표시 + **안내 팝업**으로
+  "현재 NEXUSWAVE 만 커버리지 맵 지원" 고지.
+- **판정 기준 = terminal_type (사용자 선택)**: gateway 의 `terminal_type` 이 `nexuswave`(_pri/_sec/_thi/_fth)
+  를 포함하면 활성. terminal_status.inc 의 기존 nexuswave 감지 로직과 동일 기준. (사용자가 지칭한
+  `tcp_nexuswave` 리터럴은 코드베이스에 없음 — 실제 존재값은 `nexuswave_*`.)
+- **이력(동작 변경)**:
+  - **1차 `c72b1d2`**: NexusWave 없으면 **클릭 자체 비활성**(트리거/모달 미바인딩) + `⤢ MAP` 배지 숨김
+    (`no-cov` 클래스). → 사용자 요구로 "월드맵은 열어야 함"으로 변경.
+  - **최종 `2c23248`**: 월드맵은 항상 열고, **커버리지 오버레이만 게이트** + 비-NexusWave 안내 팝업.
+- **수정 (`usr/local/www/index.php` 단일 파일)**:
+  - **PHP** `$cp_has_nexuswave_gw`: `$gateways`(=`return_gateways_array()`) 순회 +
+    `stripos($gw['terminal_type'],'nexuswave')` 매칭 1개라도 있으면 true (페이지 로드 1회 판정).
+  - **JS** `CP_HAS_NEXUSWAVE` 주입 → coverage IIFE `covEnabled` 플래그.
+    - `buildToggles()`: 비-NexusWave 면 토글 숨김 + `cov-disc` 에 "only NEXUSWAVE…" 안내문.
+    - `initMap()`: 커버리지 폴리곤/폴백밴드를 `covEnabled` 일 때만 추가(타일·선박 마커는 항상).
+    - `openCov()`: 비-NexusWave 면 안내 팝업 `#covnote-ov` 표시(닫기/Escape 핸들러 포함).
+  - **HTML/CSS**: 안내 팝업 오버레이 `#covnote-ov`(기존 `.covwarn` 스타일 재사용, z-index 10001 로
+    cov 모달 위). (1차의 `no-cov` 클래스/배지숨김 CSS 는 최종본에서 제거 — 배지·클릭 모두 복원.)
+- **영향 없음**: #28 항구 미니맵(거리/방위/줌)은 별도 IIFE 라 그대로 동작. 가드는 PHP/JS 양쪽이라
+  버전 섞임에도 fatal 없이 안전 강등(`CP_HAS_NEXUSWAVE` 미정의 시 `covEnabled=false`).
+- 검증: php -l 통과.
+
 ### 33. 관리/Main Panel UI 보강 — 미커밋
 - **crew_account.php 툴바 1줄(A안)**: `.list-top` nowrap + 검색박스 가변(`flex:1 1 auto; min-width:0`,
   입력 max 420px) + 버튼군 고정(`flex:0 0 auto`) + Search/Clear `flex:0 0 auto`(찌그러짐·겹침 차단,
@@ -992,10 +1089,350 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - 검증: php -l + 런타임 하네스(투영 좌표 유한 / 바닥 텍스처 setTransform·drawImage / 경고게이트→동의→
   지도초기화 / 이미지오버레이 우선·error 시 밴드폴백 / covBand 토글) 전부 통과.
 
+### 38. terminaltype 미해석(현존 게이트웨이 없음) → 로그인 차단 + "antenna offline" (develop `c9bd917`)
+- **배경(잠재 버그 발견)**: `starlinkuser00023` 로그인 불가 진단 중, **로그인은 성공**(RADIUS accept,
+  쿼터 8%)인데 **트래픽 0**(INTERIM ZERO 2시간+ 지속)인 케이스 분석. ZERO/STOP-ZERO 의미는 "ipfw 인증
+  파이프가 이 IP에 0바이트 집계"(거부 아님, `datacounter_acct.sh:407/372`). 원인 후보 = **고정(pinned)
+  게이트웨이 미해석 시 라우팅 경로 3곳의 처리 불일치**.
+- **3경로 불일치(잠재 버그)**: 유저 `varusersterminaltype`(=게이트웨이 이름)이 비어있지 않은데 현존
+  WAN 게이트웨이(`cp_find_all_wan_gateways`: 활성·terminal_type 지정·비-VPN)로 해석 안 되면(disabled/
+  삭제/rename/오타):
+  - 로그인 `add_crew_linked_rule:5050`: null → `cp_gw_default` (**fail-open**, 통과)
+  - 풀싱크 `cp_sync_routing_tables:4791`: null → `cp_gw_default` (**fail-open**)
+  - 매분 크론 `cp_resync_pf_tables_only:4872`: pinned-unresolved → `continue`(어느 테이블에도 안 넣음,
+    **fail-closed 블랙홀**)
+  → 로그인 직후 <60초만 default로 통과 → 매분 크론이 테이블에서 빼서 **영구 트래픽 0**(조용한 블랙홀).
+  로그인됨·RADIUS accept·CP "연결됨"으로 보여 오진 유발(증상이 "끊김/안됨"으로 흩어짐). 타이밍 의존이라
+  "고장"이 아니라 "불안정"처럼 보임 — 유일 단서는 `wireless.log` 의 `PINNED ... unresolved` 한 줄.
+- **수정(#38, fail-closed로 통일 + 가시화)** `captiveportal.inc`:
+  - 신규 `antenna_gateway_online($username)`: terminaltype이 비어있지 않은데 현존 게이트웨이 리스트에
+    없으면 false. 공란/'auto'/사용자없음 → true. **empty-guard**(게이트웨이 리스트 못 읽으면 차단 안 함
+    = 구성 일시 미가용 시 전원 락아웃 방지 fail-open) + **strcasecmp**(케이스 드리프트 방어).
+  - 인증 게이트 `[1982]`: `$antenna_allowed && $antenna_online && !shutdown && !suspend` 일 때만
+    `authenticate_user`. (기존 `antenna_allowed`/`isPortalShutdown` 패턴과 동일 자리.)
+  - 실패 메시지 `[2037]`: `"The antenna is offline, please try later."` (기존 connected-page `3115` 문구
+    와 통일). 차단 시 `[CP Login] BLOCKED ... antenna offline` 로그(가시화).
+- **terminaltype "Auto" 저장값 확인**: GUI 드롭다운 "Auto" = `<option value="">`(빈 문자열,
+  `crew_account.php:138`). `manage_crew_wifi_account.inc:427` 의 `?: 'Auto'` 는 **목록 표시용 폴백**
+  (저장 안 함). → 정상 Auto 유저는 `''` 저장 → 통과. 리터럴 "auto"/"Auto"는 API/수동편집으로만 가능하나
+  strtolower 후 'auto' 처리 → 역시 통과. **Auto 유저는 절대 차단 안 됨**, pinned-unresolved 만 차단.
+  라우팅(`cp_resync_pf_tables_only`)도 `''`/`'auto'` 둘 다 `cp_gw_default` 로 동일 취급.
+- **검증**: php -l 통과 / 런타임 하네스 **8/8**(공란·auto·유저없음·현존·케이스차이현존 → 허용,
+  게이트웨이없음 → 차단, 빈리스트 → fail-open, username 케이스무시 → 차단).
+- **선상 판정**: `grep "PINNED.*<user>" wireless.log` 또는 config.xml varusersterminaltype 덤프로
+  disabled/rename된 게이트웨이 식별 후 GUI에서 활성화/이름 정정 → 정상화.
+- **범위 주의**: config에 "현존"(disabled/삭제/rename) 기준. dpinger상 down이지만 config엔 존재하는
+  게이트웨이는 `cp_find_all_wan_gateways`가 포함하므로 #38로 안 막힘(그건 `cp_shutdown_gateways`/
+  network_usage 담당). 로그인/풀싱크 경로의 default 흡수(fail-open)는 그대로 두되, #38이 로그인 자체를
+  막아 블랙홀이 생기지 않게 함.
+
+### 39. 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁 → MAC 자동이관 폐지(1b) (develop `c9bd917`)
+- **배경/질문**: 공유기 NAT 뒤 여러 기기가 같은 MAC으로 보일 때 다른 username 접속 동작 분석.
+  (#38 진단 로그의 `[MIGRATE]` 폭주 — MAC `3a:68:...` 고정·IP 5개 왕복 — 의 정체.)
+- **토폴로지 2종**:
+  - **Case A (진짜 NAT)**: 뒤 기기 전부 **IP 1개+MAC 1개** 공유 → pfSense 기기 구분 불가.
+  - **Case B (브리지+MAC클론/랜덤MAC충돌)**: **IP는 다른데 MAC만 같음** (위 핑퐁 로그 = Case B).
+- **Case A 동작** `portal_allow:3403`: 같은 IP면 기존 세션 sessionid **재사용**(`[3410]`) → 새 세션/
+  INSERT/회계 start 블록은 `if(!isset($sessionid))`(`[3490]`)라 **skip**. → **선착순 1명만 세션 주인**,
+  나머지는 무슨 ID로 로그인하든 그 세션 탑승(전원 트래픽이 1명 쿼터로 과금, 라우팅도 1명 terminaltype).
+  옵션 1b와 **무관**(마이그레이션 미관여, IP·MAC 동일이라 구조적 분리 불가).
+- **Case B 동작(버그)** `try_migrate_session_by_mac:4186`: index.php GET 경로(`[620]`)에서 **MAC만으로
+  매칭**하고 **기존 세션 username 그대로 사용**(새 로그인 ID 파라미터 없음) → 다른 기기가 포털만 열어도
+  남의 세션을 자기 IP로 이관 = ① 자격증명 없는 **세션 탈취** ② 세션이 기기 IP 사이 **핑퐁**(카운터 리셋
+  INTERIM ZERO/REGRESS·끊김).
+- **수정(1b)** `index.php`: IP+MAC 정확일치 실패 시의 **MAC 자동이관 호출 블록 제거**(`[616~]`).
+  IP 바뀌면 `$connectedSession===''` → 로그인 페이지 → 각자 자기 자격증명으로 POST 로그인(`[519~602]`)
+  → **자기 세션**. `captiveportal.inc try_migrate_session_by_mac` 함수는 보존(docblock에 "미호출/1b" 명시,
+  향후 쿠키·토큰 매칭과 재활성 가능).
+- **POST 로그인은 마이그레이션과 독립**: POST 경로(`519~602`)가 GET 마이그레이션 체크(`605~`)보다 먼저
+  실행·exit. 이관 거부해도 **자기 ID 로그인은 안 막힘** — Case B에선 자기 IP라 portal_allow same-IP
+  재사용에 안 걸려 **독립 세션 획득**(오히려 정상화).
+- **트레이드오프(수용)**: 진짜 단일기기 IP변경(#4)도 **1회 재로그인** 필요. stale 옛 IP 세션은 재로그인
+  시 `noconcurrentlogins='last'` 가 정리(`[3459~3470]`) → 누적 없음.
+- **#4 동작 변경**: "IP 변경 시 자동 로그인"(#4)은 이제 1b로 **자동로그인 안 함**(재로그인 유도)으로 바뀜.
+- **변형 후보(1a, 미채택)**: 쿠키/토큰 기반 이관 — 정상 단일기기 seamless 유지 + 탈취/핑퐁만 차단.
+  쿠키 지속 의존(OS 프로브 무쿠키 케이스는 로그인 페이지로 강등). 함수 보존으로 재활성 경로 남겨둠.
+- **검증**: php -l 통과(index.php·captiveportal.inc). 잔여 `$migrated` 참조 0.
+
+### 40. OpenVPN 재시작 크론을 watchdog 으로 안정화 — "일부 선박 미재시작" 교정 (develop `66ebfd7`)
+- **배경/증상**: `usr/local/cron/openvpn_restart_timeperiod_check.php`(cron, [firewall_cronlist:211~]
+  등록됨)가 **일부 선박에서 VPN 재시작을 정상 수행하지 않음**. 로직 검증 결과 결함 다수.
+  - **스케줄(2026-07-02 변경, 의도됨)**: `minute` `*`(매분) → `0`(매시 정각, 시간당 1회). 매분 점검이 불필요하다는
+    판단(사용자 확인). **트레이드오프**: liveness 재시작 판정이 시간당 1회 → 디바운스(연속 실패 threshold)와 겹쳐
+    VPN 끊김 복구가 최대 ~1시간 지연 가능. 더 빠른 복구가 필요하면 `minute` 을 `*` 로 되돌릴 것.
+- **이 크론의 2가지 용도**: ① liveness — 터널이 데이터 못 넘기면 재시작. ② 강제 플래그 —
+  관리자/경로전환(`manual_routing.widget.php` "Automatic" 분기 + `APIStatusOpenVPNRestart.inc` 가
+  `$config['openvpn']['openvpnrestart']=""` set)이 모든 client 즉시 재시작 → **Starlink↔VSAT 업링크
+  전환 후 새 경로 재바인딩**(선박 환경 핵심 용도).
+- **코어 함수 실측(pfSense 2.5.2 RELENG_2_5_2 소스 검증)**:
+  - `openvpn_get_active_clients()` = 비활성 제외 **모든** 설정 client + 상태. `status`: `down`(초기)→
+    `openvpn_get_client_status()`가 `up`/`connecting`/`waiting`/`reconnecting`. **`virtual_addr`는 연결
+    시에만 존재**(끊기면 키 부재). (함수명과 달리 "active=연결됨"이 아니라 "설정된 전부".)
+  - `openvpn_restart_by_vpnid($mode,$vpnid)` = `openvpn_get_settings`+`openvpn_restart`. 길게 block 안 함.
+  - `try_lock($lock,$timeout=5)` = pfSense **비블로킹 락 변형**. `lock('freeradius_user_config')`(PW
+    writer 가 쓰는 락)와 **같은 파일**(`$g['tmp_path']/{lock}.lock`)을 flock 하므로 상호배제 유지하며
+    블로킹 회피 가능. FreeBSD `ping -t`=전체 타임아웃(TTL 아님), `-c3` exit 0 = 3개 중 1개라도 응답.
+- **진단된 결함 → 수정**:
+  - **① `<?` 짧은 태그(형제 크론 중 유일)** → `<?php`. `short_open_tag=Off` 박스에서 **파일 전체가 평문
+    출력, 한 줄도 실행 안 됨**(silent 전체 사망) — "일부 선박"과 정확히 일치하는 잠재 증상.
+  - **② 다중 client last-wins 덮어쓰기**: `foreach{ $pingresult = ... }`가 매 반복 덮어써 **마지막
+    client 결과만** 반영. 첫 client down·마지막 up 이면 online 으로 오판→재시작 안 됨. → **per-client 판정**.
+  - **down client 빈 `-S` malformed ping**: down 이면 `virtual_addr` 부재 → `ping -S '' host`(우연히
+    offline 으로 잡히던 fragile 경로 + PHP 7.4 undefined-key Notice). → **status 기반 판정**(up+addr 일 때만 ping).
+  - **③ 싱글톤 가드(#26) hang → 영구 starvation**: `flock(LOCK_NB)` 가드는 프로세스 누적/OOM 은 막지만,
+    한 인스턴스가 hang 하면(`openvpn_restart_by_vpnid` wedge / 블로킹 `lock('freeradius_user_config')`에
+    다른 느린 writer 가 걸림) **그 좀비가 싱글톤 락을 계속 보유 → 이후 매분 exit(0)** → watchdog 자체
+    사망(재부팅 전까지 재시작 0회). **트레이드오프 = 과다실행 방지 ↔ 지속 재시도 보장의 상충.**
+    → 가드 유지 + **hang 한 선행 인스턴스 reap**: 락 파일에 `pid 시작시각` 기록, 후속 run 이 보유자가
+    `OVWD_STALE_HOLDER_SECS`(600s) 이상 '살아있고' 'ps command 가 이 스크립트'이면 TERM→KILL 후 락
+    재획득(watchdog self-recovery). 회수 대상은 ping/restart 에 멈춘 것일 뿐 config write 중이 아니라 안전.
+  - **블로킹 `lock('freeradius_user_config', LOCK_EX)`** → **`try_lock`(비블로킹, 10s)**. 못 잡으면 플래그
+    정리를 다음 주기로 미룸 → 싱글톤 잡은 채 블로킹 회피. 정리는 `parse_config(true)`+delta(키 1개)만
+    write → 동시 PW 변경 등 lost-update 안전(#22/#10 패턴 유지).
+  - **외부 명령 hang**: ping 을 `/usr/bin/timeout 12` 로 하드 바운드(+`/sbin/ping`/`timeout` 경로 부재 시
+    폴백 — 경로 없으면 `mwexec` rc=127 로 **모든 up client 거짓 실패→무더기 재시작** 사고 방지. ping `-t8`
+    내부 타임아웃이 2중 안전).
+  - **위성 단발 손실 false-restart(flapping)**: ping `-c3`(1개라도 응답=정상) + **연속
+    `OVWD_FAIL_THRESHOLD`(3)회 실패**해야 재시작 + 재시작 후 `OVWD_RESTART_COOLDOWN`(300s) 동안 같은 client
+    재시작 금지. 상태(fail 카운터·last-restart epoch)는 **`/var/run/openvpn_watchdog/` 파일**(config.xml
+    미사용 → lost-update 무관, #16 패턴). cron 매분이라 ~3분 확정 실패 후 재시작.
+  - **완전 silent(진단 불가가 곧 문제)**: `log_error("[openvpn-watchdog] …")` 로 재시작/reap/락실패 가시화.
+    매분 스팸·디스크풀(#24) 방지 위해 **평시 per-client 상태는 `/tmp/openvpn_watchdog_debug.on` 있을 때만**.
+- **동작 흐름(수정 후)**: liveness=`status==up`+`virtual_addr` 일 때 터널 경유 ping→연속 3실패+쿨다운 경과
+  시 **그 client 만** 재시작 / 강제 플래그=**모든 client 즉시**(쿨다운 무시·1회성) 후 플래그 정리.
+- **⚠️ 의도된 동작 변경**: 기존 ping 1회 실패 시 즉시 전체 재시작 → 이제 liveness 는 **~3분 디바운스**
+  (위성 flapping/#21 끊김 방지). 즉시성 원하면 `OVWD_FAIL_THRESHOLD=1`. **경로전환(플래그) 재시작은 변함없이
+  즉시** → manual_routing/Starlink↔VSAT 전환 동작 영향 없음.
+- **배포 정합성**: 이 크론은 **코어 함수에만 의존**(`openvpn_get_active_clients`/`openvpn_restart_by_vpnid`/
+  `try_lock`/`log_error`/`parse_config`/`write_config`) → repo 다른 파일과 **동시 배포 불필요**(버전 섞임
+  위험 없음). 함수 부재 시 로그 남기고 graceful exit.
+- **검증**: php -l 통과. 선상: `crontab -l | grep openvpn_restart`(등록) /
+  `clog /var/log/system.log | grep openvpn-watchdog`(RESTART/reap/락실패) / `touch
+  /tmp/openvpn_watchdog_debug.on`(per-client ping rc 상세, 끝나면 삭제) / hang 재현 시 10분 후 stale reap.
+- **튜닝 상수(파일 상단)**: `OVWD_FAIL_THRESHOLD`(3) · `OVWD_RESTART_COOLDOWN`(300) ·
+  `OVWD_STALE_HOLDER_SECS`(600) · `OVWD_LOCK_WAIT`(10) · `OVWD_PING_HOST`(`vpn-server.synersat.noc`).
+
+### 41. 다크모드 — System/GPS(일출일몰)/Light/Dark 토글 (develop `ab95701`·`81c9423`·`e089710`)
+- **요구**: 다크모드 버튼을 전 웹페이지 공통 적용. 이후 시스템 테마 연동(기본) + GPS 일출/일몰 연동으로 확대.
+- **단일 진입점**: 모든 커스텀 SynerSAT 페이지(9개: index/crew_account/prepaid_account/network_control/
+  download_center/terminal/lan_svrstatus/crew_status/release_note)가 `common_ui.inc` `print_css_n_head()`
+  (CSS·jQuery emit) + `print_sidebar()` 를 거침 → **두 함수만 수정해 9페이지 동시 적용**. stock pfSense·
+  캡티브포털은 별도 테마라 범위 제외.
+- **CSS**: `usr/local/www/css/dark.css` **신규**(`html.dark` 스코프 오버라이드). 기존 CSS 6종은 색 하드코딩
+  (변수 미사용)이라 구조요소(body·사이드바·타일·테이블·팝업·폼·버튼)별로 다크색 재지정. 라이트 모드 영향 0.
+- **토글 4-state 순환**: `System`(OS `prefers-color-scheme`, 기본)→`GPS`(일출일몰)→`Light`→`Dark`.
+  localStorage `cp_theme`(auto/gps/light/dark, 내부키는 auto 유지). 사이드바 메뉴 하단 버튼(유니코드 아이콘).
+  - **FOUC 방지**: `print_css_n_head` 최상단 인라인 스크립트가 CSS 링크보다 먼저 실행 → 첫 페인트 전 `html.dark` 설정.
+  - System 모드: `matchMedia change` 리스너로 OS 전환 실시간 반영. 표시 라벨은 "System"(내부키 auto)(`e089710`).
+- **GPS 모드(오프라인 일출/일몰, civil twilight)**:
+  - `etc/inc/cp_daynight.inc` 신규 — PHP7.4 내장 `date_sun_info()` 로 현재 위치 civil twilight(태양 -6°)
+    begin/end 계산(극지 백야/극야는 polar='day'/'night'). 인터넷 0 (#29 철학).
+  - `usr/local/cron/cp_daynight_update.php` 신규(매30분) — influx GPS(VSAT vesselposition→FBB 폴백) →
+    civil times → `$config['daytimecheck']`(begin/end/**nbegin**=다음날 dawn) 캐시. 변경시만 write(#22 패턴),
+    flock 가드(#26), (0,0)/불통 시 마지막값 유지. `firewall_cronlist` 등록.
+  - `print_css_n_head` 가 daytimecheck 를 `CP_SUN`(begin/end/nbegin/polar/**now**)으로 주입 → 클라 판정.
+    dusk(end) 이전엔 dawn(begin) 이후가 낮, dusk 이후엔 nbegin 전까지 밤(자정 넘김 wrap 처리).
+  - **판정 기준시각 = 박스 UTC(`CP_SUN.now`=`time()`)** — 클라 `Date.now()`(선박 PC 타임존 오설정 흔함)
+    대신 박스 권위 UTC + `performance.now()` 단조 경과. 절대 epoch 비교라 offset 가산 불필요(`81c9423`).
+  - GPS 데이터 없으면(daytimecheck 빈값) System(OS) 폴백.
+- **외부 day/night 푸시 API 삭제**: `APIServicesDayTimeCheck`(엔드포인트)/`APIServicesWriteDayTimeCheck`(모델)/
+  URL 핸들러 3파일 제거(레포 소비처 없던 외부 푸시 → GPS 오프라인 계산으로 대체, #29 동형). 이중 writer 해소.
+- **화면밝기/조도센서 연동은 불가**(웹 표준 부재·HTTP 컨텍스트) — 시스템 테마 연동이 한계.
+- **검증**: php -l, 주입 JS 문법, 24h 사이클(부산 새벽 DARK/일출후 LIGHT/일몰후 DARK)·박스UTC 종단·극지 polar 통과.
+- **배포 정합성**: `common_ui.inc`+`css/dark.css`+`cp_daynight.inc`+`cp_daynight_update.php`+`firewall_cronlist`
+  (API로 cron 등록) 일괄. dark.css 누락 시 토글은 떠도 색 미변경(fatal 없음). 브라우저 Ctrl+F5(캐시).
+
+### 42. Daily usage — Internet usage 타일 일별 사용량 막대그래프 (develop `ab95701`)
+- **요구**: Main Panel(`index.php`) "Internet usage" 타일에 일별 사용량 버튼 → 막대그래프.
+- **데이터**: `get_datausage_from_db` 와 동일 InfluxDB(`192.168.209.210:8086`, db=acustatus, measurement=traffic,
+  필드 `{if}_rx`/`{if}_tx`)를 월합산 대신 `GROUP BY time(1d)` 로 일별 질의.
+  - `terminal_status.inc` `read_daily_usage_multi($metrics,$days,$timeout,$monthMode)` 신규 — 여러 게이트웨이를
+    **단일 쿼리**로(SELECT 순서=컬럼 위치 매핑), 하루 경계는 선박 GMT 오프셋(현지 자정), monthMode 는 현지 월(MM) 필터.
+- **AJAX** `index.php` `if(isset($_POST['daily_usage']))` — wan_status 와 동일 비-vpn 게이트웨이 목록. `function_exists` 가드.
+- **UI**: 모달 + 범위 토글 **This month(기본)/7d/14d/30d**, 좌측 **MB meter**(0/25/50/75/100% 눈금, 단위 적응
+  MB<1000<GB), 순수 SVG 막대(외부 라이브러리 0), 게이트웨이별 독립 Y스케일, 막대 호버 툴팁, 버튼 중앙정렬.
+- **검증**: php -l, 일자라벨/오프셋/컬럼매핑/month 경계 절삭/SVG 문법 통과.
+- **배포**: `index.php`+`terminal_status.inc` 일괄(가드 있어 fatal 없으나 미배포 시 버튼 무동작).
+
+### 43. GMT 타임존 — 네이티브 prompt → 테마 팝업 + 30분(0.5) 단위 (develop `ab95701`)
+- **요구**: 사이드바 "GMT n" 클릭 시 뜨던 네이티브 `prompt()` 를 사이트 테마 팝업으로 교체 + **30분(.5) 단위** 지원.
+- **수정**: `common.js` 핸들러가 `prompt`/`parseInt`(30분 절삭 원인) 제거 → 기존 `.popup` 컴포넌트 재사용
+  (`pop-gmt`, common_ui.inc) + `-11~+12` 0.5단위 select(47개, JS 생성). `.popup` 재사용이라 다크 테마 자동 적용.
+- **백엔드**(`index.php` gmt POST): 입력 정규화 — 숫자만 + 0.5 스냅 + 범위 클램프 + 정수 "9"/반시간대 "9.5"/"-3.5" 포맷.
+- **연계 수정**: `cp_tz_offset_update.php` 수동모드 가드를 `gmtcheck==='1'` 엄격비교 → `!empty()` truthy 통일
+  (사이드바 표시와 동일). 비-'1' truthy 값에도 자동 TZ 갱신 차단 → 수동 반시간대 선택이 정수로 덮이는 것 방지.
+- **한계(수용)**: 반시간대 저장·사이드바 표시는 정상이나 CP 로컬시간/미니맵 시계 계산은 기존부터 정수시간만 지원(30분 절사, #29).
+- **검증**: php -l, node --check, select 47개(9.5/-3.5 포함)·정규화·truthy 가드 통과.
+
+### 44. GMT 저장 시 웹루트에 숫자폴더+config.xml 덤프 (전역 `$g` 오염, 보안) (develop `ab95701`)
+- **증상**: 타임존 선택·저장 후 `/usr/local/www/` 에 **마지막 선택 오프셋 이름의 폴더**가 생기고, 내부에 전체
+  config.xml 덤프(루트 태그가 `<pfsense>` 아닌 `<1>` 등 숫자)가 들어감. 웹루트라 비밀값(admin 해시·RADIUS
+  secret·API key·VPN 키·MySQL creds) **노출 위험**.
+- **근본 원인(진범)**: #43 입력검증 추가 시 지역변수를 `$g = trim($_POST['gmt'])` 로 명명 → **pfSense 전역
+  경로배열 `$g`**(핸들러 상단 `global $config, $g;`)를 오프셋 문자열로 덮음. 직후 `write_config()` 가 깨진
+  `$g` 로 경로 생성: PHP 에서 문자열에 `$g['cf_conf_path']` 등 문자열키 접근 → 정수0 캐스팅 → **첫 글자** 반환
+  (`"1"['xml_rootobj']`→`"1"` = 루트 `<1>`; `"1"['cf_conf_path']`→`"1"` = CWD(웹루트) 아래 상대폴더 "1").
+- **진단**: 멀티에이전트 워크플로우가 `$g` clobber 를 특정. 결정적 단서 = 덤프 루트 `<1>` = `$g` 가 문자열 "1" 임을 증명.
+- **수정**: 지역변수명을 `$g` → `$gmt_in` 으로 변경(전역 오염 제거). write_config 2번째 인자(offset)도 제거(단일 인자화).
+- **교훈**: pfSense PHP 에서 `$g`(경로 전역)·`$config` 는 예약 전역 — 지역변수로 절대 재사용 금지. 워크트리 참고 메모리화.
+- **검증**: php -l, `$g` 대입 잔존 0. 선상: 웹루트 숫자폴더 삭제 + nginx 로그 확인 + (노출 시) 비밀값 교체 권장.
+
+### 45. Crew/Prepaid Accounts — description 을 blank(빈 문자열)로 저장 시 미반영 (develop 미커밋)
+- **증상**: Crew Accounts(및 Prepaid Accounts) 표의 인라인 description 편집에서 값을 **빈칸으로 지우고
+  확정하면 저장이 안 됨**(옛 값 유지). 비어있지 않은 값은 정상 저장.
+- **근본 원인**: 인라인 편집 폼(`manage_crew_wifi_account.inc:569~575`)은 `description`(텍스트, 빈값 가능)
+  + hidden `userid` 를 POST 하는데, 핸들러가 **값의 truthiness** 로 게이트:
+  `if ($_POST['description'] && $_POST['userid'])` → 빈 문자열은 falsy → `set_description()` 미도달 →
+  조용히 무시.
+- **수정 (2파일, 동일)**: 게이트를 `if (isset($_POST['description']) && !empty($_POST['userid']))` 로 변경.
+  빈 description 은 정당한 값이므로 `isset` 로 판정, `userid` 는 여전히 필수(스케줄러 폼처럼 userid 만
+  있고 description 없는 POST 와 구분). `crew_account.php:127` + `prepaid_account.php:112`.
+  `set_description()`(`manage_crew_wifi_account.inc:616`)는 이미 빈 문자열을 정상 기록 → 게이트만이 원인.
+- **미수정(범위 밖, 후속 후보)**: `set_description()` 가 lock/`parse_config(true)` 없이 stale 스냅샷
+  `write_config()` → 동시 PW 변경 등과 lost-update 가능(#22/#30 패턴). 필요 시 동일 락 패턴으로 하드닝.
+- **검증**: php -l 통과(crew_account.php·prepaid_account.php). 배포: 두 www 파일(+.inc 는 무변경).
+
+### 46. GET `/api/v1/system/runtime` — fw_uptime(초)만 반환 (core_temp/core_uptime 은 메인서버 파이프라인 SSH) (develop 미커밋)
+- **최종 설계**: `/api/v1/system/runtime` GET → **pfSense uptime(초, 정수 스칼라)만** 반환.
+  `core_temp`/`core_uptime` 은 **API 가 다루지 않음** — 메인 서버 파이프라인이 코어 박스에 **직접 SSH** 로 취득(사용자 담당).
+- **이력(폐기)**: ① SSH-in-API(sshpass) → FreeBSD 미지원으로 폐기. ② InfluxDB 경유(코어가 InfluxDB write,
+  API 가 조회) → StreamSets 보안 제약(`.execute()`/파일읽기 차단)으로 코어측 writer 운용 불가 → **전면 폐기**.
+  InfluxDB 조회 로직·상수·writer 스크립트(`tools/coresystem_influx_write.{sh,groovy}`)·`core_status` DB 접근 모두 제거.
+- **구현 (pfSense-API 엔드포인트 3파일)**:
+  - 모델 `etc/inc/api/models/APISystemGetRuntime.inc`: `action()` 이 `__get_uptime_seconds()`
+    (=`sysctl -n kern.boottime` 의 `sec` 파싱 → `time()-boot`, 실패/음수 `0`) 를 **스칼라**로 반환. core 로직 없음.
+  - 엔드포인트 `etc/inc/api/endpoints/APISystemRuntime.inc`: `url=/api/v1/system/runtime`, `get()` 만.
+  - 웹루트 로더 `usr/local/www/api/v1/system/runtime/index.php`: `APISystemRuntime()->listen()`.
+- **응답 예**: `{"code":200,"status":"ok","data":274353}` (초).
+- **오토로드**: 프레임워크(`api/framework/*`, 박스 pfSense-API 패키지 제공)가 클래스명으로 모델 오토로드
+  → 엔드포인트에서 모델 `require_once` 불필요.
+- **인증**: pfSense-API 는 GET 도 `client-id`/`client-token` 필요 → 파이프라인이 URL 쿼리스트링으로 전달
+  (`?client-id=<fw_id>&client-token=<fw_password>`). 프레임워크가 GET `$_GET` 에서 auth 를 읽음(API 코드 무변경).
+- **파이프라인(리포 밖, 구현 반영)**: 메인 서버 SDC Groovy(`GroovyEvaluator_04`)가
+  `SynerSAT.vessel_system_state (timestamp, vessel_imo, core_temp, core_uptime, fw_uptime)` 적재.
+  - `timestamp` = 레코드 시각(`datetime.time`)을 **5분(300000ms) 경계로 내림** → `new Timestamp(...)`.
+    ON DUPLICATE 도 timestamp 갱신(vessel_imo 유니크면 최신시각, `(vessel_imo,timestamp)` 유니크면 이력). **테이블에 `timestamp`(DATETIME) 컬럼 필요(사용자 관리).**
+  - `fw_uptime` = runtime API(`data` 스칼라/객체 모두 방어).
+  - **`core_temp`/`core_uptime` = 메인 서버에서 `sshpass -p P@ssw0rd ssh -p 21022 synersatroot@${vpnIp}` 로
+    `sensors`(`Core N` 평균℃) + `cat /proc/uptime`(정수 초) 실행 → stdout 파싱**(`===UP===` 구분자).
+    (SSH 포트 **21022**.)
+    `sensors` 라벨은 `Core <정수>:` 만 채택(Voltage/Frequency 등 제외). 타임아웃 5초
+    (`ConnectTimeout=5` + `waitForOrKill(5000)`), **미취득/실패 시 0 기본값**.
+  - -1 센티널 폐기 → 모든 미취득값 0 → **unsigned INT 컬럼이어도 롤백 없음**(이전 "저장 안됨" 원인 해소).
+  - 전제: **메인 SDC 호스트에 `sshpass` 설치** + SDC→각 선박 `vpnIp` SSH 도달. per-record 실행이라 SSH 최대 ~5초/척.
+- **검증**: 모델 php -l 통과. InfluxDB/writer 관련 파일·로직 전면 제거 확인.
+- **배포 정합성**: API 3파일(모델만 변경). **sshpass·InfluxDB·`core_status` DB·writer 스크립트 전부 불필요.**
+- **timestamp**: 파이프라인이 `vessel_system_state.timestamp` = 레코드 시각 **5분(300000ms) 내림**으로 적재
+  (`(datetime.time).intdiv(300000L)*300000L`, `setTimestamp`). **테이블에 `timestamp`(DATETIME) 컬럼 필요**
+  (없으면 `Field 'timestamp' doesn't have a default value` — 신버전 파이프라인 재import 필요).
+- **core_uptime "이상값" 오해 해소(선상 실측 결론)**: 한 선박 `core_uptime≈15,290,432`(≈177일)이 과대해 보였으나
+  **버그 아님** — `cat /proc/uptime` 첫 필드(=커널 monotonic uptime) 그대로이며, `last reboot`(utmp, wall-clock)
+  이 **부팅 2026-01-06 → 176일 23시간(≈15,290,880초)** 로 **/proc/uptime 과 초 단위까지 일치**. 현재 날짜
+  2026-07-02 기준 실제로 ~177일 가동. (앞서 본 `10584`(3h)은 **다른 선박의, 방금 재부팅된 core 박스** — 전
+  core 박스 hostname 이 `core` 라 혼동.) clocksource sysfs 부재는 컨테이너류 환경 탓이고 dmesg TSC 정상
+  (`Switched to clocksource tsc`, unstable 경고 없음). → **파싱·박스·clock 모두 정상, core_uptime 은 초 단위 참값.**
+- **남은 미해결(후속)**: `fw_uptime = 0` 전 행 — runtime API 미배포/미응답 추정. 한 척에서
+  `curl "http://<vpnIp>/api/v1/system/runtime?client-id=<fw_id>&client-token=<fw_password>"` → 숫자면 정상,
+  404=엔드포인트 미배포, 401/403=자격증명. API 3파일 배포 후 재확인 필요.
+- **릴리스**: 이 배치(#41~#46) 패치노트 = 헤더 **`2026-07-02 Update`**(버전번호 제거, 날짜+제목) +
+  서브라인 **`Beta 1.1.49-Beta · Stable: 1.1.3-Stable`**(베타/스테이블 버전은 서브라인에 유지). 이를 위해
+  `release_note.php` 파서(`rn_is_version_header`)가 기존 `X.Y.Z (날짜)` 외 **`YYYY-MM-DD [제목]`** 헤더도
+  인식하도록 확장(날짜형은 통째로 version 표시, date 빈값; 서브라인은 기존대로 헤더 다음 첫 줄).
+  `usr/local/www/release_note.md` + `release_note.php` 일괄 배포.
+
+### 47. 게이트웨이 저장 시 [CP Routing] 룰 자동 재동기화 (게이트웨이 이름 변경 대응) (develop 미커밋)
+- **배경/요구**: 게이트웨이 이름을 바꾸면 `[CP Routing]` floating 룰이 **옛 이름(`cp_gw_{oldname}`)으로
+  남아** 실제 게이트웨이 구성과 불일치. 그간 재구성은 배포 스크립트(리포 밖 `update.sh`)가 부르는
+  `cp_routing_setup.php` 수동/배포 실행에만 의존. → **게이트웨이 저장(`system_gateways_edit.php`) 시점에
+  자동 동기화**하도록 요청.
+- **호출 함수 선택(중요)**: `cp_routing_setup.php`(배포 스크립트)는 **create-only**(존재하면 skip, 삭제
+  안 함)라 rename 마다 옛 이름 alias·룰이 **고아로 누적**됨. 대신 **완전 재동기화** 함수
+  `cp_sync_routing_tables()`(→ `cp_refresh_pass_rules()`)를 호출 — `array_diff` 로 `need_add`/`need_remove`
+  계산해 **옛 이름 룰 제거 + 새 이름 룰 생성 + pfctl 테이블 재적재**([captiveportal.inc:4640·4834]).
+- **수정 (`usr/local/www/system_gateways_edit.php`)**: 저장 핸들러에서 `save_gateway($_POST,$realid)` 직후
+  (리다이렉트 전)에 `cp_sync_routing_tables()` 호출. `captiveportal.inc` lazy require +
+  `function_exists`/`file_exists` 가드(버전 섞임·미탑재 시 fatal 없이 skip).
+- **in-process 호출(핵심)**: 별도 `php` 프로세스로 띄우지 **않음**. `save_gateway()`가 이미
+  `write_config("Gateway settings changed")`([gwlb.inc:2295])로 새 이름을 메모리 `$config`에 반영했으므로,
+  같은 프로세스에서 그 위에 동작 → **stale 스냅샷 lost-update(#10/#22/#30) 회피**. 별도 프로세스면
+  자기 `parse_config()` 스냅샷으로 동시 PW 변경 등을 되돌릴 위험이 있어 금지.
+- **잦은 호출 안전성**: `cp_refresh_pass_rules()`는 **멱등**(기대셋==현재셋이면 조기 return, no-op),
+  **변경 시에만 write_config**, 재귀 방지 위해 직접 `filter_configure()` 대신 **비동기 `send_event("filter
+  reload")`** 사용([captiveportal.inc:4717·4767·4773]). 게이트웨이 저장은 관리자 저빈도 행위라 성능 무관.
+- **범위(의도적 제외)**: 이번 변경은 **CP 룰 동기화만**. 유저 `varusersterminaltype`(옛 게이트웨이 이름
+  바인딩) 이관은 **미포함**(사용자가 별도 처리). rename 실운영 시 유저 terminal_type 을 새 이름으로 바꾸지
+  않으면 해당 유저는 #38(antenna offline)로 로그인 차단 + 라우팅 fail-closed 되므로 GUI 에서 별도 갱신 필요.
+- **삭제 경로(의도적 미훅 — 사용자 결정)**: 게이트웨이 **삭제**는 목록 페이지 `system_gateways.php`
+  (스톡, 리포 밖)에서 처리되어 이 훅이 안 걸린다. **삭제 즉시 동기화는 넣지 않음**. 다만
+  `cp_refresh_pass_rules()`가 편집 대상이 아니라 **현존 게이트웨이 기준 전역 diff**(need_remove)라,
+  삭제된 게이트웨이의 고아 `cp_gw_*` 룰은 **이후 아무 게이트웨이나 저장/편집하면** 함께 정리됨
+  (+ CP 재구성/부팅 시 `captiveportal_configure` 훅도 정리). **엣지**: 마지막(관리대상) 게이트웨이까지
+  삭제해 목록이 비면 `cp_refresh_pass_rules` 의 `if (empty($all_gws)) return;` 가드로 정리 안 됨
+  (게이트웨이가 하나라도 다시 존재해야 정리).
+- **검증**: `php -l` 통과.
+- **배포 정합성**: `system_gateways_edit.php` + `captiveportal.inc`(cp_sync_routing_tables 정의) **같은
+  리비전 일괄** 배포(가드 있어 fatal 은 없으나 미탑재 시 동기화 skip).
+
 ## 다음 작업 대기 중
 
-- [ ] **이번 세션 미커밋 (커밋 대기)**: #32(voucher API 5파일) + #33(UI: crew_account.php·
-  manage_crew_wifi_account.inc·common_ui.inc·index.php). 지시 시 develop 일괄 커밋.
+- [x] **#41 커밋 완료(develop)**: 다크모드 — System(OS)/GPS(일출일몰 civil twilight)/Light/Dark 4-state,
+  9페이지 공통(print_css_n_head), dark.css, 오프라인 일출일몰(cp_daynight.inc+크론), 박스 UTC 시각 판정,
+  외부 day/night API 삭제 — develop `ab95701`·`81c9423`·`e089710`. (main/prod 미반영)
+- [ ] #41 검증(선상): 토글 4단계 동작 / GPS 모드 낮=Light·밤=Dark(박스 UTC 기준) / System 모드 OS 추종 /
+  `window.CP_SUN` 콘솔 확인(ok:true·now/begin/end) / `$config['daytimecheck']` 채워짐 +
+  `clog /var/log/system.log | grep "DAYNIGHT AUTO"` / Ctrl+F5 캐시.
+- [ ] #41 배포 정합성: `common_ui.inc`+`css/dark.css`+`cp_daynight.inc`+`cp_daynight_update.php`+
+  `firewall_cronlist`(API로 cron 등록) 일괄. 페이지별 인라인 `<style>`(release_note 카드 등) 다크 폴리시 후속.
+- [x] **#42 커밋 완료(develop)**: Daily usage 막대그래프(This month 기본/7/14/30d, MB meter) — develop `ab95701`.
+- [ ] #42 검증(선상): 게이트웨이별 일별 막대 표시 / **일별 합이 월 타일 값과 대략 일치**(traffic rx/tx 델타 전제) /
+  `index.php`+`terminal_status.inc` 일괄 배포.
+- [x] **#43 커밋 완료(develop)**: GMT 타임존 테마 팝업 + 30분(0.5) 단위 + cp_tz 가드 truthy — develop `ab95701`.
+- [ ] #43 검증(선상): "GMT n" 클릭 → 테마 팝업 / 9.5 등 반시간대 저장·표시 / 자동 TZ 가 수동 반시간대 안 덮음 /
+  `index.php`+`common.js`+`common_ui.inc` 일괄 배포 + Ctrl+F5.
+- [x] **#44 커밋 완료(develop)**: GMT 저장 시 전역 `$g` 오염 → 웹루트 숫자폴더+config.xml 덤프 버그 수정
+  (`$g`→`$gmt_in`) — develop `ab95701`. (보안: 웹루트 config 노출)
+- [ ] #44 검증(선상): 타임존 저장 후 `/usr/local/www/` 에 숫자폴더 미생성 / 기존 숫자폴더 삭제 완료 /
+  nginx 접근로그로 외부 다운로드 흔적 확인 → 있으면 RADIUS secret/API key 등 교체.
+- [x] **#38 커밋 완료(develop)**: terminaltype 미해석(현존 게이트웨이 없음) → 로그인 차단 +
+  "The antenna is offline, please try later." (잠재 3경로 불일치 블랙홀을 로그인 단계서 차단) — develop `c9bd917`. (main/prod 미반영)
+- [ ] #38 검증(선상): disabled/rename 게이트웨이에 pinned된 유저 로그인 시 "antenna is offline" 메시지 +
+  `[CP Login] BLOCKED` 로그 / Auto(빈값)·정상 게이트웨이 유저는 정상 로그인 / 게이트웨이 정정 후 정상화 /
+  `grep "PINNED.*<user>" wireless.log` 로 원인 게이트웨이 식별.
+- [x] **#39 커밋 완료(develop)**: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁 → MAC 자동이관
+  폐지(1b) — develop `c9bd917`. (main/prod 미반영)
+- [ ] #39 검증(선상): IP 변경 시 자동로그인 안 되고 로그인 페이지 표시(재로그인 시 자기 세션) /
+  `[MIGRATE]` 핑퐁 로그 소멸 / 같은 IP+MAC 연결유지는 영향 없음 / #4 자동로그인 편의 상실 체감 확인 /
+  공유기는 브리지/AP 모드 권장 안내.
+- [ ] #38/#39 배포 정합성: **index.php + captiveportal.inc 같은 리비전 일괄 배포**(버전 섞이면
+  undefined function fatal).
+- [ ] #38/#39 main 반영 대기: 명시 지시 시 병합.
+- [x] **#40 커밋 완료(develop)**: OpenVPN 재시작 크론을 watchdog 으로 안정화(per-client·hang reap·
+  비블로킹 락·timeout 바운드·위성 디바운스·로그 가시화) — develop `66ebfd7`. (main/prod 미반영)
+- [ ] #40 검증(선상): `crontab -l | grep openvpn_restart`(등록) / `clog /var/log/system.log | grep
+  openvpn-watchdog`(RESTART/reap/락실패 로그) / 경로전환(manual_routing "Automatic") 시 모든 client 즉시
+  재시작 / liveness 는 ~3분 후 재시작(즉시성 원하면 `OVWD_FAIL_THRESHOLD=1`) / hang 인스턴스 10분 후
+  자동 reap / 디버그: `touch /tmp/openvpn_watchdog_debug.on` 로 per-client ping rc 확인(끝나면 삭제).
+- [ ] #40 배포 정합성: **코어 함수에만 의존 → 단독 배포 가능**(repo 타 파일과 버전 섞임 무관).
+- [ ] #40 튜닝(필요 시): 파일 상단 `OVWD_FAIL_THRESHOLD`/`OVWD_RESTART_COOLDOWN`/`OVWD_STALE_HOLDER_SECS`.
+- [x] **#37 커밋 완료(develop)**: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) +
+  단일 소스화(A안)·사용자 양식 파서(`deb779c`) — develop `deb779c`. (main/prod 미반영)
+- [ ] #37 검증(선상): 사이드바 "Release Note" 메뉴 → 1.1.3/1.1.2 카드 정상 렌더 / **3파일 일괄 배포**
+  (common_ui.inc + release_note.php + release_note.md; `.md` 누락 시 "No release notes").
+- [ ] #37 유지보수: 패치노트 갱신은 **단일 소스 `usr/local/www/release_note.md` 한 파일만 편집**
+  (루트 RELEASENOTE.md 는 제거됨). 양식 = 헤더(`X.Y.Z (날짜)` **또는** 날짜형 `YYYY-MM-DD [제목]` — `1.1.5(#46)`
+  에서 파서 확장) + 선택적 서브라인(Beta/Stable 등) + `- TAG:`(NEW/CHANGED/FIXED/REMOVED) 불릿.
+  **커밋만으로는 선상 미반영 — 별도 배포 필요**(deploy 가 usr/local/www/ 트리를 박스로 올림).
+- [x] **#36 커밋 완료(develop)**: 3D 스카이돔 바닥 세계지도를 dome 과 함께 yaw 회전 — develop `82fc3d4`. (main/prod 미반영)
+- [ ] #36 검증(선상): 3D 돔 드래그/자동궤도 회전 시 바닥 세계지도가 와이어·위성·본선·NESW 와 **함께 회전**·정합 / GPS 없을 때 흐린 채움 유지.
+- [x] **#35 커밋 완료(develop)**: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업 — develop `c72b1d2`→최종 `2c23248`. (main/prod 미반영 — 명시 지시 시 병합)
+- [ ] #35 검증(선상): NexusWave gateway 있는 선박 → 미니맵 클릭 시 월드맵 + 커버리지 오버레이 정상 /
+  없는 선박 → 월드맵은 열리되 커버리지 미표시 + "only NEXUSWAVE…" 안내 팝업(항구 미니맵·줌은 정상 동작).
+- [x] **#34 커밋 완료**: develop `92ae399` → main `369da8e` → prod `7a7195f`. 2026-06-16 전 브랜치 배포.
+- [ ] #34 검증(선상): API `israndompw:true` PUT(Create)/POST(Update) → 6자리 숫자 난수 비밀번호 생성 확인 /
+  `israndompw:false` Update → 비밀번호 `1111` 초기화 / Topup `freeradius_lastbasedata:50` → used-octets +50MB /
+  `freeradius_lastbasedata:-50` → -50MB(0 하한) / 3D 돔 열면 **북이 화면 상단**에 표시되는지 / 배포 6파일 일괄 확인.
+- [ ] **이번 세션 미커밋 (커밋 대기)**: #33(UI: crew_account.php·manage_crew_wifi_account.inc·common_ui.inc·index.php)
+  는 `10aeaea` 에 포함돼 prod 반영 완료. #32(voucher API 5파일)도 동일 배포 묶음에 포함.
 - [ ] #32 검증(선상): 원격 API 로 voucher **다건** create(PUT)/update(POST)/delete(DELETE) → 웹과 동일
   결과 / `weekly` 사용량 파일 삭제 확인 / **배포 정합성 5파일 일괄**(버전 섞임 시 ArgumentCountError 등).
 - [ ] #33 커버리지 맵: **운영사 이미지 필요(B)** — `usr/local/www/img/coverage_{oneweb,gx,fbb}.png`

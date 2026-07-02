@@ -479,6 +479,119 @@ function get_datausage_from_db($dataMetric, $timeout = 1) {
 }
 
 // ---------------------------------------------------------------------------
+// 일별 사용량(막대그래프용) — InfluxDB traffic 을 GROUP BY time(1d) 로 질의.
+//
+// get_datausage_from_db() 와 동일한 원격 InfluxDB(192.168.209.210:8086,
+// db=acustatus, measurement=traffic, 필드 {metric}_rx/{metric}_tx)를 쓰되,
+// 월합산 대신 "최근 N일"을 하루 버킷으로 나눠 각 일자의 rx+tx 합을 반환한다.
+//
+// 여러 게이트웨이(metric)를 한 번의 질의로 가져오기 위해 SELECT 에 모든
+// metric 의 sum(rx),sum(tx) 를 순서대로 나열한다. InfluxDB 는 같은 함수가
+// 반복되면 컬럼명을 sum,sum_1,sum_2... 로 충돌시키므로 이름이 아니라
+// "SELECT 순서 = 컬럼 위치"로 매핑한다(time=0, metric i 의 rx=1+2*i, tx=2+2*i).
+//
+// 하루 경계는 선박 GMT 오프셋(local midnight)에 맞춘다. InfluxDB 의
+// GROUP BY time(1d, <offset>) 으로 버킷 경계를 옮기고, 반환 ts(epoch s)는
+// 그 경계 시각(UTC)이므로 라벨은 ts + 오프셋초 를 gmdate 로 포맷한다.
+//
+// $metrics: 인터페이스 device 명(예: vtnet4, vtnet4.10) 배열.
+// 반환: array('labels'=>['06-18',...], 'series'=>array(metric=>[gb,...]))
+//       하드 실패(타임아웃/연결오류/비200)면 false.
+// ---------------------------------------------------------------------------
+function read_daily_usage_multi($metrics, $days = 14, $timeout = 4, $monthMode = false) {
+    global $config;
+    if (!is_array($metrics) || count($metrics) === 0) {
+        return array('labels' => array(), 'series' => array());
+    }
+
+    // 선박 GMT 오프셋(시간, 반시간대 허용) → InfluxDB GROUP BY 오프셋(분)
+    $offsetHours = 0.0;
+    if (isset($config['time_offset_enabled']['time_offset']) &&
+        $config['time_offset_enabled']['time_offset'] !== '') {
+        $offsetHours = floatval($config['time_offset_enabled']['time_offset']);
+    }
+    $offsetSeconds = (int)round($offsetHours * 3600);
+    $groupOffsetMin = -(int)round($offsetHours * 60); // local midnight 경계
+
+    // "이번 달"(현지시각 1일 00:00 ~ 현재) 모드: 조회창 = 현지 날짜(오늘 일자)
+    //   + 1일 여유. 이후 라벨의 월(MM)이 현재 현지 월과 같은 버킷만 남긴다.
+    $curMonth = '';
+    if ($monthMode) {
+        $nowLocal   = time() + $offsetSeconds;
+        $curMonth   = gmdate('m', $nowLocal);
+        $dayOfMonth = (int)gmdate('j', $nowLocal);
+        $days       = $dayOfMonth + 1;
+    }
+    $days = max(1, min(62, intval($days)));
+
+    // SELECT 절: metric 순서대로 sum(rx),sum(tx)
+    $sel = array();
+    foreach ($metrics as $m) {
+        $sel[] = 'sum("' . $m . '_rx")';
+        $sel[] = 'sum("' . $m . '_tx")';
+    }
+    $q = 'SELECT ' . implode(',', $sel) .
+         ' FROM traffic WHERE time > now() - ' . $days . 'd' .
+         ' GROUP BY time(1d,' . $groupOffsetMin . 'm) fill(0)';
+
+    $url = "http://192.168.209.210:8086/query?db=acustatus&epoch=s&q=" . rawurlencode($q);
+    $ch = curl_init();
+    curl_setopt_array($ch, array(
+        CURLOPT_URL => $url,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_MAXREDIRS => 10,
+        CURLOPT_CUSTOMREQUEST => "GET",
+        CURLOPT_RETURNTRANSFER => TRUE,
+        CURLOPT_HTTPHEADER => array('Content-Type: text/plain')
+    ));
+    $response = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlerr = curl_error($ch);
+    curl_close($ch);
+    if ($curlerr !== '' || (int)$code !== 200) {
+        return false;
+    }
+    $j = json_decode($response, true);
+    $rows = isset($j['results'][0]['series'][0]['values'])
+        ? $j['results'][0]['series'][0]['values'] : array();
+
+    $labels = array();
+    $series = array();
+    foreach ($metrics as $m) { $series[$m] = array(); }
+
+    foreach ($rows as $row) {
+        $ts = isset($row[0]) ? intval($row[0]) : 0;
+        $labels[] = gmdate('m-d', $ts + $offsetSeconds);
+        foreach ($metrics as $i => $m) {
+            $rxIdx = 1 + 2 * $i;
+            $txIdx = 2 + 2 * $i;
+            $bytes = (isset($row[$rxIdx]) ? floatval($row[$rxIdx]) : 0) +
+                     (isset($row[$txIdx]) ? floatval($row[$txIdx]) : 0);
+            $series[$m][] = round($bytes / 1073741824, 3); // GB, 소수 3자리
+        }
+    }
+
+    // month 모드: 현지 월(MM)이 현재 월과 일치하는 버킷만 유지(전월 말일 등 절삭)
+    if ($monthMode && $curMonth !== '') {
+        $fl = array();
+        $fs = array();
+        foreach ($metrics as $m) { $fs[$m] = array(); }
+        foreach ($labels as $i => $lbl) {
+            if (substr($lbl, 0, 2) === $curMonth) {
+                $fl[] = $lbl;
+                foreach ($metrics as $m) {
+                    $fs[$m][] = isset($series[$m][$i]) ? $series[$m][$i] : 0;
+                }
+            }
+        }
+        $labels = $fl;
+        $series = $fs;
+    }
+
+    return array('labels' => $labels, 'series' => $series);
+}
+
+// ---------------------------------------------------------------------------
 // 게이트웨이 월 사용량 소스(로컬 vnstat) — "불씨" 제거용.
 //
 // 기존 get_datausage_from_db() 는 원격 InfluxDB 에 "월초~현재" 한 달치 sum 을
