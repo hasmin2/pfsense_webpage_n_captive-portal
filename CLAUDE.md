@@ -1524,7 +1524,8 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 ## 다음 작업 대기 중
 
 - [x] **#50 커밋 완료(develop `9299f4f`)**: crew_account.php per-user History 버튼 + 계정별 변경 이력 모달
-  + `radacct_changehistory.username` 컬럼 + 조회 엔드포인트. (main/prod 미반영 — 명시 지시 시 병합)
+  + `radacct_changehistory.username` 컬럼 + 조회 엔드포인트. 패치노트 기록 완료(`2026-07-03 Update`
+  NEW 불릿, 버전 미정). (main/prod 미반영 — 명시 지시 시 병합)
 - [ ] #50 검증(선상): crew_account 각 행 History 버튼 → 모달에 그 계정 변경만 표시(1d/7d/30d/All/Custom) /
   prepaid_account 는 History 컬럼 없음·정렬 정상 / Export CSV / `radacct_changehistory` 를 username 컬럼
   포함 신 스키마로 새로 생성(`DESCRIBE radius.radacct_changehistory`).

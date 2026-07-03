@@ -17,6 +17,11 @@ Version: to be confirmed · Beta (develop)
   whether made from the account page, the dashboard widget or the remote API.
   Each record notes who made the change and when. Prepaid (crewpay-) account
   changes are marked "(CREWPAY)". Actual passwords are never written to the log.
+- NEW: Per-account history view — each row in the Crew Accounts page now has a
+  "History" button that opens the change log for that specific account (password
+  and data-usage resets, modifications, top-ups, description and schedule edits),
+  filtered to that account. Choose the last 1 / 7 / 30 days, all time, or a
+  custom date range, and export the list to CSV.
 
 2026-07-02 Update
 Beta 1.1.49-Beta · Stable: 1.1.3-Stable
