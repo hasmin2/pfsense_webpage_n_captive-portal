@@ -1224,7 +1224,12 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **CSS**: `usr/local/www/css/dark.css` **신규**(`html.dark` 스코프 오버라이드). 기존 CSS 6종은 색 하드코딩
   (변수 미사용)이라 구조요소(body·사이드바·타일·테이블·팝업·폼·버튼)별로 다크색 재지정. 라이트 모드 영향 0.
 - **토글 4-state 순환**: `System`(OS `prefers-color-scheme`, 기본)→`GPS`(일출일몰)→`Light`→`Dark`.
-  localStorage `cp_theme`(auto/gps/light/dark, 내부키는 auto 유지). 사이드바 메뉴 하단 버튼(유니코드 아이콘).
+  저장키 `cp_theme`(auto/gps/light/dark, 내부키는 auto 유지). 사이드바 메뉴 하단 버튼(유니코드 아이콘).
+  - **저장소: 쿠키(주) + localStorage(미러)** — 선박 콘솔(앱 webview 등)에서 **localStorage 가 세션마다
+    초기화되어 매번 기본값(auto)로 돌아가던 문제** 수정. 토글 시 `cp_theme` 쿠키(`path=/`·max-age 1년·
+    samesite=lax) + localStorage 동시 기록. 읽기(FOUC 조기 스크립트 + `cpThemeMode`)는 **쿠키 우선 →
+    localStorage 폴백 → auto**. 기존 localStorage 사용자는 첫 로드 시 쿠키로 1회 자동 이관. 9개 관리
+    페이지 공용(같은 origin·path=/ 라 전 페이지 공유).
   - **FOUC 방지**: `print_css_n_head` 최상단 인라인 스크립트가 CSS 링크보다 먼저 실행 → 첫 페인트 전 `html.dark` 설정.
   - System 모드: `matchMedia change` 리스너로 OS 전환 실시간 반영. 표시 라벨은 "System"(내부키 auto)(`e089710`).
 - **GPS 모드(오프라인 일출/일몰, civil twilight)**:

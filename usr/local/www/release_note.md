@@ -35,6 +35,9 @@ Beta 1.1.53-Beta · Stable: 1.1.4-Stable
   admin interfaces (web console, SSH, etc.) from the crew network is now blocked.
   This closes a gap where the per-user routing rules also let crew devices reach
   the firewall's management services.
+- FIXED: The theme (System / GPS / Light / Dark) toggle now remembers your last
+  choice. It previously reset to the default on some consoles every time the page
+  was reopened; the setting is now saved in a cookie so it persists.
 
 2026-07-02 Update
 Beta 1.1.49-Beta · Stable: 1.1.3-Stable

@@ -78,7 +78,10 @@ function print_css_n_head(){
     //   dusk 이후면 다음 dawn(nbegin) 전까지 밤. (조기 스크립트는 렌더 직후라 s.now 그대로 사용)
     $rtnstr  = '<script>window.CP_SUN=' . $cp_sun_js . ';</script>';
     $rtnstr .= '<script>(function(){try{'
-        . 'var m=localStorage.getItem("cp_theme")||"auto";var d;var s=window.CP_SUN;'
+        // 저장값: 쿠키 우선(webview 등 localStorage 미보존 환경 대비), 없으면 localStorage, 기본 auto
+        . 'var m=(document.cookie.match(/(?:^|;\s*)cp_theme=([^;]*)/)||[])[1];'
+        . 'if(m){try{m=decodeURIComponent(m);}catch(e){}}else{try{m=localStorage.getItem("cp_theme");}catch(e){}}'
+        . 'm=m||"auto";var d;var s=window.CP_SUN;'
         . 'if(m==="dark"){d=true;}'
         . 'else if(m==="light"){d=false;}'
         . 'else if(m==="gps"&&s&&s.ok){'
@@ -576,9 +579,20 @@ function print_sidebar($inputlink)
             light: { ic: "☀", label: "Light" },
             dark:  { ic: "☾", label: "Dark" }
         };
+        // 테마 저장: 쿠키 우선(webview/localStorage 미보존 환경 대비) + localStorage 미러
+        function cpReadCookie(){
+            var m = document.cookie.match(/(?:^|;\s*)cp_theme=([^;]*)/);
+            if (!m) { return null; }
+            try { return decodeURIComponent(m[1]); } catch(e){ return m[1]; }
+        }
+        function cpWriteCookie(v){
+            try { document.cookie = "cp_theme=" + encodeURIComponent(v) + "; path=/; max-age=31536000; samesite=lax"; } catch(e){}
+        }
         function cpThemeMode(){
-            var m = null;
-            try { m = localStorage.getItem("cp_theme"); } catch(e){}
+            var m = cpReadCookie();
+            if (THEME_MODES.indexOf(m) < 0) {
+                try { m = localStorage.getItem("cp_theme"); } catch(e){}
+            }
             return (THEME_MODES.indexOf(m) >= 0) ? m : "auto";
         }
         function cpSystemDark(){
@@ -627,7 +641,8 @@ function print_sidebar($inputlink)
         if (tbtn) {
             tbtn.addEventListener("click", function(){
                 var next = THEME_MODES[(THEME_MODES.indexOf(cpThemeMode()) + 1) % THEME_MODES.length];
-                try { localStorage.setItem("cp_theme", next); } catch(e){}
+                cpWriteCookie(next);                                   // 쿠키(주 저장소)
+                try { localStorage.setItem("cp_theme", next); } catch(e){}   // localStorage 미러
                 cpApplyTheme();
             });
         }
@@ -643,6 +658,11 @@ function print_sidebar($inputlink)
             var m = cpThemeMode();
             if (m === "gps" || m === "auto") { cpApplyTheme(); }
         }, 60000);
+        // 기존 localStorage 사용자 → 쿠키로 1회 이관(쿠키 없고 저장된 모드가 유효할 때)
+        if (cpReadCookie() === null) {
+            var _lm = null; try { _lm = localStorage.getItem("cp_theme"); } catch(e){}
+            if (THEME_MODES.indexOf(_lm) >= 0) { cpWriteCookie(_lm); }
+        }
         cpApplyTheme();
     })();
     </script>';
