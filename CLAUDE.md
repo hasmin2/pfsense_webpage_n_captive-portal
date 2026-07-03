@@ -1160,9 +1160,12 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 ### 40. OpenVPN 재시작 크론을 watchdog 으로 안정화 — "일부 선박 미재시작" 교정 (develop `66ebfd7`)
 - **배경/증상**: `usr/local/cron/openvpn_restart_timeperiod_check.php`(cron, [firewall_cronlist:211~]
   등록됨)가 **일부 선박에서 VPN 재시작을 정상 수행하지 않음**. 로직 검증 결과 결함 다수.
-  - **스케줄(2026-07-02 변경, 의도됨)**: `minute` `*`(매분) → `0`(매시 정각, 시간당 1회). 매분 점검이 불필요하다는
-    판단(사용자 확인). **트레이드오프**: liveness 재시작 판정이 시간당 1회 → 디바운스(연속 실패 threshold)와 겹쳐
-    VPN 끊김 복구가 최대 ~1시간 지연 가능. 더 빠른 복구가 필요하면 `minute` 을 `*` 로 되돌릴 것.
+  - **스케줄(2026-07-03 현재 = 매분 `minute` `*`)**: 2026-07-02 에 매분→매시(`0`)로 바꿨다가, 매시 cadence 가
+    (A) 강제 플래그(경로전환) 재시작을 최대 ~59분 지연시키고 — 위젯/API 는 플래그만 set 하고 재시작은
+    **오직 cron 발화에만 의존**(`manual_routing.widget.php:386` 빈 루프 + `APIStatusOpenVPNRestart.inc` 플래그
+    set only) — (B) liveness 복구를 `OVWD_FAIL_THRESHOLD`(3)×매시 = **최대 ~3시간**으로 늘려서 **2026-07-03 에
+    매분으로 환원**. 매분이면 상수(threshold 3=~3분·cooldown 5분·stale-reap 10분)가 원설계대로 맞고, 매분 부하는
+    flock 단일 인스턴스 가드(#26)+hang reap 이 억제. (firewall_cronlist 항상 함께 커밋.)
 - **이 크론의 2가지 용도**: ① liveness — 터널이 데이터 못 넘기면 재시작. ② 강제 플래그 —
   관리자/경로전환(`manual_routing.widget.php` "Automatic" 분기 + `APIStatusOpenVPNRestart.inc` 가
   `$config['openvpn']['openvpnrestart']=""` set)이 모든 client 즉시 재시작 → **Starlink↔VSAT 업링크
@@ -1201,8 +1204,18 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
     미사용 → lost-update 무관, #16 패턴). cron 매분이라 ~3분 확정 실패 후 재시작.
   - **완전 silent(진단 불가가 곧 문제)**: `log_error("[openvpn-watchdog] …")` 로 재시작/reap/락실패 가시화.
     매분 스팸·디스크풀(#24) 방지 위해 **평시 per-client 상태는 `/tmp/openvpn_watchdog_debug.on` 있을 때만**.
-- **동작 흐름(수정 후)**: liveness=`status==up`+`virtual_addr` 일 때 터널 경유 ping→연속 3실패+쿨다운 경과
-  시 **그 client 만** 재시작 / 강제 플래그=**모든 client 즉시**(쿨다운 무시·1회성) 후 플래그 정리.
+- **⚠️ ping 대상 오류 = 터널 죽어도 무재시작(2026-07-03 교정, 진짜 진범)**: `OVWD_PING_HOST` 가
+  `vpn-server.synersat.noc`(= VPN 서버 **공인 엔드포인트**, 클라이언트가 다이얼하는 그 이름)였음. 헬스체크
+  `ping -S <virtual_addr> <공인IP>` 는 **`-S` 가 소스만 바꿀 뿐 FreeBSD 는 목적지 기준 라우팅** → 목적지가
+  공인 IP 라 **WAN(Starlink)로 나가고 outbound NAT 로 응답까지 옴** → **터널이 완전히 죽어도 ping 성공 →
+  `$healthy=true` → fail 카운터 0 리셋 → liveness 재시작 영영 안 함**. 실측: 선상에서 터널 데이터 경로
+  (10.8.128.1) 사망인데 6시간+ 무재시작, 수동 재기동으로만 복구. 즉 워치독이 **터널 헬스가 아니라 WAN
+  도달성**을 재던 것. **수정**: `OVWD_PING_HOST` → **`10.8.128.1`**(터널 내부 GW, 전 client 공통 — 사용자
+  확인). 목적지가 터널 서브넷이라 라우팅이 터널 인터페이스로 강제 → 터널 사망 시 ping 실패 → 정상 재시작.
+  (다중 client 동시 공유 시 목적지 라우팅이 한 터널로만 갈 수 있어 per-client 정밀도 저하 가능하나, 공유
+  GW+통상 단일 활성 client 환경이면 무관.)
+- **동작 흐름(수정 후)**: liveness=`status==up`+`virtual_addr` 일 때 터널 내부 GW(10.8.128.1) ping→연속 3실패
+  +쿨다운 경과 시 **그 client 만** 재시작 / 강제 플래그=**모든 client 즉시**(쿨다운 무시·1회성) 후 플래그 정리.
 - **⚠️ 의도된 동작 변경**: 기존 ping 1회 실패 시 즉시 전체 재시작 → 이제 liveness 는 **~3분 디바운스**
   (위성 flapping/#21 끊김 방지). 즉시성 원하면 `OVWD_FAIL_THRESHOLD=1`. **경로전환(플래그) 재시작은 변함없이
   즉시** → manual_routing/Starlink↔VSAT 전환 동작 영향 없음.
@@ -1213,7 +1226,10 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `clog /var/log/system.log | grep openvpn-watchdog`(RESTART/reap/락실패) / `touch
   /tmp/openvpn_watchdog_debug.on`(per-client ping rc 상세, 끝나면 삭제) / hang 재현 시 10분 후 stale reap.
 - **튜닝 상수(파일 상단)**: `OVWD_FAIL_THRESHOLD`(3) · `OVWD_RESTART_COOLDOWN`(300) ·
-  `OVWD_STALE_HOLDER_SECS`(600) · `OVWD_LOCK_WAIT`(10) · `OVWD_PING_HOST`(`vpn-server.synersat.noc`).
+  `OVWD_STALE_HOLDER_SECS`(600) · `OVWD_LOCK_WAIT`(10) · `OVWD_PING_HOST`(**`10.8.128.1`** = 터널 내부 GW;
+  공인 엔드포인트 금지 — WAN 누수로 healthy 오판).
+- **2026-07-03 후속(ping 대상 교정 + 매분 환원)**: `openvpn_restart_timeperiod_check.php`(`OVWD_PING_HOST`
+  10.8.128.1) + `firewall_cronlist`(`minute` `*`) 일괄. 패치노트는 `2026-07-03 Update` 항목에 병합(FIXED).
 
 ### 41. 다크모드 — System/GPS(일출일몰)/Light/Dark 토글 (develop `ab95701`·`81c9423`·`e089710`)
 - **요구**: 다크모드 버튼을 전 웹페이지 공통 적용. 이후 시스템 테마 연동(기본) + GPS 일출/일몰 연동으로 확대.
