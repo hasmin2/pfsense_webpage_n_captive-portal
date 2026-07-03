@@ -1553,6 +1553,46 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **검증**: php -l 2파일 통과.
 - **배포 정합성**: `server_module.inc` + `index.php` 2파일(가드 있어 fatal 없음, 표시만 강등).
 
+### 52. crew → This Firewall(자기 자신) 접근 제한 — DNS/DHCP/portal 외 전면 block (develop 미커밋)
+- **배경/요구**: crew 로그인 시 pfctl 테이블 방식(`add_crew_linked_rule`, #1·#4·#12·#13 배경)으로 라우팅
+  pass 룰이 **묵시적으로** 걸리는데, 그 [CP Routing] route-to pass 룰들의 **Destination 이 `any`** 라
+  "This Firewall(박스 자기 IP)"까지 포함 → **crew 단말이 firewall 의 webGUI(443/80)·SSH(22) 등 관리
+  서비스에 접근 가능**한 누수. crew 는 **DNS(udp/53) + portal(tcp/8002)** 만 firewall 에 접근하고
+  나머지는 막고자 함(+ DHCP 갱신 udp/67 은 운영 필수라 함께 허용).
+- **원인 확인(선상 GUI 스크린샷)**: CP 클라이언트 인터페이스 = `CREW`. floating 목록에 crew→self 를
+  제한하는 룰이 **명시적으로 없음**. `[System Rule] Default allow for requesting to Firewall` 은 인터페이스가
+  `MACHINE/NOC_VPN/BUSINESS/OpenVPN` 이라 CREW 무관(누수 원인 아님). 원인은 오직 `[CP Routing] route-to`/
+  `cp_gw_default pass` 4룰의 `dest any`. (route-to 는 self 목적지엔 사실상 미적용이라 트래픽이 그냥 박스로 pass됨.)
+- **결정: raw pfctl 아니라 config 기반 floating 룰** — 보안 block 은 `filter_configure()` flush(게이트웨이
+  up/down 자동 트리거)에도 **살아있어야** 하므로 config 에 둔다. pfctl-only 앵커/테이블은 flush 되면
+  block 이 사라져 **fail-open 노출**(#20 의 보안판). 라우팅 pass 가 flush 되면 최악이 오라우팅이지만
+  self-admin block 이 flush 되면 관리콘솔 노출이라 훨씬 위험.
+- **수정 (`captiveportal.inc` `cp_refresh_pass_rules()` 단일 함수)**:
+  - `$expected[]` 에 self-protect 4룰 추가(floating·quick·direction=in·interface=`$lan_iface`(CREW)·
+    **source=any**·**dest=`(self)`**): pass udp/53(DNS) / pass udp/67(DHCP 갱신 unicast) /
+    pass tcp/8002(portal, `$portal_port` 변수) / **block any(나머지 전부)**. descr 접두 `[CP Routing] self-protect`.
+  - 룰 빌더 확장: 엔트리에 `src_any`(source=any) / `dst_self`(dest=`(self)`) / `protocol` / `dstport` 옵션
+    키 처리. **기존 route-to/block-out 빌더는 완전 하위호환**(미설정 시 src alias + dst any 유지).
+  - **정렬 불변식 강제(핵심)**: add 루프의 `array_unshift` 는 순서를 뒤섞고, **게이트웨이 추가 시 새 route-to
+    가 self-protect 위로** 올라갈 수 있음(quick first-match → self-protect block 이 route-to dest-any 밑으로
+    가면 crew 가 다시 샘). → add 후 self-protect 룰을 **항상 [CP Routing] 최상단**으로 재배치(pass 3개 먼저,
+    block 마지막; PHP7.4 usort 비안정이나 pass끼리 순서 무관). 변경(add/remove) 있을 때만 실행 → 불필요 write 없음.
+- **DHCP(udp/67) 포함 사유**: crew 가 DHCP 면 **임대 갱신이 서버(=firewall) IP 로 unicast** → block 에
+  걸려 주기적 IP 유실. 정적 IP 환경이면 `self-protect pass DHCP` 한 룰만 제거 가능.
+- **범위/주의**: IPv4(`inet`)만(기존 라우팅 룰과 동일; crew IPv6→firewall 있으면 별도 필요). portal 포트
+  8002 는 `$portal_port` 로 하드코딩(스크린샷 System Rule 12 와 일치); HTTPS 로그인 별도 포트면 pass 추가.
+  source=any(=CREW in)이라 **인증 여부 무관 전 crew** 적용(미인증도 admin 차단, CP redirect 는 53/8002 로 정상).
+- **Suricata 충돌 분석(질의 답)**: **룰 차원 충돌 없음**(Suricata 는 시그니처 판정, pf 룰/pfctl 테이블 미참조 —
+  직교 레이어. self-protect 룰과 상호작용 0). 단 **모드 차원**: Legacy(Blocking, snort2c 테이블) 모드는 안전
+  (다만 crew IP 오탐 차단 시 snort2c drop 이 pass 위에서 걸려 #19/#21 스타일 끊김으로 오진 가능 →
+  `pfctl -t snort2c -T show` 진단). **Inline IPS(netmap) 모드는 CP 의 ipfw/dummynet + route-to 정책라우팅과
+  잘 알려진 비호환** → CREW/route-to WAN 에 걸면 끊김/블랙홀. 권장: Legacy 모드 + WAN 한정 + crew 서브넷 Pass List.
+- **검증**: php -l 통과(기존 `${var}` deprecated 경고만, 무관) / 독립 하네스 — self-protect 4룰 최상단·
+  pass(53/67/8002) block 앞·각 룰 구조(proto/port/dst=(self)/src=any/no-gw)·route-to 하위호환(src alias/dst any/gw) 전부 통과.
+- **적용(선상)**: `cp_refresh_pass_rules()` 발화 시 생성 → 배포 후 CP 재구성 / 게이트웨이 저장(#47 훅) /
+  `cp_routing_setup.php` 중 하나로 트리거. GUI Floating 최상단 `[CP Routing] self-protect` 4줄 확인 →
+  crew 에서 webGUI(443)/SSH(22) 차단 + DNS·포털·인터넷 정상. `captiveportal.inc` 단일 파일이나 버전 섞임 방지 일괄 배포 권장.
+
 ## 다음 작업 대기 중
 
 - [x] **#51 커밋 완료(develop `a848caa`+`725e53c`)**: FBB 신호 표시 이름매핑 분리 + ACU state -1 →

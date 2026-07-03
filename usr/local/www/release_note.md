@@ -28,6 +28,11 @@ Beta 1.1.53-Beta · Stable: 1.1.4-Stable
   and data-usage resets, modifications, top-ups, description and schedule edits),
   filtered to that account. Choose the last 1 / 7 / 30 days, all time, or a
   custom date range, and export the list to CSV.
+- CHANGED: Crew Wi-Fi devices can no longer reach the firewall itself except for
+  what they actually need — DNS, DHCP and the login portal. Access to the router's
+  admin interfaces (web console, SSH, etc.) from the crew network is now blocked.
+  This closes a gap where the per-user routing rules also let crew devices reach
+  the firewall's management services.
 
 2026-07-02 Update
 Beta 1.1.49-Beta · Stable: 1.1.3-Stable

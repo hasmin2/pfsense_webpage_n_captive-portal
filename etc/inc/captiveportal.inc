@@ -4614,11 +4614,19 @@ function cp_get_pf_table_for_gateway($gwname) {
  *   - gateway 이름 변경 → 구 Rule 삭제 + 신 Rule 생성
  *   - gateway 추가    → 새 Pass Rule + Block Rule 자동 생성
  *   - gateway 삭제    → 불필요한 Rule 자동 제거
+ *   - self-protect    → crew 인터페이스에서 firewall(This Firewall) 자기 자신 접근을
+ *                       DNS(udp/53)/DHCP(udp/67)/portal(tcp/{portal_port}) 외 전면 block
+ *                       (webGUI/SSH 등 관리 서비스 노출 차단). route-to 룰(dest any)이
+ *                       This Firewall 까지 pass 시키던 누수를 막는다.
  *
  * 생성 규칙 (게이트웨이 N개 기준):
  *   Pass  : N개  (게이트웨이당 1개, route-to 해당 GW)
  *   Block : N*(N의 서로 다른 인터페이스 수 - 1) 개
  *           (자신의 WAN 이 아닌 모든 WAN 인터페이스에 block out)
+ *   self-protect: pass 3개(53/67/{portal_port}) + block 1개 = 항상 [CP Routing] 최상단
+ *
+ * ⚠️ self-protect 는 config 기반 floating 룰로 생성한다(raw pfctl 아님).
+ *    보안 block 은 filter_configure() flush 에도 살아있어야 하므로 config 에 둔다.
  */
 /**
  * 게이트웨이 테이블 이름에 해당하는 alias 가 없으면 자동 생성.
@@ -4670,6 +4678,56 @@ function cp_refresh_pass_rules() {
 
     // ── 기대하는 룰 세트를 구성 ──────────────────────────────────────────────
     $expected = [];
+
+    // ── self-protect: crew → This Firewall 접근 제한 ─────────────────────────
+    //  DNS(udp/53) / DHCP 갱신(udp/67) / portal(tcp/$portal_port) 만 허용,
+    //  나머지(webGUI 443/80·SSH 22 등)는 전부 block. quick first-match 이므로
+    //  아래 정렬 단계에서 route-to pass(dest any) '위'로 올려 누수를 차단한다.
+    //  DHCP(67): 임대 갱신은 서버 IP 로 unicast → This Firewall 에 걸리므로 허용 필수
+    //            (crew 가 정적 IP 라면 이 한 룰만 제거 가능).
+    $portal_port = 8002;
+    $expected[] = [
+        'type'      => 'pass',
+        'direction' => 'in',
+        'interface' => $lan_iface,
+        'src_any'   => true,
+        'dst_self'  => true,
+        'protocol'  => 'udp',
+        'dstport'   => '53',
+        'gateway'   => '',
+        'descr'     => '[CP Routing] self-protect pass DNS (udp/53)',
+    ];
+    $expected[] = [
+        'type'      => 'pass',
+        'direction' => 'in',
+        'interface' => $lan_iface,
+        'src_any'   => true,
+        'dst_self'  => true,
+        'protocol'  => 'udp',
+        'dstport'   => '67',
+        'gateway'   => '',
+        'descr'     => '[CP Routing] self-protect pass DHCP (udp/67)',
+    ];
+    $expected[] = [
+        'type'      => 'pass',
+        'direction' => 'in',
+        'interface' => $lan_iface,
+        'src_any'   => true,
+        'dst_self'  => true,
+        'protocol'  => 'tcp',
+        'dstport'   => (string)$portal_port,
+        'gateway'   => '',
+        'descr'     => "[CP Routing] self-protect pass portal (tcp/{$portal_port})",
+    ];
+    $expected[] = [
+        'type'      => 'block',
+        'direction' => 'in',
+        'interface' => $lan_iface,
+        'src_any'   => true,
+        'dst_self'  => true,
+        'gateway'   => '',
+        'descr'     => '[CP Routing] self-protect block all to This Firewall',
+    ];
 
     // Default pass 룰: terminaltype 미설정 사용자 → 기본 게이트웨이로 통과 (route-to 없음)
     $expected[] = [
@@ -4752,22 +4810,57 @@ function cp_refresh_pass_rules() {
             'ipprotocol' => 'inet',
             'tag'        => '',
             'tagged'     => '',
-            'source'     => ['address' => $e['src_alias']],
-            'destination'=> ['any' => true],
+            // src_any: source=any (self-protect), 아니면 기존 cp_gw_* alias
+            'source'     => !empty($e['src_any']) ? ['any' => true] : ['address' => $e['src_alias']],
+            // dst_self: destination=This Firewall(self), 아니면 any
+            'destination'=> !empty($e['dst_self']) ? ['network' => '(self)'] : ['any' => true],
             'descr'      => $e['descr'],
             'updated'    => ['time' => (string)time(), 'username' => 'cp_routing_auto'],
             'created'    => ['time' => (string)time(), 'username' => 'cp_routing_auto'],
         ];
+        // 프로토콜/포트 (self-protect 룰만 지정; 라우팅 룰은 미지정 = any)
+        if (!empty($e['protocol'])) {
+            $rule['protocol'] = $e['protocol'];
+        }
+        if (!empty($e['dstport'])) {
+            $rule['destination']['port'] = $e['dstport'];
+        }
         if ($e['type'] === 'pass') {
             $rule['statetype'] = 'keep state';
             // gateway 비어있으면 route-to 없이 기본 라우팅 사용
-            if ($e['gateway'] !== '') {
+            if (!empty($e['gateway'])) {
                 $rule['gateway'] = $e['gateway'];
             }
         }
 
         // Floating 룰은 앞에 삽입 (우선순위 확보)
         array_unshift($config['filter']['rule'], $rule);
+    }
+
+    // ── self-protect 룰을 항상 [CP Routing] 최상단으로 정렬 ───────────────────
+    //  add 루프의 array_unshift 는 need_add 를 하나씩 앞에 꽂아 순서가 뒤섞이고,
+    //  게이트웨이 추가 시 새 route-to 가 self-protect '위'로 올라갈 수 있다.
+    //  quick first-match 이므로 self-protect(block)이 route-to(dest any) 아래로
+    //  내려가면 crew 가 This Firewall 로 다시 샌다 → 매 변경 시 불변식을 강제한다.
+    //  내부 순서: pass(53/67/portal) 먼저, block 마지막.
+    $sp = [];
+    $rest = [];
+    foreach ($config['filter']['rule'] as $r) {
+        if (isset($r['floating']) &&
+            strpos($r['descr'] ?? '', '[CP Routing] self-protect') !== false) {
+            $sp[] = $r;
+        } else {
+            $rest[] = $r;
+        }
+    }
+    if (!empty($sp)) {
+        // pass 를 block 앞으로 (PHP7.4 usort 는 비안정 정렬이나 pass 끼리는 순서 무관)
+        usort($sp, function ($a, $b) {
+            $pa = (strpos($a['descr'] ?? '', 'block') !== false) ? 1 : 0;
+            $pb = (strpos($b['descr'] ?? '', 'block') !== false) ? 1 : 0;
+            return $pa - $pb;
+        });
+        $config['filter']['rule'] = array_merge($sp, $rest);
     }
 
     $added   = count($need_add);
