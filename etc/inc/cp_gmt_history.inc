@@ -49,15 +49,91 @@ function cp_gmt_history_sql_str($s) {
 	return str_replace(array('\\', "'"), array('\\\\', "\\'"), (string)$s);
 }
 
-/* 테이블 생성 DDL (멱등 — record/fetch 배치 앞에 항상 포함) */
+/* 테이블 생성 DDL (CREATE TABLE IF NOT EXISTS — record/fetch 배치 앞에 항상 포함).
+ * 컬럼 마이그레이션 없음: #48 배포 전까지 이 테이블이 존재하는 박스가 없어(사용자 확인)
+ * 6컬럼 스키마로 바로 생성하면 됨. */
 function cp_gmt_history_create_table_sql() {
 	return 'CREATE TABLE IF NOT EXISTS `' . CP_GMT_HISTORY_TABLE . "` (\n"
 		. "  `id` INT NOT NULL AUTO_INCREMENT,\n"
 		. "  `timestamp` DATETIME NOT NULL,\n"
 		. "  `timefrom` VARCHAR(10) NOT NULL DEFAULT '',\n"
 		. "  `timeto` VARCHAR(10) NOT NULL DEFAULT '',\n"
+		. "  `description` VARCHAR(255) NOT NULL DEFAULT '',\n"
+		. "  `gps` VARCHAR(32) NOT NULL DEFAULT 'N/A',\n"
 		. "  PRIMARY KEY (`id`)\n"
 		. ") ENGINE=InnoDB DEFAULT CHARSET=utf8;\n";
+}
+
+/**
+ * influx 측정치 최신 1행 (컬럼명=>값). cp_tz_offset_update.php 와 동일한 선내 LAN
+ * influx — 2초 타임아웃, 실패 시 false (record 의 GPS 자동 채움용, self-contained).
+ */
+function cp_gmt_history_influx_latest($measurement, $db) {
+	if (!function_exists('curl_init')) { return false; }
+	$ch = curl_init();
+	if ($ch === false) { return false; }
+	curl_setopt_array($ch, array(
+		CURLOPT_URL => 'http://192.168.209.210:8086/query?q=' .
+			rawurlencode("select * from {$measurement} where time > now() - 60m order by time desc limit 1") .
+			'&db=' . rawurlencode($db),
+		CURLOPT_TIMEOUT        => 2,
+		CURLOPT_CONNECTTIMEOUT => 2,
+		CURLOPT_RETURNTRANSFER => true,
+		CURLOPT_HTTPHEADER     => array('Content-Type: application/json'),
+	));
+	$response = curl_exec($ch);
+	curl_close($ch);
+	if (!$response) { return false; }
+	$decoded = json_decode($response, true);
+	if (!isset($decoded['results'][0]['series'][0]['columns']) ||
+	    !isset($decoded['results'][0]['series'][0]['values'][0])) {
+		return false;
+	}
+	$row = array();
+	foreach ($decoded['results'][0]['series'][0]['columns'] as $i => $col) {
+		$row[$col] = isset($decoded['results'][0]['series'][0]['values'][0][$i])
+			? $decoded['results'][0]['series'][0]['values'][0][$i] : null;
+	}
+	return $row;
+}
+
+/**
+ * 현재 GPS 좌표 문자열 "lat,lon"(소수 5자리) — VSAT(vesselposition) 우선, FBB 폴백
+ * (부호 복원 포함, #29 크론과 동일 정책). 미수신/(0,0)/influx 불통이면 'N/A'.
+ */
+function cp_gmt_history_current_gps() {
+	$vp = cp_gmt_history_influx_latest('vesselposition', 'acustatus');
+	if (is_array($vp) &&
+	    isset($vp['Latitude']) && is_numeric($vp['Latitude']) &&
+	    isset($vp['Longitude']) && is_numeric($vp['Longitude'])) {
+		$lat = (float)$vp['Latitude'];
+		$lon = (float)$vp['Longitude'];
+		if (!($lat == 0 && $lon == 0)) {
+			return sprintf('%.5f,%.5f', $lat, $lon);
+		}
+	}
+	$ss = cp_gmt_history_influx_latest('satstatus', 'fbbstatus');
+	if (is_array($ss) &&
+	    isset($ss['Latitude']) && is_numeric($ss['Latitude']) &&
+	    isset($ss['Longitude']) && is_numeric($ss['Longitude'])) {
+		$lat = (float)$ss['Latitude'];
+		$lon = (float)$ss['Longitude'];
+		// FBB GPS 는 부호 없는 값 + 방향 컬럼(-/_ 표기 혼재) → 부호 복원
+		$latdir = '';
+		$londir = '';
+		foreach (array('lat-direction', 'lat_direction') as $k) {
+			if (isset($ss[$k])) { $latdir = strtoupper(trim((string)$ss[$k])); break; }
+		}
+		foreach (array('lon-direction', 'lon_direction') as $k) {
+			if (isset($ss[$k])) { $londir = strtoupper(trim((string)$ss[$k])); break; }
+		}
+		if ($lat > 0 && $latdir === 'S') { $lat = -$lat; }
+		if ($lon > 0 && $londir === 'W') { $lon = -$lon; }
+		if (!($lat == 0 && $lon == 0)) {
+			return sprintf('%.5f,%.5f', $lat, $lon);
+		}
+	}
+	return 'N/A';
 }
 
 /**
@@ -109,21 +185,30 @@ function cp_gmt_history_exec_sql($sql, $flags = '', &$out = null) {
 /**
  * GMT time_offset 변경 1건 기록. 테이블 없으면 같은 배치에서 생성(멱등).
  *
- * @param string $timefrom 변경 전 오프셋 (미설정이면 '')
- * @param string $timeto   변경 후 오프셋
- * @param string $source   로그 가시화용 출처 태그 (manual-web/auto-gps/api-push)
+ * @param string $timefrom    변경 전 오프셋 (미설정이면 '')
+ * @param string $timeto      변경 후 오프셋
+ * @param string $source      로그 가시화용 출처 태그 (manual-web/auto-gps/api-push)
+ * @param string $description 세부 내용 ("Manual change from 1.2.3.4" 등, 255자 클램프)
+ * @param string $gps         당시 GPS "lat,lon" — '' 이면 influx 에서 자동 취득(최대
+ *                            ~4초, LAN), 미수신이면 'N/A'. 호출측이 이미 알면 전달(크론).
  * @return bool 성공 여부 (실패는 log_error 만 — 호출측 흐름에 영향 없음)
  */
-function cp_gmt_history_record($timefrom, $timeto, $source = '') {
-	// VARCHAR(10) 클램프 + 공백 정리
+function cp_gmt_history_record($timefrom, $timeto, $source = '', $description = '', $gps = '') {
+	// VARCHAR 클램프 + 공백 정리
 	$from = substr(trim((string)$timefrom), 0, 10);
 	$to   = substr(trim((string)$timeto), 0, 10);
+	$desc = substr(trim((string)$description), 0, 255);
+	$gps  = trim((string)$gps);
+	if ($gps === '') { $gps = cp_gmt_history_current_gps(); }
+	$gps  = substr($gps, 0, 32);
 
 	$sql = cp_gmt_history_create_table_sql()
-		. 'INSERT INTO `' . CP_GMT_HISTORY_TABLE . '` (`timestamp`,`timefrom`,`timeto`) VALUES ('
+		. 'INSERT INTO `' . CP_GMT_HISTORY_TABLE . '` (`timestamp`,`timefrom`,`timeto`,`description`,`gps`) VALUES ('
 		. "'" . gmdate('Y-m-d H:i:s') . "',"
 		. "'" . cp_gmt_history_sql_str($from) . "',"
-		. "'" . cp_gmt_history_sql_str($to) . "');\n";
+		. "'" . cp_gmt_history_sql_str($to) . "',"
+		. "'" . cp_gmt_history_sql_str($desc) . "',"
+		. "'" . cp_gmt_history_sql_str($gps) . "');\n";
 
 	$out = array();
 	$ret = cp_gmt_history_exec_sql($sql, '', $out);
@@ -146,7 +231,7 @@ function cp_gmt_history_record($timefrom, $timeto, $source = '') {
  * @param string $from_dt UTC 'YYYY-MM-DD HH:MM:SS'
  * @param string $to_dt   UTC 'YYYY-MM-DD HH:MM:SS'
  * @param int    $limit   최대 행수 (1~5000)
- * @return array|false [['id','timestamp','timefrom','timeto'], ...] — 실패 시 false
+ * @return array|false [['id','timestamp','timefrom','timeto','description','gps'], ...] — 실패 시 false
  */
 function cp_gmt_history_fetch($from_dt, $to_dt, $limit = 1000) {
 	$re = '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/';
@@ -158,7 +243,7 @@ function cp_gmt_history_fetch($from_dt, $to_dt, $limit = 1000) {
 	if ($limit > 5000) { $limit = 5000; }
 
 	$sql = cp_gmt_history_create_table_sql()
-		. 'SELECT `id`,`timestamp`,`timefrom`,`timeto` FROM `' . CP_GMT_HISTORY_TABLE . '`'
+		. 'SELECT `id`,`timestamp`,`timefrom`,`timeto`,`description`,`gps` FROM `' . CP_GMT_HISTORY_TABLE . '`'
 		. " WHERE `timestamp` >= '" . cp_gmt_history_sql_str($from_dt) . "'"
 		. " AND `timestamp` <= '" . cp_gmt_history_sql_str($to_dt) . "'"
 		. " ORDER BY `timestamp` DESC, `id` DESC LIMIT {$limit};\n";
@@ -174,13 +259,15 @@ function cp_gmt_history_fetch($from_dt, $to_dt, $limit = 1000) {
 	}
 	$rows = array();
 	foreach ($out as $line) {
-		$parts = explode("\t", $line);
+		$parts = explode("\t", $line, 6);
 		if (count($parts) < 4) { continue; }
 		$rows[] = array(
-			'id'        => (int)$parts[0],
-			'timestamp' => $parts[1],
-			'timefrom'  => $parts[2],
-			'timeto'    => $parts[3],
+			'id'          => (int)$parts[0],
+			'timestamp'   => $parts[1],
+			'timefrom'    => $parts[2],
+			'timeto'      => $parts[3],
+			'description' => isset($parts[4]) ? $parts[4] : '',
+			'gps'         => isset($parts[5]) ? $parts[5] : 'N/A',
 		);
 	}
 	return $rows;

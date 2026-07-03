@@ -330,7 +330,7 @@ function print_sidebar($inputlink)
     $rtnstr .= '<style>
     #gmthist-ov{position:fixed;inset:0;background:rgba(8,12,20,.74);z-index:10001;display:none;align-items:center;justify-content:center;}
     #gmthist-ov.on{display:flex;}
-    .gmthist-modal{width:min(560px,96vw);max-height:88vh;overflow:auto;background:#0d1726;border:1px solid #24405f;border-radius:14px;padding:18px 20px;box-shadow:0 18px 60px rgba(0,0,0,.55);}
+    .gmthist-modal{width:min(760px,96vw);max-height:88vh;overflow:auto;background:#0d1726;border:1px solid #24405f;border-radius:14px;padding:18px 20px;box-shadow:0 18px 60px rgba(0,0,0,.55);}
     .gmthist-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
     .gmthist-head h3{margin:0;font-size:16px;font-weight:800;color:#f2f7ff;}
     .gmthist-x{background:none;border:0;color:#8ca6c6;font-size:22px;line-height:1;cursor:pointer;padding:0 2px;}
@@ -338,6 +338,8 @@ function print_sidebar($inputlink)
     .gmthist-range{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
     .gmthist-range .gh-btn{height:28px;padding:0 12px;border-radius:7px;font-size:12px;font-weight:700;background:#152238;border:1px solid #2c4363;color:#b9cbe4;cursor:pointer;}
     .gmthist-range .gh-btn.on{background:#1976d2;border-color:#1976d2;color:#fff;}
+    .gmthist-range .gh-export{margin-left:auto;background:#12301f;border-color:#2f6b4f;color:#9fe0bd;}
+    .gmthist-range .gh-export:disabled{opacity:.45;cursor:default;}
     .gmthist-custom{display:none;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
     .gmthist-custom input[type=date]{height:28px;padding:0 8px;border-radius:7px;background:#0a192f;border:1px solid #2c4363;color:#e7eefc;font-size:12px;color-scheme:dark;}
     .gmthist-custom .gh-sep{color:#7e95b4;font-size:12px;}
@@ -345,6 +347,8 @@ function print_sidebar($inputlink)
     .gmthist-tbl{width:100%;border-collapse:collapse;font-size:12px;}
     .gmthist-tbl th{color:#9fb6d4;text-align:left;font-weight:700;padding:6px 8px;border-bottom:1px solid #2c4363;}
     .gmthist-tbl td{color:#e7eefc;padding:6px 8px;border-bottom:1px solid #1a2c49;}
+    .gmthist-tbl td.gh-desc{color:#b9cbe4;}
+    .gmthist-tbl td.gh-gps{color:#9fb6d4;white-space:nowrap;}
     .gmthist-tbl .gh-arrow{color:#3aa0ff;font-weight:700;}
     .gmthist-msg{color:#cdd9ea;text-align:center;padding:32px 12px;font-size:13px;line-height:1.6;margin:0;}
     .gmthist-note{margin:10px 0 0;font-size:11px;color:#7e95b4;}
@@ -360,6 +364,7 @@ function print_sidebar($inputlink)
                 <button type="button" class="gh-btn" data-days="7">7d</button>
                 <button type="button" class="gh-btn" data-days="30">30d</button>
                 <button type="button" class="gh-btn" data-custom="1">Custom</button>
+                <button type="button" class="gh-btn gh-export" id="gmthist-export" disabled>Export CSV</button>
             </div>
             <div class="gmthist-custom" id="gmthist-custom">
                 <input type="date" id="gmthist-from"> <span class="gh-sep">~</span> <input type="date" id="gmthist-to">
@@ -378,7 +383,10 @@ function print_sidebar($inputlink)
         var custom = document.getElementById("gmthist-custom");
         var fromI  = document.getElementById("gmthist-from");
         var toI    = document.getElementById("gmthist-to");
-        var pills  = document.getElementById("gmthist-range").getElementsByTagName("button");
+        // 범위 pill 만 선택(data 속성 기준) — Export CSV 버튼은 range 로직에서 제외
+        var pills  = document.getElementById("gmthist-range").querySelectorAll(".gh-btn[data-days], .gh-btn[data-custom]");
+        var expB   = document.getElementById("gmthist-export");
+        var lastRows = [];   // 현재 표시 중인 조회 결과(= CSV export 대상)
 
         function esc(s){
             return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -392,20 +400,26 @@ function print_sidebar($inputlink)
             return el ? el.value : "";
         }
         function render(rows){
+            lastRows = rows || [];
+            if (expB) { expB.disabled = (lastRows.length === 0); }
             if (!rows || !rows.length) {
                 body.innerHTML = "<p class=\"gmthist-msg\">No timezone changes in this period.</p>";
                 return;
             }
-            var h = "<table class=\"gmthist-tbl\"><thead><tr><th>Time (UTC)</th><th>Change</th></tr></thead><tbody>";
+            var h = "<table class=\"gmthist-tbl\"><thead><tr><th>Time (UTC)</th><th>Change</th><th>Description</th><th>GPS</th></tr></thead><tbody>";
             for (var i = 0; i < rows.length; i++) {
                 var r = rows[i];
                 h += "<tr><td>" + esc(r.timestamp) + "</td><td>" + esc(fmtOff(r.timefrom))
-                   + " <span class=\"gh-arrow\">&rarr;</span> " + esc(fmtOff(r.timeto)) + "</td></tr>";
+                   + " <span class=\"gh-arrow\">&rarr;</span> " + esc(fmtOff(r.timeto)) + "</td>"
+                   + "<td class=\"gh-desc\">" + esc(r.description == null ? "" : r.description) + "</td>"
+                   + "<td class=\"gh-gps\">" + esc(r.gps == null || r.gps === "" ? "N/A" : r.gps) + "</td></tr>";
             }
             body.innerHTML = h + "</tbody></table>";
         }
         function load(params){
             body.innerHTML = "<p class=\"gmthist-msg\">Loading&hellip;</p>";
+            lastRows = [];
+            if (expB) { expB.disabled = true; }
             var tok = csrfToken();
             if (tok) { params.__csrf_magic = tok; }
             var q = [];
@@ -444,6 +458,33 @@ function print_sidebar($inputlink)
             applyB.addEventListener("click", function(){
                 if (!fromI.value || !toI.value) { return; }
                 load({ mode: "custom", from: fromI.value, to: toI.value });
+            });
+        }
+        // Export CSV — 현재 표시 중인 결과를 그대로 다운로드(클라이언트 생성, BOM = Excel 호환)
+        function csvField(v){
+            v = String(v == null ? "" : v);
+            return (/[",\r\n]/.test(v)) ? "\"" + v.replace(/"/g, "\"\"") + "\"" : v;
+        }
+        if (expB) {
+            expB.addEventListener("click", function(){
+                if (!lastRows.length) { return; }
+                var lines = ["id,timestamp_utc,timefrom,timeto,description,gps"];
+                for (var i = 0; i < lastRows.length; i++) {
+                    var r = lastRows[i];
+                    lines.push([r.id, r.timestamp, r.timefrom, r.timeto,
+                        (r.description == null ? "" : r.description),
+                        (r.gps == null || r.gps === "" ? "N/A" : r.gps)].map(csvField).join(","));
+                }
+                var csv = "\uFEFF" + lines.join("\r\n") + "\r\n";
+                var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                var a = document.createElement("a");
+                var ts = new Date().toISOString().replace(/[-:]/g, "").replace("T", "_").slice(0, 15);
+                a.href = URL.createObjectURL(blob);
+                a.download = "gmt_history_" + ts + ".csv";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
             });
         }
         function openOv(){

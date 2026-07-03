@@ -36,7 +36,9 @@ class APIStatusSetTimeOffset extends APIModel {
                     require_once('/etc/inc/cp_gmt_history.inc');
                 }
                 if (function_exists('cp_gmt_history_record')) {
-                    cp_gmt_history_record((string)$last_timeoffset, (string)$this->initial_data['time_offset'], 'api-push');
+                    $gmt_ip = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'unknown';
+                    cp_gmt_history_record((string)$last_timeoffset, (string)$this->initial_data['time_offset'],
+                        'api-push', 'Remote change via API from ' . $gmt_ip);
                 }
             }
             else{

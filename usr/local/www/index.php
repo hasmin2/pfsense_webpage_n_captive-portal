@@ -68,7 +68,8 @@ if(isset($_POST['gmt'])){
                 require_once('/etc/inc/cp_gmt_history.inc');
             }
             if (function_exists('cp_gmt_history_record')) {
-                cp_gmt_history_record($gmt_prev, $gv, 'manual-web');
+                $gmt_ip = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'unknown';
+                cp_gmt_history_record($gmt_prev, $gv, 'manual-web', 'Manual change from ' . $gmt_ip);
             }
         }
         echo '<script> location.replace("processing.php?to=index.php");</script>';
