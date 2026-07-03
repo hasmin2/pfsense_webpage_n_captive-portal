@@ -2,6 +2,10 @@
 require_once ("globals.inc");
 require_once ("captiveportal.inc");
 require_once ('functions.inc');
+// #49: 계정 변경 이력 헬퍼 (radius.radacct_changehistory) — 미배포(버전섞임) 시 기록만 skip
+if (file_exists('/etc/inc/cp_account_history.inc')) {
+    require_once('/etc/inc/cp_account_history.inc');
+}
 
 function h($value) {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
@@ -621,6 +625,12 @@ function set_description($userid, $description){
         }
     }
     write_config('set '.$userid.' description');
+    // #49: 변경 이력 기록 (prepaid=crewpay- 이면 CREWPAY 태그)
+    if (function_exists('cp_account_history_record')) {
+        cp_account_history_record('description_change',
+            "user={$userid} description set to \"{$description}\" by " . cp_account_history_actor()
+            . cp_account_history_tag($userid));
+    }
 }
 
 function get_scheduler($user){
@@ -883,6 +893,20 @@ function set_scheduler($userid, $schedule)
 
     write_config('Update/write ' . $userid . ' schedule');
 
+    // #49: 변경 이력 기록 — 활성 행만 "HH:MM-HH:MM(days)" 요약
+    if (function_exists('cp_account_history_record')) {
+        $sched_parts = array();
+        foreach ($scheduledItemList['timerange'] as $tr) {
+            if (($tr['rangedescr'] ?? '') === 'TRUE') {
+                $sched_parts[] = $tr['hour'] . '(days=' . $tr['position'] . ')';
+            }
+        }
+        $sched_txt = empty($sched_parts) ? 'all rows disabled' : implode(', ', $sched_parts);
+        cp_account_history_record('schedule_change',
+            "user={$userid} duty schedule updated ({$sched_txt}) by " . cp_account_history_actor()
+            . cp_account_history_tag($userid));
+    }
+
     return true;
 }
 
@@ -931,10 +955,18 @@ function del_wifi_user($userlist){
     if (function_exists('freeradius_radcheck_delete_users')) {
         freeradius_radcheck_delete_users($deleted_users);
     }
+    // #49: 변경 이력 기록 (사용자별 1행)
+    if (function_exists('cp_account_history_record') && !empty($deleted_users)) {
+        $actor = cp_account_history_actor();
+        $descs = array();
+        foreach ($deleted_users as $u) { $descs[] = "user={$u} deleted by {$actor}" . cp_account_history_tag($u); }
+        cp_account_history_record('user_delete', $descs);
+    }
 }
 
 function modify_wifi_user($userlist, $modifydata){
     global $config;
+    $modified_users = array();   // #49
     foreach ($config["installedpackages"]["freeradius"]["config"] as $item=>$userentry) {
         foreach ($userlist as $user) {
             if ($user === $userentry['varusersusername']) {
@@ -962,12 +994,25 @@ function modify_wifi_user($userlist, $modifydata){
                 $config["installedpackages"]["freeradius"]["config"][$item]['varusersmaxbandwidthup'] = $modifydata['upspeed'];
                 $config["installedpackages"]["freeradius"]["config"][$item]['varusersterminaltype'] = $modifydata['terminaltype'];
                 $config['installedpackages']['freeradius']['config'][$item]['varusersmodified'] = "update";
+                $modified_users[] = $user;   // #49
 
             }
         }
     }
     freeradius_users_resync();
     write_config("Reset datausage Wifi user");
+    // #49: 변경 이력 기록 (사용자별 1행, 적용된 새 값 요약)
+    if (function_exists('cp_account_history_record') && !empty($modified_users)) {
+        $actor = cp_account_history_actor();
+        $detail = 'datalimit=' . ($modifydata['datalimit'] ?? '') . 'MB'
+            . ', timeperiod=' . ($modifydata['timeperiod'] ?? '')
+            . ', down=' . ($modifydata['downspeed'] ?? '')
+            . ', up=' . ($modifydata['upspeed'] ?? '')
+            . ', terminaltype=' . ($modifydata['terminaltype'] ?? '');
+        $descs = array();
+        foreach (array_unique($modified_users) as $u) { $descs[] = "user={$u} modified ({$detail}) by {$actor}" . cp_account_history_tag($u); }
+        cp_account_history_record('user_modify', $descs);
+    }
 }
 
 function reset_wifi_user($userlist){
@@ -990,6 +1035,13 @@ function reset_wifi_user($userlist){
     // 차후 로그인이 아니라 "이때 바로": 활성 세션 로그아웃 + 사용량 0
     foreach (array_unique($reset_targets) as $u) {
         captiveportal_reset_user_usage($u);
+    }
+    // #49: 변경 이력 기록 (사용자별 1행)
+    if (function_exists('cp_account_history_record') && !empty($reset_targets)) {
+        $actor = cp_account_history_actor();
+        $descs = array();
+        foreach (array_unique($reset_targets) as $u) { $descs[] = "user={$u} data usage reset by {$actor}" . cp_account_history_tag($u); }
+        cp_account_history_record('usage_reset', $descs);
     }
 }
 
@@ -1022,6 +1074,13 @@ function reset_wifi_user_pw($userlist){
     // #23 step3-A: radcheck 동기화(락 밖, 단일 SQL). files 가 아직 권위라 동작변경 없음 — radcheck 최신 유지.
     if (function_exists('freeradius_radcheck_sync_users')) {
         freeradius_radcheck_sync_users($radcheck_entries);
+    }
+    // #49: 변경 이력 기록 (락 밖, 사용자별 1행 — 실제 PW 미기재)
+    if (function_exists('cp_account_history_record') && !empty($radcheck_entries)) {
+        $actor = cp_account_history_actor();
+        $descs = array();
+        foreach ($radcheck_entries as $rc) { $descs[] = "user={$rc['user']} password reset to initial value by {$actor}" . cp_account_history_tag($rc['user']); }
+        cp_account_history_record('password_reset', $descs);
     }
 }
 
@@ -1062,6 +1121,13 @@ function reset_random_wifi_user_pw($userlist){
     // #23 step3-A: radcheck 동기화(락 밖, 단일 SQL). files 가 아직 권위라 동작변경 없음 — radcheck 최신 유지.
     if (function_exists('freeradius_radcheck_sync_users')) {
         freeradius_radcheck_sync_users($radcheck_entries);
+    }
+    // #49: 변경 이력 기록 (락 밖, 사용자별 1행 — 실제 PW 미기재)
+    if (function_exists('cp_account_history_record') && !empty($radcheck_entries)) {
+        $actor = cp_account_history_actor();
+        $descs = array();
+        foreach ($radcheck_entries as $rc) { $descs[] = "user={$rc['user']} password reset to random value by {$actor}" . cp_account_history_tag($rc['user']); }
+        cp_account_history_record('password_reset', $descs);
     }
 }
 
@@ -1225,6 +1291,22 @@ function create_wifi_user($dataamount, $vouchernumber, $israndompw, $terminaltyp
             );
         }
         freeradius_radcheck_sync_users($rc_entries);
+    }
+    // #49: 변경 이력 기록 (락 밖, 생성 사용자별 1행 — 실제 PW 미기재)
+    if (function_exists('cp_account_history_record') && !empty($created_users)) {
+        $actor = cp_account_history_actor();
+        $do_randpw_log = ($israndompw === true) ||
+            (is_string($israndompw) && !in_array(strtolower(trim($israndompw)), array('', '0', 'false', 'no', 'off'), true));
+        $descs = array();
+        foreach ($created_users as $cu) {
+            $descs[] = 'user=' . ($cu['varusersusername'] ?? '')
+                . ' created (quota=' . ($cu['varusersmaxtotaloctets'] ?? '') . 'MB'
+                . ', period=' . trim(($cu['varusershalftimeperiod'] ?? '') . '-' . ($cu['varuserspointoftime'] ?? ''), '-')
+                . ', terminaltype=' . ($cu['varusersterminaltype'] ?? '')
+                . ', password=' . ($do_randpw_log ? 'random' : 'initial')
+                . ') by ' . $actor . cp_account_history_tag($cu['varusersusername'] ?? '');
+        }
+        cp_account_history_record('user_create', $descs);
     }
     return $created_users;
 }

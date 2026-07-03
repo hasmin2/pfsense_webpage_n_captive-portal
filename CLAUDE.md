@@ -55,6 +55,7 @@
 | `etc/inc/cp_geo_tz.inc` | 위경도→타임존 오프셋 오프라인 판정 (#29; 격자=`cp_tz_grid.inc`, 생성기=`tools/generate_cp_tz_grid.js`) |
 | `usr/local/cron/cp_tz_offset_update.php` | 매시 7분 GPS 기반 time_offset 자동 갱신 크론 (#29) |
 | `etc/inc/cp_gmt_history.inc` | GMT time_offset 변경 이력 → MariaDB `radius.gmt_history` 기록 헬퍼 (#48) |
+| `etc/inc/cp_account_history.inc` | crew 계정 변경 이력 → MariaDB `radius.radacct_changehistory` 기록 헬퍼 (#49) |
 
 > **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` /
 > `freeradius_datacounter_auth_resync()` 함수가 `datacounter_acct.sh` /
@@ -1376,24 +1377,38 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 
 ### 48. GMT time_offset 변경 이력 → MariaDB `radius.gmt_history` 기록 (수동 변경 포함 전 경로) (develop `c473a8f`)
 - **요구**: mariadb://192.168.209.210:3306 (radius/radius, **MariaDB 5.5**) 의 `radius.gmt_history`
-  테이블(`id` INT AUTO_INCREMENT PK / `timestamp` DATETIME / `timefrom` VARCHAR(10) / `timeto` VARCHAR(10))
-  — **없으면 자동 생성** — 에 GMT time_offset 이 **변경되는 모든 이벤트**(수동 변경 포함)를 기록.
+  테이블(`id` INT AUTO_INCREMENT PK / `timestamp` DATETIME / `timefrom` VARCHAR(10) / `timeto` VARCHAR(10)
+  / `description` VARCHAR(255) / `gps` VARCHAR(32)) — **없으면 자동 생성** — 에 GMT time_offset 이
+  **변경되는 모든 이벤트**(수동 변경 포함)를 기록. gps = 당시 좌표 "lat,lon"(소수 5자리),
+  미수신/influx 불통이면 **'N/A'**.
+- **컬럼 마이그레이션 없음(의도)**: description/gps 는 CREATE TABLE 에 처음부터 포함해 **6컬럼으로
+  바로 생성** — #48 배포 전까지 이 테이블이 존재하는 박스가 없음(사용자 확인). 조건부 ALTER
+  (information_schema+PREPARE) 방식은 검토 후 불필요로 제거. (만약 예외적으로 4컬럼 구버전 테이블이
+  이미 생긴 박스가 발견되면 수동 `ALTER TABLE gmt_history ADD COLUMN ...` 1회 필요.)
 - **writer 전수(#48 시점, grep 확인 = 이 3곳뿐)** — 각각 훅:
-  - `usr/local/www/index.php` GMT 팝업 저장(#43) → `source=manual-web`. **실제 값이 바뀐 경우만** 기록
-    (`$gmt_prev !== $gv`; 동일값 재저장은 미기록 — write_config 는 기존대로 무조건).
-  - `usr/local/cron/cp_tz_offset_update.php` GPS 자동 갱신(#29) → `source=auto-gps`. 크론이 원래
-    변경 시에만 write 하므로 적용 성공(`$applied`) 후 **락 밖**에서 기록(#22 느린 I/O 락 밖 패턴).
-  - `etc/inc/api/models/APIStatusSetTimeOffset.inc` 외부 REST 푸시 → `source=api-push`. write_config 직후.
-- **신규 `etc/inc/cp_gmt_history.inc`** — `cp_gmt_history_record($timefrom, $timeto, $source)`:
+  - `usr/local/www/index.php` GMT 팝업 저장(#43) → `source=manual-web`, desc=**"Manual change from
+    {REMOTE_ADDR}"**. **실제 값이 바뀐 경우만** 기록(`$gmt_prev !== $gv`; 동일값 재저장은 미기록 —
+    write_config 는 기존대로 무조건). gps 는 record 가 influx 자동 취득.
+  - `usr/local/cron/cp_tz_offset_update.php` GPS 자동 갱신(#29) → `source=auto-gps`, desc=**"Automatic
+    change from GPS (src=… zone=…)"**, gps=**크론이 이미 조회한 좌표 그대로 전달**(influx 재조회 0).
+    크론이 원래 변경 시에만 write 하므로 적용 성공(`$applied`) 후 **락 밖**에서 기록(#22 패턴).
+  - `etc/inc/api/models/APIStatusSetTimeOffset.inc` 외부 REST 푸시 → `source=api-push`, desc=**"Remote
+    change via API from {REMOTE_ADDR}"**. write_config 직후. gps 자동 취득.
+- **신규 `etc/inc/cp_gmt_history.inc`** — `cp_gmt_history_record($timefrom, $timeto, $source,
+  $description = '', $gps = '')`:
   - **mysql CLI + defaults-extra-file**(비번 argv 미노출) + `--connect-timeout=3` + `/usr/bin/timeout 8`
     하드 바운드(#40 패턴; timeout 부재 시 connect-timeout 만) — `freeradius_radcheck_exec_sql`(#23 3-A)
     동일 패턴이나 **freeradius.inc 비의존 self-contained**(크론/API 에서 무거운 include 회피).
-  - CREATE TABLE IF NOT EXISTS + INSERT 를 **한 배치**(멱등 — 테이블 없으면 첫 이벤트 때 생성).
+  - CREATE TABLE IF NOT EXISTS(6컬럼) + INSERT 를 **한 배치**(멱등 — 테이블 없으면 첫 이벤트 때 생성).
   - `timestamp` = **박스 UTC**(`gmdate`, #41 박스 UTC 권위 원칙). timefrom/timeto 는 오프셋 문자열
-    ("9"/"-3.5"; 미설정이면 '') — VARCHAR(10) 클램프 + SQL escape.
+    ("9"/"-3.5"; 미설정이면 '') — VARCHAR 클램프(10/255/32) + SQL escape.
+  - **gps 자동 채움**: `$gps=''` 이면 `cp_gmt_history_current_gps()` — influx(선내 LAN, 2초 타임아웃)
+    VSAT(vesselposition) 우선 → FBB(satstatus, 방향컬럼 부호 복원) 폴백, (0,0)/불통 = 'N/A'
+    (#29 크론과 동일 정책, self-contained). 웹 경로 최악 지연 ~4초(influx 불통 시)는 수용.
   - **실패해도 throw 없이 false + log_error** (GMT 저장 흐름 불가침 degrade). 성공/실패 모두
-    `GMT HISTORY:` 시스템 로그(빈도 낮아 스팸 없음; source 는 로그 가시화용 — 테이블 스키마는 4컬럼 고정).
+    `GMT HISTORY:` 시스템 로그(빈도 낮아 스팸 없음; source 는 로그 가시화용 — 테이블 컬럼 아님).
   - 호출측 3곳 모두 `file_exists`+`function_exists` 가드 → **버전 섞임(inc 미배포) 시 fatal 없이 skip**.
+    구 inc(3인자 record)에 신 호출(5인자)이 와도 PHP 는 초과 인자 무시 → **양방향 버전섞임 안전**.
 - **주의(수용)**: `gmtcheck`(수동모드 토글) 자체는 오프셋 변경이 아니라 미기록. DB 접속정보는 코드 상수
   (기존 influx/mysql 하드코딩 관례 — 보안 후속 항목과 동일 범주).
 - **이력 뷰어(사이드바 history 버튼 + 모달)**:
@@ -1404,8 +1419,14 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   - **모달**: "Daily internet usage"(#42) 모달과 동일 계열 스타일(다크 카드 + pill 버튼, `gmthist-*`
     ID/클래스 격리, 자체 색 고정 = 라이트/다크 테마 무관). 범위 = **1d(기본)/7d/30d/Custom**(네이티브
     `<input type="date">` 캘린더 2개 + Apply, 역순 입력은 서버가 스왑). 표 = Time (UTC) / Change
-    ("GMT 9 → GMT 9.5", 미설정은 "(unset)"). 빈 결과 "No timezone changes", DB 불통 "History
-    unavailable" — fatal 없음. 닫기 = X/배경클릭/ESC.
+    ("GMT 9 → GMT 9.5", 미설정은 "(unset)") / **Description / GPS**(빈값 = "N/A" 표기, 모달 폭 760px).
+    빈 결과 "No timezone changes", DB 불통 "History unavailable" — fatal 없음. 닫기 = X/배경클릭/ESC.
+  - **Export CSV**: range 줄 우측 녹색 pill 버튼 — **현재 표시 중인 조회 결과**를 클라이언트에서
+    CSV 생성해 다운로드(`gmt_history_YYYYMMDD_HHMMSS.csv`). 헤더
+    `id,timestamp_utc,timefrom,timeto,description,gps`,
+    RFC4180 인용부호 escape, CRLF, **BOM(U+FEFF) 프리픽스 = Excel 한글판 호환**(코드엔 이스케이프
+    문자열로 기재 — 리터럴 BOM 금지, 에디터/인코딩에 취약). 결과 없거나 로딩 중엔 disabled.
+    범위 pill 선택자는 `data-days/data-custom` 속성 기준이라 Export 버튼은 range 로직에서 제외.
   - **엔드포인트 `usr/local/www/gmt_history_data.php`(신규)**: guiconfig.inc 인증 경유 JSON.
     `mode=days&days=N`(1~3660 클램프) 또는 `mode=custom&from/to=YYYY-MM-DD`(정규식 검증, UTC 날짜).
     CSRF 는 렌더된 `#gmtForm` 의 `__csrf_magic` hidden 을 XHR 바디에 재사용.
@@ -1413,20 +1434,77 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
     리팩터(record/fetch 공유) + `cp_gmt_history_fetch($from,$to,$limit=1000)` — `-N -B`(헤더 생략·탭
     구분) SELECT, datetime 정규식 검증(비정상 입력 = mysql 호출 전 false), LIMIT 1~5000 클램프,
     CREATE TABLE IF NOT EXISTS 동배치(테이블 없어도 빈 결과).
-- **검증**: php -l 전부 통과 / 주입 JS node --check + DOM/XHR 스텁 하네스 **20/20**(기본 1d 요청·CSRF
-  첨부·렌더/escape·(unset)·pill 전환·Custom 캘린더·custom 요청·실패/빈 메시지·닫기 3종) /
-  fetch 입력검증·mysql 부재 graceful false 통과.
+- **검증**: php -l 전부 통과 / 생성 DDL 배치 출력 검수(MariaDB 5.5 호환) /
+  주입 JS node --check + DOM/XHR 스텁 하네스 **34/34**(기본 1d 요청·CSRF 첨부·렌더/escape·(unset)·
+  Description/GPS 컬럼·gps 빈값→N/A·pill 전환·Custom 캘린더·custom 요청·실패/빈 메시지·닫기 3종 +
+  Export: 로딩중 disabled·렌더 후 활성·BOM·헤더 6컬럼·quote/comma escape·CRLF·파일명) /
+  fetch 입력검증·mysql 부재 graceful false·구버전 3인자 record 호출 호환 통과.
 - **배포 정합성**: `cp_gmt_history.inc` + `index.php` + `cp_tz_offset_update.php` +
   `APIStatusSetTimeOffset.inc` + `common_ui.inc` + `gmt_history_data.php` **6파일 일괄**
   (가드 있어 fatal 없음 — inc 누락 시 기록만 skip, 엔드포인트 누락 시 모달이 unavailable 표시).
 
+### 49. crew 계정 변경 이력 → MariaDB `radius.radacct_changehistory` 기록 (PW리셋/사용량리셋/생성/삭제/수정 전 경로) (develop 미커밋)
+- **요구**: Crew Account 의 user id 별 Password 리셋 / Data Usage 리셋 / 업데이트 등 **모든 계정 변경**을
+  #48 과 동일 방식으로 mariadb://192.168.209.210:3306 의 `radius.radacct_changehistory`
+  (`id` INT AUTO_INCREMENT PK / `timestamp` DATETIME / `change_type` VARCHAR(64) /
+  `change_description` VARCHAR(1024)) 에 기록 — 없으면 자동 생성. **실제 비밀번호는 절대 미기재**
+  ("(changed)"/"initial"/"random"/"(set)" 마스킹만).
+- **신규 `etc/inc/cp_account_history.inc`** — `cp_account_history_record($change_type, $descriptions)`:
+  - 실행부는 **#48 `cp_gmt_history_exec_sql` 재사용**(같은 DB/자격증명·defaults-extra-file·타임아웃).
+    #48 inc 미배포 시 `function_exists` 가드로 조용히 skip(버전섞임 안전).
+  - 다건은 배열로 → **단일 INSERT 배치, 사용자별 1행**. timestamp=박스 UTC(gmdate). desc 1024 클램프
+    + 개행/탭 정리. 실패 시 false + `ACCT HISTORY:` log_error(흐름 불가침).
+  - `cp_account_history_actor()`: `cp_admin_actor()`(관리 세션명→IP) 있으면 재사용, 없으면
+    세션명→REMOTE_ADDR→'system' 폴백(API 컨텍스트에서 captiveportal.inc 없어도 동작).
+- **prepaid 구분 = `cp_account_history_tag($username)`** — username 이 `crewpay-`(대소문자 무시,
+  `/^crewpay-/i`)로 시작하면 desc 끝에 **` (CREWPAY)`** 태그, 아니면 ''. **진입점(crew/prepaid 페이지·
+  위젯·API)이 아니라 "변경 대상 계정이 prepaid 인가"로 판정** — prepaid 계정은 코드베이스 전역에서
+  `crewpay-` 접두사로 식별되므로(build_wifi_rows 필터/captiveportal index.php 로그인 시 접두사 부여/
+  cp_usage_reset·prepaid 크론 제외 기준과 동일) username 만으로 정확·불변. **모든 per-user hook 이
+  사용자별로 태그 적용**(혼합 배치면 crewpay- 사용자 행만 태그). **예외: 포털 자가 비번변경
+  (`commit_change_pw`)은 태그 미적용**(사용자 지시 — prepaid 구분 불필요).
+- **hook 전수(계정 변경 writer — grep 전수조사)**:
+  - `manage_crew_wifi_account.inc`(crew/prepaid 웹 + API bulk-create/delete 공용, 8곳):
+    `create_wifi_user`→user_create(quota/period/terminaltype/password=random|initial) /
+    `del_wifi_user`→user_delete / `modify_wifi_user`→user_modify(새 값 요약) /
+    `reset_wifi_user`→usage_reset / `reset_wifi_user_pw`→password_reset("initial value") /
+    `reset_random_wifi_user_pw`→password_reset("random value") / `set_description`→description_change /
+    `set_scheduler`→schedule_change(활성 행 "HH:MM-HH:MM(days)" 요약). PW 계열은 **락 밖**에서 기록(#22).
+  - `manage_freeradiususer.widget.php`(대시보드 위젯 4분기, 인라인 구현이라 별도 훅): deluser/resetuser/
+    resetpw/createuser → 동일 타입 + desc 에 "(widget)" 표기. 전부 락 밖.
+  - API: `APIFreeRadiusUserUpdate`→user_modify(전송된 freeradius_* 필드 요약, **password=(changed)
+    마스킹** — israndompw 주입 password 포함) + usersreset→usage_reset(터미널타입별) /
+    `APIFreeRadiusUserTopup`→quota_topup(quota±MB, usage±MB) / `APIFreeRadiusUserCreate` 단건→
+    user_create(password=(set)) — bulk 는 create_wifi_user 훅이 커버, Delete 는 del_wifi_user 재사용이라 자동 커버.
+  - `captiveportal.inc commit_change_pw`(포털 자가 비번변경)→password_change(client IP 기재, lazy require).
+- **의도적 제외**: 주기 리셋 크론(daily/weekly/halfmonthly/monthly/prepaid/selfheal)의 자동 리셋 —
+  관리자 행위가 아니고 유저수×주기로 매일 쌓여 노이즈. 필요 시 같은 헬퍼 한 줄로 추가 가능.
+- **검증**: php -l 전파일 통과(captiveportal.inc 의 `${var}` deprecated 경고는 기존 코드, PHP7.4 무관) /
+  스텁 하네스 **14/14**(다건 단일배치·행수·quote escape·개행정리·timestamp 형식·단건 문자열 인자·
+  빈 입력 false·1024 클램프·actor 폴백 2종) + **태그 하네스 9/9**(crewpay- 대소문자/정상/synersat/
+  빈값/substring-not-prefix/null) + **CREWPAY 통합 하네스 11/11**(crew 무태그·prepaid 태그·혼합배치
+  선별·API 마스킹+태그·record SQL 태그) / #48 미배포 시 graceful false 확인 /
+  **멀티에이전트 적대검증 워크플로**(pw-writers·usage-reset·create-delete·pw-leak·prepaid-signal 5차원).
+- **배포 정합성**: `cp_account_history.inc` + `cp_gmt_history.inc`(#48 실행부) +
+  `manage_crew_wifi_account.inc` + `manage_freeradiususer.widget.php` + `APIFreeRadiusUser{Create,Update,Topup}.inc`
+  + `captiveportal.inc` **8파일 일괄**(#48 묶음과 같이 배포 권장. 가드 전면 — inc 누락 시 기록만 skip).
+
 ## 다음 작업 대기 중
 
+- [ ] **#49 커밋 대기(develop 미커밋)**: crew 계정 변경 이력 기록 — 신규 `cp_account_history.inc` +
+  writer 훅(공용함수 8 + 위젯 4 + API 3 + 포털 자가변경). 패치노트는 다음 배포 배치 때 일괄.
+- [ ] #49 검증(선상): crew_account 에서 PW리셋/랜덤PW/데이터리셋/수정/생성/삭제/설명/스케줄 →
+  `SELECT * FROM radius.radacct_changehistory ORDER BY id DESC LIMIT 20;` 사용자별 1행 + actor 정확 /
+  위젯·API(update/topup/단건·다건 create/delete/usersreset)·포털 자가 비번변경 경로 기록 /
+  **어떤 행에도 실제 비밀번호 미노출**(랜덤 6자리·1111 검색) / **prepaid(crewpay-) 계정 변경 행에만
+  `(CREWPAY)` 태그**(crew 계정 행엔 없음), 포털 자가 비번변경엔 태그 없음 / DB 불통 시 계정 변경
+  자체는 정상 + `clog /var/log/system.log | grep "ACCT HISTORY"`.
 - [x] **#48 커밋 완료(develop `c473a8f`)**: GMT 이력 기록(신규 `cp_gmt_history.inc` + writer 3곳 훅) +
   이력 뷰어(사이드바 history 버튼 + 모달 + `gmt_history_data.php`). 패치노트는 사용자 지시로 이번 생략
   (다음 배포 배치 때 일괄 기재). (main/prod 미반영 — 명시 지시 시 병합)
 - [ ] #48 검증(선상): GMT 팝업으로 오프셋 변경 → `SELECT * FROM radius.gmt_history ORDER BY id DESC LIMIT 5;`
-  에 행 추가(timefrom/timeto 정확) / 크론 자동 갱신·API 푸시 경로도 기록 / 동일값 재저장은 미기록 /
+  에 행 추가(timefrom/timeto/**description IP·gps 좌표** 정확, GPS 미수신 시 gps='N/A') /
+  크론 자동 갱신·API 푸시 경로도 기록 / 동일값 재저장은 미기록 /
   DB 불통 시 GMT 저장은 정상 + `clog /var/log/system.log | grep "GMT HISTORY"` 실패 로그 /
   선상 박스에 mysql CLI 존재 확인(`command -v mysql`) / **history 버튼** → 모달 1d/7d/30d/Custom 조회·
   사이드바 있는 9페이지 공통 동작·history 클릭 시 타임존 설정 팝업 안 뜸(버블 차단) / Ctrl+F5 캐시.

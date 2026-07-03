@@ -32,6 +32,10 @@ require_once("freeradius.inc");
 require_once ("captiveportal.inc");
 require_once ("auth.inc");
 require_once("/usr/local/www/widgets/include/manage_freeradiususer.inc");
+// #49: 계정 변경 이력 헬퍼 (radius.radacct_changehistory) — 미배포(버전섞임) 시 기록만 skip
+if (file_exists('/etc/inc/cp_account_history.inc')) {
+	require_once('/etc/inc/cp_account_history.inc');
+}
 
 if (!function_exists('compose_manage_freeradiususer_contents')) {
 	function compose_manage_freeradiususer_contents($widgetkey) {
@@ -98,10 +102,12 @@ if ($_POST['widgetkey']) {
 	if ($_POST['deluser']) {
 		// 사용량 파일 경로 수집 + 로그 (락 밖 — 느린 I/O)
 		$del_files = [];
+		$del_users = [];   // #49
 		foreach ($config["installedpackages"]["freeradius"]["config"] as $userentry) {
 			foreach ($userlist as $user) {
 				if ($user === $userentry['varusersusername']) {
 					$del_files[] = "/var/log/radacct/datacounter/{$userentry['varusersmaxtotaloctetstimerange']}/used-octets-{$user}*";
+					$del_users[] = $user;
 					cp_wireless_log("Deleted user: " . $user . " by " . cp_admin_actor());
 				}
 			}
@@ -126,6 +132,13 @@ if ($_POST['widgetkey']) {
 		foreach ($del_files as $pattern) {
 			foreach (glob($pattern) ?: [] as $f) { @unlink($f); }
 		}
+		// #49: 변경 이력 기록 (락 밖)
+		if (function_exists('cp_account_history_record') && !empty($del_users)) {
+			$actor = cp_account_history_actor();
+			$descs = [];
+			foreach (array_unique($del_users) as $u) { $descs[] = "user={$u} deleted by {$actor} (widget)" . cp_account_history_tag($u); }
+			cp_account_history_record('user_delete', $descs);
+		}
 
 	} else if ($_POST['resetuser']) {
 		// 로그 (락 밖)
@@ -147,6 +160,13 @@ if ($_POST['widgetkey']) {
 		} finally {
 			unlock($cnf_lock);
 		}
+		// #49: 변경 이력 기록 (락 밖)
+		if (function_exists('cp_account_history_record') && !empty($reset_targets)) {
+			$actor = cp_account_history_actor();
+			$descs = [];
+			foreach (array_unique($reset_targets) as $u) { $descs[] = "user={$u} data usage reset by {$actor} (widget)" . cp_account_history_tag($u); }
+			cp_account_history_record('usage_reset', $descs);
+		}
 
 	} else if ($_POST['resetpw']) {
 		// 로그 (락 밖)
@@ -154,12 +174,14 @@ if ($_POST['widgetkey']) {
 			if ($user !== '') cp_wireless_log("Reset password for: " . $user . " by " . cp_admin_actor());
 		}
 		// lock + 최신 config 재로딩 후 delta 적용 (#30 lost-update 방지)
+		$pw_users = [];   // #49
 		$cnf_lock = lock('freeradius_user_config', LOCK_EX);
 		try {
 			$config = parse_config(true);
 			foreach ($config["installedpackages"]["freeradius"]["config"] as $k => $u) {
 				if (in_array($u['varusersusername'] ?? '', $userlist, true)) {
 					$config["installedpackages"]["freeradius"]["config"][$k]['varuserspassword'] = "1111";
+					$pw_users[] = $u['varusersusername'];
 				}
 			}
 			write_config("Modifed freeradius user");
@@ -167,6 +189,13 @@ if ($_POST['widgetkey']) {
 			unlock($cnf_lock);
 		}
 		freeradius_users_resync();
+		// #49: 변경 이력 기록 (락 밖 — 실제 PW 미기재)
+		if (function_exists('cp_account_history_record') && !empty($pw_users)) {
+			$actor = cp_account_history_actor();
+			$descs = [];
+			foreach (array_unique($pw_users) as $u) { $descs[] = "user={$u} password reset to initial value by {$actor} (widget)" . cp_account_history_tag($u); }
+			cp_account_history_record('password_reset', $descs);
+		}
 
 	} else if ($_POST['createusernumber'] && $_POST['createuserquota']) {
 		$vouchernumber = $_POST['createusernumber'];
@@ -182,6 +211,7 @@ if ($_POST['widgetkey']) {
 		$userprefix = strtolower($terminaltype) . 'user';
 
 		// lock + 최신 config 재로딩 후 생성 (#30 lost-update 방지 + 중복 username 방지)
+		$created_users = [];   // #49
 		$cnf_lock = lock('freeradius_user_config', LOCK_EX);
 		try {
 			$config = parse_config(true);
@@ -240,10 +270,23 @@ if ($_POST['widgetkey']) {
 				} else {
 					array_push($config["installedpackages"]["freeradius"]["config"], $userinfoentry);
 				}
+				$created_users[] = $username;   // #49
 			}
 			write_config("Modifed freeradius user");
 		} finally {
 			unlock($cnf_lock);
+		}
+		// #49: 변경 이력 기록 (락 밖 — 실제 PW 미기재)
+		if (function_exists('cp_account_history_record') && !empty($created_users)) {
+			$actor = cp_account_history_actor();
+			$pw_kind = ($_POST['randpwd'] === "randpwd") ? 'random' : 'initial';
+			$descs = [];
+			foreach ($created_users as $u) {
+				$descs[] = "user={$u} created (quota=" . (is_numeric($_POST['createuserquota']) ? $_POST['createuserquota'] : 0)
+					. "MB, period=" . ($_POST['createsuerquotaperiod'] ?? '')
+					. ", terminaltype={$terminaltype}, password={$pw_kind}) by {$actor} (widget)" . cp_account_history_tag($u);
+			}
+			cp_account_history_record('user_create', $descs);
 		}
 	}
 

@@ -2992,6 +2992,15 @@ function portal_reply_page($redirurl, $type = null, $title = null, $clientmac = 
         if (function_exists('freeradius_radcheck_sync_password')) {
             freeradius_radcheck_sync_password($username, $password, $__pw_enc);
         }
+        // #49: 계정 변경 이력 기록 (자가 비번변경 — 실제 PW 미기재, 버전섞임 가드)
+        if (!function_exists('cp_account_history_record') && file_exists('/etc/inc/cp_account_history.inc')) {
+            require_once('/etc/inc/cp_account_history.inc');
+        }
+        if (function_exists('cp_account_history_record')) {
+            $chpw_ip = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'unknown';
+            cp_account_history_record('password_change',
+                "user={$username} changed own password from captive portal (client={$chpw_ip})");
+        }
         $htmltext = str_replace("\$PORTAL_MAIN_CONTENTS\$", renderLoginPortalHtml([
                 'logo'     => $logo,
                 'portalError'     => '',
