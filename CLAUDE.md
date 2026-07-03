@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `9299f4f` | **#1~#50 포함**(#48=`c473a8f`+`ebc29fa`, #49=계정 변경 이력+CREWPAY `3666f94`, #50=per-user History 뷰어 `9299f4f`), 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경)(`c9bd917`); #40: OpenVPN 재시작 크론을 watchdog 으로 안정화 — per-client·hang reap·비블로킹 락(try_lock)·ping timeout 바운드·위성 디바운스·로그 가시화 — 커밋 `66ebfd7`; #41: 다크모드 System(OS)/GPS(일출일몰 civil twilight, 박스 UTC 판정)/Light/Dark 4-state·9페이지공통(print_css_n_head)·dark.css·cp_daynight.inc+크론·외부 day/night API 삭제(`ab95701`·`81c9423`·`e089710`); #42: Daily usage 막대그래프(InfluxDB 일별 rx+tx, This month 기본·MB meter, `ab95701`); #43: GMT 타임존 테마 팝업 + 30분(0.5) 단위 + cp_tz 가드 truthy(`ab95701`); #44: GMT 저장 시 전역 `$g` 오염→웹루트 숫자폴더+config.xml 덤프 버그 수정(`$g`→`$gmt_in`, 보안, `ab95701`)) |
+| `develop` | `a848caa` | **#1~#51 포함**(#48=`c473a8f`+`ebc29fa`, #49=계정 변경 이력+CREWPAY `3666f94`, #50=per-user History 뷰어 `9299f4f`, #51=FBB 신호 이름매핑 분리 + ACU state -1→Comm.Error `a848caa`), 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경)(`c9bd917`); #40: OpenVPN 재시작 크론을 watchdog 으로 안정화 — per-client·hang reap·비블로킹 락(try_lock)·ping timeout 바운드·위성 디바운스·로그 가시화 — 커밋 `66ebfd7`; #41: 다크모드 System(OS)/GPS(일출일몰 civil twilight, 박스 UTC 판정)/Light/Dark 4-state·9페이지공통(print_css_n_head)·dark.css·cp_daynight.inc+크론·외부 day/night API 삭제(`ab95701`·`81c9423`·`e089710`); #42: Daily usage 막대그래프(InfluxDB 일별 rx+tx, This month 기본·MB meter, `ab95701`); #43: GMT 타임존 테마 팝업 + 30분(0.5) 단위 + cp_tz 가드 truthy(`ab95701`); #44: GMT 저장 시 전역 `$g` 오염→웹루트 숫자폴더+config.xml 덤프 버그 수정(`$g`→`$gmt_in`, 보안, `ab95701`)) |
 | `main` | `1ad2cd9` | **#1~#47 전부 반영 완료** (커밋 `1ad2cd9`). 2026-07-02 develop→main 일괄 통합 (#35~#47 포함) |
 | `prod` | `94a8cd9` | **#1~#47 전부 반영** (커밋 `94a8cd9`). 2026-07-02 main→prod 배포 (#35~#47 포함) |
 
@@ -1521,8 +1521,44 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   + `crew_account.php` (+ #48 실행부 `cp_gmt_history.inc`) 일괄. `radacct_changehistory` 는 아직 미배포라
   **username 컬럼 포함 신 스키마로 그냥 새로 생성**(마이그레이션 불필요 — 사용자 방침).
 
+### 51. FBB 신호 "No Signal" 오표시(이름매핑 종속) 분리 + ACU state -1 → "Comm. Error" (develop `a848caa`)
+- **증상**: Main Panel Satellite 타일 안테나 나침반에서 **FBB 는 정상 데이터가 들어오는데 Signal 이
+  "No Signal" 로 표시**됨(`FBB : 6 (No Signal)`). 실제 influx 에는 신호값이 있음.
+- **근본 원인(FBB 신호)**: `get_fbb_pointing_info()`([server_module.inc:508~])가 신호를 `$out['signal']`
+  로 읽은 **뒤** `cp_fbb_satlon_from_name($name)` 로 위성 궤도경도를 매핑하는데, 이름이 맵(MEAS/APAC/
+  AMER/EMEA/ALPHASAT…)에 없으면(예: FBB 가 보고한 이름 "6") `null` → **조기 리턴**. 그런데 tracking
+  판정(`signal>=1 → status='tracking'`)이 이 조기 리턴 **뒤**에 있어 status 가 'searching' 에 머묾.
+  index.php JS(`updateFbbCompass`)는 **`status==='tracking'` 일 때만 신호를 표시** → 신호가 있어도
+  "No Signal". **즉 FBB 신호 표시가 위성 이름 매핑 성공에 종속**된 구조 버그.
+- **수정(FBB)** `server_module.inc get_fbb_pointing_info`: **tracking 판정을 신호값(≥1)만으로** 조기
+  리턴 **앞**으로 이동. 이름 매핑(`cp_fbb_satlon_from_name`)은 **니들(az/el) 계산에만** 사용 —
+  미매핑 시 니들만 생략하고 신호/상태·raw 이름은 유지. JS 무수정(이미 tracking 시 신호 표시).
+  - 양쪽 안전: 신호가 진짜 0/빈값이면 status='searching' 유지 → 여전히 "No Signal"(정상).
+  - 후속(선택): FBB Satellite 이름 "6" 의 실제 위성 확정 시 `cp_fbb_satlon_from_name` `$map` 에
+    한 줄 추가하면 니들까지 표시. (influx `satstatus`(fbbstatus db) Satellite 값 확인 필요.)
+- **ACU state code -1 → Comm. Error**: `get_acu_pointing_info()` 의 antstatus 해석에서 `-1` 이
+  `0`(SEARCHING)과 함께 'searching' 으로 뭉뚱그려져 있었음. `-1`(IntellianACUReader = 통신 오류)을
+  **별도 `commerror` 상태로 분리** → index.php 컴퍼스에 **"VSAT : Comm. Error"(빨강)** 표시.
+  - `server_module.inc`: `-1` → `'commerror'`, `0` → `'searching'` 분리. status 주석에 commerror 추가.
+  - `index.php`: labels 에 `commerror: 'VSAT : Comm. Error'` + CSS `[data-status="commerror"]`
+    빨강 텍스트·도트·회색 el니들 + 3D 돔 `satColor` 빨강 처리.
+  - **주의**: `terminal_status.inc` 의 `$vsat_status[0]=="-1"`="DB read error" 는 `check_vsat_status_influxdb`
+    의 curl 실패 센티널(별개 필드)이라 **무관·미수정**. antstatus 코드 -1 과 혼동 금지.
+- **상태 코드 매핑(확정)**: `1`=tracking / `0`=searching / `2`=blocked / `-1`=**commerror**(Comm. Error) /
+  (antstatus 컬럼 없음)=`Longitude≠0`+`AGC/Signal≥1`이면 tracking, 아니면 searching. antstatus 컬럼명은
+  고정 아님 — `/ant.*status/i` 정규식으로 탐색(파이프라인 구성별 상이). **인코딩(state code 저장)은
+  레포 밖 acureader(IntellianACUReader.java)** — 레포엔 reader 만 존재.
+- **검증**: php -l 2파일 통과.
+- **배포 정합성**: `server_module.inc` + `index.php` 2파일(가드 있어 fatal 없음, 표시만 강등).
+
 ## 다음 작업 대기 중
 
+- [x] **#51 커밋 완료(develop `a848caa`)**: FBB 신호 표시 이름매핑 분리 + ACU state -1 → Comm. Error.
+  패치노트 기록 완료(`2026-07-03 Update`, **Beta 1.1.53-Beta · Stable: 1.1.4-Stable**). (main/prod 미반영)
+- [ ] #51 검증(선상): FBB 정상 신호 시 나침반에 `FBB : {이름} (Signal : n)` 표시(이름 미매핑이어도
+  신호 노출) / ACU 통신오류(state -1) 시 `VSAT : Comm. Error`(빨강) 표시 — searching/blocked 와 구분 /
+  influx `satstatus`(fbbstatus db) 의 Satellite 이름(예 "6") 확정 시 `cp_fbb_satlon_from_name $map` 추가로
+  니들까지 표시 / `server_module.inc` + `index.php` 2파일 일괄 배포 + Ctrl+F5.
 - [x] **#50 커밋 완료(develop `9299f4f`)**: crew_account.php per-user History 버튼 + 계정별 변경 이력 모달
   + `radacct_changehistory.username` 컬럼 + 조회 엔드포인트. 패치노트 기록 완료(`2026-07-03 Update`
   NEW 불릿, 버전 미정). (main/prod 미반영 — 명시 지시 시 병합)
@@ -1542,9 +1578,9 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - [x] **#48 커밋 완료(develop `c473a8f`+확장 `ebc29fa`)**: GMT 이력 기록(신규 `cp_gmt_history.inc` +
   writer 3곳 훅) + 이력 뷰어(사이드바 history 버튼 + 모달 + `gmt_history_data.php`) + description/gps
   컬럼 + Export CSV. (main/prod 미반영 — 명시 지시 시 병합)
-- [x] **#48/#49 패치노트 기록 완료(release_note.md)**: `2026-07-03 Update` 항목 2건 NEW(GMT 변경
-  이력 뷰어, 계정 변경 이력). **확정 버전 미정** — 서브라인 `Version: to be confirmed · Beta (develop)`.
-  **사용자가 확정 버전 알려주면 헤더/서브라인 갱신 필요**(현재 날짜형 헤더라 파서 정상 인식).
+- [x] **#48/#49/#50/#51 패치노트 기록 완료(release_note.md)**: `2026-07-03 Update` — 확정 버전
+  서브라인 **`Beta 1.1.53-Beta · Stable: 1.1.4-Stable`**. 항목: GMT 변경 이력 뷰어/계정 변경 이력/
+  per-user History(NEW) + FBB 신호 표시 수정(FIXED)/ACU Comm. Error(CHANGED, #51).
 - [ ] #48 검증(선상): GMT 팝업으로 오프셋 변경 → `SELECT * FROM radius.gmt_history ORDER BY id DESC LIMIT 5;`
   에 행 추가(timefrom/timeto/**description IP·gps 좌표** 정확, GPS 미수신 시 gps='N/A') /
   크론 자동 갱신·API 푸시 경로도 기록 / 동일값 재저장은 미기록 /

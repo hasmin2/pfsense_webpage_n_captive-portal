@@ -3,8 +3,14 @@ BlueWave Link — Release Notes
 Developed by SynerSAT Korea
 
 2026-07-03 Update
-Version: to be confirmed · Beta (develop)
+Beta 1.1.53-Beta · Stable: 1.1.4-Stable
 
+- FIXED: FBB antenna signal now displays whenever a valid signal is present,
+  even if the FBB reports a satellite name the console doesn't recognize.
+  Previously the signal was hidden as "No Signal" in that case even though a
+  good signal was coming in.
+- CHANGED: The antenna (VSAT/ACU) compass now shows "Comm. Error" when the ACU
+  reports a communication error, instead of grouping it with "Searching".
 - NEW: Timezone (GMT) change history — the sidebar "GMT" now has a small
   "history" button that opens a log of every timezone-offset change over the
   last 1, 7 or 30 days, or a custom date range. Each row shows the time (UTC),
