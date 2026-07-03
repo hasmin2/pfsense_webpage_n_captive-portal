@@ -1422,6 +1422,10 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
     `<input type="date">` 캘린더 2개 + Apply, 역순 입력은 서버가 스왑). 표 = Time (UTC) / Change
     ("GMT 9 → GMT 9.5", 미설정은 "(unset)") / **Description / GPS**(빈값 = "N/A" 표기, 모달 폭 760px).
     빈 결과 "No timezone changes", DB 불통 "History unavailable" — fatal 없음. 닫기 = X/배경클릭/ESC.
+  - **클라이언트 페이지네이션(10개 단위, #50 과 동일 패턴)**: `render()` 가 전체 결과를 `lastRows` 에
+    담고 `renderPage()` 가 `PAGE_SIZE=10` 슬라이스만 표시 + Prev/Next + "Page X / Y · N total"
+    (`gmthist-pager`/`gh-page`). 총 10개 이하면 pager 미표시, 범위 전환마다 1페이지 리셋, 경계 disabled.
+    **Export CSV 는 현재 페이지가 아니라 `lastRows` 전체**를 내보냄(변경 없음).
   - **Export CSV**: range 줄 우측 녹색 pill 버튼 — **현재 표시 중인 조회 결과**를 클라이언트에서
     CSV 생성해 다운로드(`gmt_history_YYYYMMDD_HHMMSS.csv`). 헤더
     `id,timestamp_utc,timefrom,timeto,description,gps`,

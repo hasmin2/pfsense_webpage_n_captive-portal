@@ -352,6 +352,10 @@ function print_sidebar($inputlink)
     .gmthist-tbl .gh-arrow{color:#3aa0ff;font-weight:700;}
     .gmthist-msg{color:#cdd9ea;text-align:center;padding:32px 12px;font-size:13px;line-height:1.6;margin:0;}
     .gmthist-note{margin:10px 0 0;font-size:11px;color:#7e95b4;}
+    .gmthist-pager{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:12px;}
+    .gmthist-pager .gh-page{height:26px;padding:0 12px;border-radius:7px;font-size:12px;font-weight:700;background:#152238;border:1px solid #2c4363;color:#b9cbe4;cursor:pointer;}
+    .gmthist-pager .gh-page:disabled{opacity:.4;cursor:default;}
+    .gmthist-pager .gh-pageinfo{font-size:12px;color:#9fb6d4;white-space:nowrap;}
     </style>';
     $rtnstr .= '<div id="gmthist-ov" role="dialog" aria-modal="true" aria-label="GMT change history">
         <div class="gmthist-modal">
@@ -387,6 +391,8 @@ function print_sidebar($inputlink)
         var pills  = document.getElementById("gmthist-range").querySelectorAll(".gh-btn[data-days], .gh-btn[data-custom]");
         var expB   = document.getElementById("gmthist-export");
         var lastRows = [];   // 현재 표시 중인 조회 결과(= CSV export 대상)
+        var PAGE_SIZE = 10;
+        var curPage = 1;
 
         function esc(s){
             return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -402,19 +408,45 @@ function print_sidebar($inputlink)
         function render(rows){
             lastRows = rows || [];
             if (expB) { expB.disabled = (lastRows.length === 0); }
-            if (!rows || !rows.length) {
+            if (!lastRows.length) {
                 body.innerHTML = "<p class=\"gmthist-msg\">No timezone changes in this period.</p>";
                 return;
             }
+            curPage = 1;      // 새 조회는 항상 1페이지부터
+            renderPage();
+        }
+        // 10개 단위 클라이언트 페이지네이션 (lastRows = 전체 결과)
+        function renderPage(){
+            var total = lastRows.length;
+            var pages = Math.ceil(total / PAGE_SIZE) || 1;
+            if (curPage > pages) { curPage = pages; }
+            if (curPage < 1)     { curPage = 1; }
+            var start = (curPage - 1) * PAGE_SIZE;
+            var slice = lastRows.slice(start, start + PAGE_SIZE);
+
             var h = "<table class=\"gmthist-tbl\"><thead><tr><th>Time (UTC)</th><th>Change</th><th>Description</th><th>GPS</th></tr></thead><tbody>";
-            for (var i = 0; i < rows.length; i++) {
-                var r = rows[i];
+            for (var i = 0; i < slice.length; i++) {
+                var r = slice[i];
                 h += "<tr><td>" + esc(r.timestamp) + "</td><td>" + esc(fmtOff(r.timefrom))
                    + " <span class=\"gh-arrow\">&rarr;</span> " + esc(fmtOff(r.timeto)) + "</td>"
                    + "<td class=\"gh-desc\">" + esc(r.description == null ? "" : r.description) + "</td>"
                    + "<td class=\"gh-gps\">" + esc(r.gps == null || r.gps === "" ? "N/A" : r.gps) + "</td></tr>";
             }
-            body.innerHTML = h + "</tbody></table>";
+            h += "</tbody></table>";
+
+            if (pages > 1) {
+                h += "<div class=\"gmthist-pager\">"
+                   + "<button type=\"button\" class=\"gh-page\" id=\"gmthist-prev\"" + (curPage <= 1 ? " disabled" : "") + ">&lsaquo; Prev</button>"
+                   + "<span class=\"gh-pageinfo\">Page " + curPage + " / " + pages + " &middot; " + total + " total</span>"
+                   + "<button type=\"button\" class=\"gh-page\" id=\"gmthist-next\"" + (curPage >= pages ? " disabled" : "") + ">Next &rsaquo;</button>"
+                   + "</div>";
+            }
+            body.innerHTML = h;
+
+            var pv = document.getElementById("gmthist-prev");
+            var nx = document.getElementById("gmthist-next");
+            if (pv) { pv.addEventListener("click", function(){ if (curPage > 1)     { curPage--; renderPage(); } }); }
+            if (nx) { nx.addEventListener("click", function(){ if (curPage < pages) { curPage++; renderPage(); } }); }
         }
         function load(params){
             body.innerHTML = "<p class=\"gmthist-msg\">Loading&hellip;</p>";
