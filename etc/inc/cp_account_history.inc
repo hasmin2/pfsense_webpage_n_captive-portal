@@ -6,11 +6,16 @@
  * 테이블 : radius.radacct_changehistory — 없으면 자동 생성(멱등)
  *   id                 INT AUTO_INCREMENT PK
  *   timestamp          DATETIME  (박스 UTC — #41/#48 과 동일 기준)
+ *   username           VARCHAR(64)   변경 대상 계정 (per-user 조회용 인덱스; description
+ *                                    선두 "user=<X> " 에서 자동 추출 — 훅 수정 불필요)
  *   change_type        VARCHAR(64)   password_reset / password_change / usage_reset /
  *                                    user_create / user_delete / user_modify /
  *                                    description_change / schedule_change / quota_topup
  *   change_description VARCHAR(1024) 세부 내용(사용자·값·수행자). **실제 비밀번호 금지** —
  *                                    PW 는 "(changed)"/"initial"/"random" 등으로만 표기.
+ *
+ * 조회: cp_account_history_fetch($username,$from,$to) — crew_account.php 의 per-user
+ *       "History" 버튼 모달(#50)이 crew_account_history_data.php 를 통해 사용.
  *
  * 호출처(#49 시점 계정 변경 writer 전수):
  *   - etc/inc/manage_crew_wifi_account.inc  (crew/prepaid 웹 + API bulk-create/delete 공용)
@@ -59,10 +64,22 @@ function cp_account_history_create_table_sql() {
 	return 'CREATE TABLE IF NOT EXISTS `' . CP_ACCT_HISTORY_TABLE . "` (\n"
 		. "  `id` INT NOT NULL AUTO_INCREMENT,\n"
 		. "  `timestamp` DATETIME NOT NULL,\n"
+		. "  `username` VARCHAR(64) NOT NULL DEFAULT '',\n"
 		. "  `change_type` VARCHAR(64) NOT NULL DEFAULT '',\n"
 		. "  `change_description` VARCHAR(1024) NOT NULL DEFAULT '',\n"
-		. "  PRIMARY KEY (`id`)\n"
+		. "  PRIMARY KEY (`id`),\n"
+		. "  KEY `idx_username` (`username`)\n"
 		. ") ENGINE=InnoDB DEFAULT CHARSET=utf8;\n";
+}
+
+/* description 선두의 "user=<username> ..." 에서 대상 계정명 추출 (없으면 '').
+ * 모든 #49 훅이 desc 를 "user={username} ..." 로 시작하도록 만들므로 신뢰 가능.
+ * username 은 [A-Za-z0-9._-] + crewpay- 접두사(공백 없음)라 \S+ 로 안전 절취. */
+function cp_account_history_extract_username($desc) {
+	if (preg_match('/^user=(\S+)/', (string)$desc, $m)) {
+		return substr($m[1], 0, 64);
+	}
+	return '';
 }
 
 /**
@@ -93,14 +110,16 @@ function cp_account_history_record($change_type, $descriptions) {
 			continue;
 		}
 		$d = substr($d, 0, 1024);
-		$vals[] = "('{$ts}','" . cp_gmt_history_sql_str($type) . "','" . cp_gmt_history_sql_str($d) . "')";
+		$uname = cp_account_history_extract_username($d);   // per-user 조회용
+		$vals[] = "('{$ts}','" . cp_gmt_history_sql_str($uname) . "','"
+			. cp_gmt_history_sql_str($type) . "','" . cp_gmt_history_sql_str($d) . "')";
 	}
 	if (empty($vals)) {
 		return false;
 	}
 
 	$sql = cp_account_history_create_table_sql()
-		. 'INSERT INTO `' . CP_ACCT_HISTORY_TABLE . '` (`timestamp`,`change_type`,`change_description`) VALUES '
+		. 'INSERT INTO `' . CP_ACCT_HISTORY_TABLE . '` (`timestamp`,`username`,`change_type`,`change_description`) VALUES '
 		. implode(",\n", $vals) . ";\n";
 
 	$out = array();
@@ -115,4 +134,60 @@ function cp_account_history_record($change_type, $descriptions) {
 		log_error("ACCT HISTORY: recorded {$type} x" . count($vals));
 	}
 	return true;
+}
+
+/**
+ * 한 계정의 변경 이력 조회 (최신순). 테이블 없으면 같은 배치에서 생성 후 빈 결과.
+ *
+ * @param string $username 대상 계정명 ([A-Za-z0-9._-] + crewpay- 접두사)
+ * @param string $from_dt  UTC 'YYYY-MM-DD HH:MM:SS'
+ * @param string $to_dt    UTC 'YYYY-MM-DD HH:MM:SS'
+ * @param int    $limit    최대 행수 (1~5000)
+ * @return array|false [['id','timestamp','change_type','change_description'], ...] — 실패 시 false
+ */
+function cp_account_history_fetch($username, $from_dt, $to_dt, $limit = 1000) {
+	if (!function_exists('cp_gmt_history_exec_sql') || !function_exists('cp_gmt_history_sql_str')) {
+		return false;
+	}
+	$username = trim((string)$username);
+	// username 형식 방어 (SQL 은 escape 하지만 예상 밖 입력 조기 차단)
+	if ($username === '' || !preg_match('/^[A-Za-z0-9._-]+$/', $username)) {
+		return false;
+	}
+	$re = '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/';
+	if (!preg_match($re, (string)$from_dt) || !preg_match($re, (string)$to_dt)) {
+		return false;
+	}
+	$limit = (int)$limit;
+	if ($limit < 1) { $limit = 1; }
+	if ($limit > 5000) { $limit = 5000; }
+
+	$sql = cp_account_history_create_table_sql()
+		. 'SELECT `id`,`timestamp`,`change_type`,`change_description` FROM `' . CP_ACCT_HISTORY_TABLE . '`'
+		. " WHERE `username` = '" . cp_gmt_history_sql_str($username) . "'"
+		. " AND `timestamp` >= '" . cp_gmt_history_sql_str($from_dt) . "'"
+		. " AND `timestamp` <= '" . cp_gmt_history_sql_str($to_dt) . "'"
+		. " ORDER BY `timestamp` DESC, `id` DESC LIMIT {$limit};\n";
+
+	$out = array();
+	// -N(헤더 생략) -B(탭 구분 배치 출력). description 은 record 가 \t 제거하므로 안전.
+	$ret = cp_gmt_history_exec_sql($sql, '-N -B', $out);
+	if ($ret !== 0) {
+		if (function_exists('log_error')) {
+			log_error('ACCT HISTORY: fetch failed (' . $username . '): ' . implode(' | ', $out));
+		}
+		return false;
+	}
+	$rows = array();
+	foreach ($out as $line) {
+		$parts = explode("\t", $line, 4);
+		if (count($parts) < 4) { continue; }   // 빈/불완전 행 방어
+		$rows[] = array(
+			'id'                 => (int)$parts[0],
+			'timestamp'          => $parts[1],
+			'change_type'        => $parts[2],
+			'change_description' => $parts[3],
+		);
+	}
+	return $rows;
 }

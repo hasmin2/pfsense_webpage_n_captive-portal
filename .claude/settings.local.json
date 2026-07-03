@@ -209,7 +209,10 @@
       "Bash(php -l etc/inc/api/models/APIFreeRadiusUserTopup.inc)",
       "Bash(php \"C:\\\\Users\\\\Roudy.Ha\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--git-pfsense-webpage-n-captive-portal\\\\51f57724-d5ee-4c4d-82e8-014561cd7fa7\\\\scratchpad\\\\acct_history_test.php\")",
       "Bash(php \"C:\\\\Users\\\\Roudy.Ha\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--git-pfsense-webpage-n-captive-portal\\\\51f57724-d5ee-4c4d-82e8-014561cd7fa7\\\\scratchpad\\\\crewpay_tag_integration.php\")",
-      "Bash(grep -rniE 'varusersusername.*crewpay|crewpay.*\\\\$username|username.*=.*crewpay|'\\\\''crewpay-'\\\\''\\\\s*\\\\.\\\\s*\\\\$' D:/git/pfsense_webpage_n_captive-portal/etc D:/git/pfsense_webpage_n_captive-portal/usr)"
+      "Bash(grep -rniE 'varusersusername.*crewpay|crewpay.*\\\\$username|username.*=.*crewpay|'\\\\''crewpay-'\\\\''\\\\s*\\\\.\\\\s*\\\\$' D:/git/pfsense_webpage_n_captive-portal/etc D:/git/pfsense_webpage_n_captive-portal/usr)",
+      "Bash(grep -n \"CREATE TABLE\\\\|description\\\\|gps\\\\|SELECT \\\\`id\\\\`\\\\|ADD COLUMN\\\\|information_schema\" etc/inc/cp_gmt_history.inc)",
+      "Bash(php -l usr/local/www/crew_account_history_data.php)",
+      "Bash(php -l usr/local/www/crew_account.php)"
     ]
   }
 }

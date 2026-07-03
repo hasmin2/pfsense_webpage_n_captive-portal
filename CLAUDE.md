@@ -55,7 +55,8 @@
 | `etc/inc/cp_geo_tz.inc` | 위경도→타임존 오프셋 오프라인 판정 (#29; 격자=`cp_tz_grid.inc`, 생성기=`tools/generate_cp_tz_grid.js`) |
 | `usr/local/cron/cp_tz_offset_update.php` | 매시 7분 GPS 기반 time_offset 자동 갱신 크론 (#29) |
 | `etc/inc/cp_gmt_history.inc` | GMT time_offset 변경 이력 → MariaDB `radius.gmt_history` 기록 헬퍼 (#48) |
-| `etc/inc/cp_account_history.inc` | crew 계정 변경 이력 → MariaDB `radius.radacct_changehistory` 기록 헬퍼 (#49) |
+| `etc/inc/cp_account_history.inc` | crew 계정 변경 이력 → MariaDB `radius.radacct_changehistory` 기록/조회 헬퍼 (#49/#50) |
+| `usr/local/www/crew_account_history_data.php` | per-user 계정 변경 이력 조회 JSON 엔드포인트 (#50) |
 
 > **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` /
 > `freeradius_datacounter_auth_resync()` 함수가 `datacounter_acct.sh` /
@@ -1489,7 +1490,44 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `manage_crew_wifi_account.inc` + `manage_freeradiususer.widget.php` + `APIFreeRadiusUser{Create,Update,Topup}.inc`
   + `captiveportal.inc` **8파일 일괄**(#48 묶음과 같이 배포 권장. 가드 전면 — inc 누락 시 기록만 skip).
 
+### 50. crew_account.php per-user "History" 버튼 → 계정별 변경 이력 모달 (develop 미커밋)
+- **요구**: MANAGE CREW ACCOUNT(crew_account.php)에 사용자마다 "History" 버튼 → 해당 계정의 Modify
+  History(=#49 `radacct_changehistory`) 조회. 양식은 #42/#48 "Daily/GMT" 모달과 유사.
+- **per-user 조회 설계 = `username` 컬럼 추가**: `radacct_changehistory` CREATE TABLE 에
+  `username VARCHAR(64)` + `KEY idx_username` **바로 포함**(마이그레이션 없음 — 아직 미배포라
+  새로 생성하면 됨). **모든 #49 훅 desc 가 `user=<username> ...` 로 시작**하므로 record() 가
+  `cp_account_history_extract_username`(`/^user=(\S+)/`)로 **자동 추출·저장** → 16개 훅 무수정.
+- **조회 헬퍼 `cp_account_history_fetch($username,$from,$to,$limit)`**: username 정규식 검증
+  (`^[A-Za-z0-9._-]+$`) + escape + `=`(LIKE 아님, `_` 와일드카드 무해) + datetime 정규식 + LIMIT
+  클램프(≤5000). `-N -B` 출력의 빈/불완전 행은 컬럼수<4 가드로 무시.
+- **엔드포인트 `usr/local/www/crew_account_history_data.php`(신규)**: guiconfig 인증 JSON.
+  `mode=days&days=1|7|30|3660(All)` 또는 `mode=custom&from/to`. 기본 30일. 입력 불량/DB 불통 = ok:false.
+- **UI**:
+  - 행별 "History" 버튼 — `draw_wifi_contents` 에 추가하되 **crew 페이지 전용**(`$isPrepaid!=='prepaid'`
+    가드; prepaid 페이지는 컬럼 미추가라 정렬 안 깨짐). crew_account.php thead 에 `<th>History</th>` +
+    colgroup 1열 추가(9열 정합).
+  - 모달 = 공유 함수 `render_account_history_modal()`(manage_crew_wifi_account.inc, nowdoc) — 전역
+    `openAcctHistory(username, displayname)` 정의. GMT 모달(#48)과 동일 다크카드(테마 무관 고정색),
+    `accthist-*` 격리. 범위 pill 30d(기본)/7d/1d/All/Custom + Export CSV(BOM/CRLF/5열: id/ts/username/
+    type/desc). 표=Time(UTC)/Type(색 chip)/Description. 닫기 X/배경/ESC. crew_account.php `</body>` 앞
+    `function_exists` 가드로 echo.
+  - CSRF = crew_account.php 폼에 csrf-magic 이 주입하는 `__csrf_magic` hidden 을 XHR 에 재사용
+    (`window.csrfMagicToken` 우선 폴백). 기존 modify AJAX 와 동일 패턴.
+- **검증**: php -l 4파일 / 백엔드 하네스(DDL·username 추출·INSERT·fetch SQL·주입방어·no-op 무시) /
+  모달 DOM·XHR 하네스 **28/28**(열기·30d 기본·csrf·렌더/chip/escape·All·Custom·CSV 5열·실패/빈·닫기 3종) /
+  #48·#49 회귀 없음(GMT 34/34, 다건 username 추출+CREWPAY+PW마스크) / 멀티에이전트 적대검증(prefix 완전성·
+  엔드포인트 주입/인증/XSS·테이블 정합).
+- **배포 정합성**: `cp_account_history.inc` + `crew_account_history_data.php` + `manage_crew_wifi_account.inc`
+  + `crew_account.php` (+ #48 실행부 `cp_gmt_history.inc`) 일괄. `radacct_changehistory` 는 아직 미배포라
+  **username 컬럼 포함 신 스키마로 그냥 새로 생성**(마이그레이션 불필요 — 사용자 방침).
+
 ## 다음 작업 대기 중
+
+- [ ] **#50 커밋 대기(develop 미커밋)**: crew_account.php per-user History 버튼 + 계정별 변경 이력 모달
+  + `radacct_changehistory.username` 컬럼 + 조회 엔드포인트.
+- [ ] #50 검증(선상): crew_account 각 행 History 버튼 → 모달에 그 계정 변경만 표시(1d/7d/30d/All/Custom) /
+  prepaid_account 는 History 컬럼 없음·정렬 정상 / Export CSV / `radacct_changehistory` 를 username 컬럼
+  포함 신 스키마로 새로 생성(`DESCRIBE radius.radacct_changehistory`).
 
 - [x] **#49 커밋 완료(develop `3666f94`)**: crew 계정 변경 이력 기록 — 신규 `cp_account_history.inc` +
   writer 훅(공용함수 8 + 위젯 4 + API 3 + 포털 자가변경) + prepaid(CREWPAY) 태그. 패치노트 기록 완료

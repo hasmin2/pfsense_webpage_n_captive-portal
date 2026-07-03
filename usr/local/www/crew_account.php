@@ -531,9 +531,9 @@ if ($_POST['dataamount']){
                                 <col style="width: 5%;">
                                 <col style="width: 10%;">
                                 <col style="width: 10%;">
-                                <col style="width: 20%;">
-                                <col style="width: 10%;">
-                                <!--col style="width: 15%;"-->
+                                <col style="width: 18%;">
+                                <col style="width: 8%;">
+                                <col style="width: 8%;">
                             </colgroup>
                             <thead>
                             <tr>
@@ -550,7 +550,7 @@ if ($_POST['dataamount']){
                                 <th>Update<button class="btn-ic btn-sort"></button></th>
                                 <th>Usage state<button class="btn-ic btn-sort"></button></th>
                                 <th>Online<button class="btn-ic btn-sort"></button></th>
-                                <!--<th><button class="btn-ic btn-sort"></button></th>-->
+                                <th>History</th>
                             </tr>
                             </thead>
                             <tbody id="crew_account_table">
@@ -733,6 +733,13 @@ if ($_POST['dataamount']){
     </div>
 </form>
 
+<?php
+// #50: per-user 계정 변경 이력 모달 (행별 History 버튼 → openAcctHistory).
+//   버전섞임 가드: 헬퍼 미배포면 버튼만 있고 모달 없음(무해).
+if (function_exists('render_account_history_modal')) {
+    echo render_account_history_modal();
+}
+?>
 
 </body>
 <script type="text/javascript">

@@ -611,10 +611,206 @@ function draw_wifi_contents($isPrepaid) {
             $rtnstr .= '<td data-th="Online" data-th-width="100" data-width="100" class="txt-green"></td>';
         }
 
+        // #50: per-user 변경 이력 버튼 (crew 페이지 전용 — prepaid 는 컬럼 미추가)
+        if ($isPrepaid !== 'prepaid') {
+            $rtnstr .= '<td data-th="History" data-th-width="100" data-width="100">'
+                . '<button type="button" class="accthist-open-btn" onclick="openAcctHistory(\''
+                . $name . '\',\'' . $displayname . '\')">History</button></td>';
+        }
+
         $rtnstr .= '</tr>';
     }
 
     return $rtnstr;
+}
+
+/**
+ * #50: 계정 변경 이력 모달 (crew_account.php per-user "History" 버튼용).
+ *   전역 JS 함수 openAcctHistory(username, displayname) 를 정의 — 버튼 onclick 에서 호출.
+ *   crew_account_history_data.php(radacct_changehistory 조회) 를 AJAX 로 읽어 표시.
+ *   스타일은 GMT 변경 이력 모달(#48)과 동일 계열(다크 카드, 테마 무관 고정색), accthist-* 격리.
+ *   crew_account.php </body> 앞에서 echo. (미배포 시 버튼만 있고 데이터는 unavailable — fatal 없음.)
+ */
+function render_account_history_modal() {
+    return <<<'HTML'
+<style>
+#accthist-ov{position:fixed;inset:0;background:rgba(8,12,20,.74);z-index:10002;display:none;align-items:center;justify-content:center;}
+#accthist-ov.on{display:flex;}
+.accthist-modal{width:min(860px,96vw);max-height:88vh;overflow:auto;background:#0d1726;border:1px solid #24405f;border-radius:14px;padding:18px 20px;box-shadow:0 18px 60px rgba(0,0,0,.55);}
+.accthist-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.accthist-head h3{margin:0;font-size:16px;font-weight:800;color:#f2f7ff;}
+.accthist-head h3 span{color:#7fd4ff;}
+.accthist-x{background:none;border:0;color:#8ca6c6;font-size:22px;line-height:1;cursor:pointer;padding:0 2px;}
+.accthist-x:hover{color:#fff;}
+.accthist-range{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.accthist-range .ah-btn{height:28px;padding:0 12px;border-radius:7px;font-size:12px;font-weight:700;background:#152238;border:1px solid #2c4363;color:#b9cbe4;cursor:pointer;}
+.accthist-range .ah-btn.on{background:#1976d2;border-color:#1976d2;color:#fff;}
+.accthist-range .ah-export{margin-left:auto;background:#12301f;border-color:#2f6b4f;color:#9fe0bd;}
+.accthist-range .ah-export:disabled{opacity:.45;cursor:default;}
+.accthist-custom{display:none;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
+.accthist-custom input[type=date]{height:28px;padding:0 8px;border-radius:7px;background:#0a192f;border:1px solid #2c4363;color:#e7eefc;font-size:12px;color-scheme:dark;}
+.accthist-custom .ah-sep{color:#7e95b4;font-size:12px;}
+.accthist-apply{height:28px;padding:0 14px;border-radius:7px;font-size:12px;font-weight:700;background:#1976d2;border:1px solid #1976d2;color:#fff;cursor:pointer;}
+.accthist-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.accthist-tbl th{color:#9fb6d4;text-align:left;font-weight:700;padding:6px 8px;border-bottom:1px solid #2c4363;white-space:nowrap;}
+.accthist-tbl td{color:#e7eefc;padding:6px 8px;border-bottom:1px solid #1a2c49;vertical-align:top;}
+.accthist-tbl td.ah-time{white-space:nowrap;color:#9fb6d4;}
+.accthist-tbl td.ah-desc{color:#dbe6f5;}
+.ah-chip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.3px;border-radius:6px;padding:2px 7px;white-space:nowrap;}
+.accthist-msg{color:#cdd9ea;text-align:center;padding:32px 12px;font-size:13px;line-height:1.6;margin:0;}
+.accthist-note{margin:10px 0 0;font-size:11px;color:#7e95b4;}
+.accthist-open-btn{height:24px;padding:0 10px;border-radius:7px;font-size:11px;font-weight:700;background:#eef3f9;border:1px solid #b9c6d6;color:#37506e;cursor:pointer;}
+.accthist-open-btn:hover{background:#e0e8f2;}
+</style>
+<div id="accthist-ov" role="dialog" aria-modal="true" aria-label="Account change history">
+    <div class="accthist-modal">
+        <div class="accthist-head">
+            <h3>Account change history &mdash; <span id="accthist-user"></span></h3>
+            <button type="button" class="accthist-x" id="accthist-x" aria-label="Close">&times;</button>
+        </div>
+        <div class="accthist-range" id="accthist-range">
+            <button type="button" class="ah-btn on" data-days="30">30d</button>
+            <button type="button" class="ah-btn" data-days="7">7d</button>
+            <button type="button" class="ah-btn" data-days="1">1d</button>
+            <button type="button" class="ah-btn" data-days="3660">All</button>
+            <button type="button" class="ah-btn" data-custom="1">Custom</button>
+            <button type="button" class="ah-btn ah-export" id="accthist-export" disabled>Export CSV</button>
+        </div>
+        <div class="accthist-custom" id="accthist-custom">
+            <input type="date" id="accthist-from"> <span class="ah-sep">~</span> <input type="date" id="accthist-to">
+            <button type="button" class="accthist-apply" id="accthist-apply">Apply</button>
+        </div>
+        <div id="accthist-body"></div>
+        <p class="accthist-note">&#9432; Account modification log (times in UTC) &mdash; password / usage resets, create / delete / modify, top-up, description &amp; schedule changes.</p>
+    </div>
+</div>
+<script>
+(function(){
+    var ov     = document.getElementById("accthist-ov");
+    if (!ov) { return; }
+    var body   = document.getElementById("accthist-body");
+    var custom = document.getElementById("accthist-custom");
+    var fromI  = document.getElementById("accthist-from");
+    var toI    = document.getElementById("accthist-to");
+    var userEl = document.getElementById("accthist-user");
+    var pills  = document.getElementById("accthist-range").querySelectorAll(".ah-btn[data-days], .ah-btn[data-custom]");
+    var expB   = document.getElementById("accthist-export");
+    var curUser = "";
+    var lastRows = [];
+
+    var CHIP = {
+        password_reset:   ["#9a6207","#fdf3e1"], password_change: ["#9a6207","#fdf3e1"],
+        usage_reset:      ["#1769aa","#e7f1fb"], quota_topup:     ["#0f7b46","#e6f7ee"],
+        user_create:      ["#0f7b46","#e6f7ee"], user_delete:     ["#b23b3b","#fbecec"],
+        user_modify:      ["#1769aa","#e7f1fb"], description_change:["#5b6573","#eef1f5"],
+        schedule_change:  ["#5b6573","#eef1f5"]
+    };
+    function esc(s){
+        return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+    function prettyType(t){
+        return String(t==null?"":t).replace(/_/g," ").replace(/\b\w/g,function(c){return c.toUpperCase();});
+    }
+    function csrf(){
+        // pfSense csrf-magic 전역 우선, 없으면 페이지 폼의 hidden 사용
+        if (window.csrfMagicToken) { return { name: (window.csrfMagicName||"__csrf_magic"), val: window.csrfMagicToken }; }
+        var el = document.querySelector("input[name=__csrf_magic]");
+        return el ? { name: "__csrf_magic", val: el.value } : null;
+    }
+    function render(rows){
+        lastRows = rows || [];
+        if (expB) { expB.disabled = (lastRows.length === 0); }
+        if (!rows || !rows.length) {
+            body.innerHTML = "<p class=\"accthist-msg\">No changes recorded for this account in this period.</p>";
+            return;
+        }
+        var h = "<table class=\"accthist-tbl\"><thead><tr><th>Time (UTC)</th><th>Type</th><th>Description</th></tr></thead><tbody>";
+        for (var i=0;i<rows.length;i++){
+            var r = rows[i];
+            var c = CHIP[r.change_type] || ["#5b6573","#eef1f5"];
+            h += "<tr><td class=\"ah-time\">"+esc(r.timestamp)+"</td>"
+               + "<td><span class=\"ah-chip\" style=\"color:"+c[0]+";background:"+c[1]+";\">"+esc(prettyType(r.change_type))+"</span></td>"
+               + "<td class=\"ah-desc\">"+esc(r.change_description)+"</td></tr>";
+        }
+        body.innerHTML = h + "</tbody></table>";
+    }
+    function load(params){
+        body.innerHTML = "<p class=\"accthist-msg\">Loading&hellip;</p>";
+        lastRows = []; if (expB) { expB.disabled = true; }
+        params.username = curUser;
+        var tok = csrf();
+        if (tok) { params[tok.name] = tok.val; }
+        var q = [];
+        for (var k in params) { q.push(encodeURIComponent(k)+"="+encodeURIComponent(params[k])); }
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST","/crew_account_history_data.php",true);
+        xhr.setRequestHeader("Content-Type","application/x-www-form-urlencoded");
+        xhr.onreadystatechange = function(){
+            if (xhr.readyState !== 4) { return; }
+            var d = null;
+            try { d = JSON.parse(xhr.responseText); } catch(e) {}
+            if (!d || !d.ok) { body.innerHTML = "<p class=\"accthist-msg\">History unavailable (database unreachable).</p>"; return; }
+            render(d.rows);
+        };
+        xhr.send(q.join("&"));
+    }
+    function setOn(b){ for (var i=0;i<pills.length;i++){ pills[i].classList.remove("on"); } b.classList.add("on"); }
+    for (var i=0;i<pills.length;i++){
+        (function(b){
+            b.addEventListener("click", function(){
+                setOn(b);
+                if (b.getAttribute("data-custom")) { custom.style.display="flex"; return; }
+                custom.style.display="none";
+                load({ mode:"days", days:b.getAttribute("data-days") });
+            });
+        })(pills[i]);
+    }
+    var applyB = document.getElementById("accthist-apply");
+    if (applyB) {
+        applyB.addEventListener("click", function(){
+            if (!fromI.value || !toI.value) { return; }
+            load({ mode:"custom", from:fromI.value, to:toI.value });
+        });
+    }
+    function csvField(v){ v=String(v==null?"":v); return (/[",\r\n]/.test(v)) ? "\""+v.replace(/"/g,"\"\"")+"\"" : v; }
+    if (expB) {
+        expB.addEventListener("click", function(){
+            if (!lastRows.length) { return; }
+            var lines = ["id,timestamp_utc,username,change_type,change_description"];
+            for (var i=0;i<lastRows.length;i++){
+                var r = lastRows[i];
+                lines.push([r.id,r.timestamp,curUser,r.change_type,r.change_description].map(csvField).join(","));
+            }
+            var csv = "\uFEFF"+lines.join("\r\n")+"\r\n";
+            var blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+            var a = document.createElement("a");
+            var ts = new Date().toISOString().replace(/[-:]/g,"").replace("T","_").slice(0,15);
+            a.href = URL.createObjectURL(blob);
+            a.download = "account_history_"+curUser.replace(/[^A-Za-z0-9._-]/g,"_")+"_"+ts+".csv";
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+        });
+    }
+    function closeOv(){ ov.classList.remove("on"); }
+    document.getElementById("accthist-x").addEventListener("click", closeOv);
+    ov.addEventListener("click", function(ev){ if (ev.target === ov) { closeOv(); } });
+    document.addEventListener("keydown", function(ev){ if (ev.key === "Escape" && ov.classList.contains("on")) { closeOv(); } });
+
+    // 전역 진입점: 행의 History 버튼 onclick 에서 호출
+    window.openAcctHistory = function(username, displayname){
+        curUser = String(username||"");
+        if (userEl) { userEl.textContent = displayname || curUser; }
+        var today = new Date().toISOString().slice(0,10);
+        if (fromI && !fromI.value) { fromI.value = today; }
+        if (toI && !toI.value)     { toI.value = today; }
+        setOn(pills[0]);                 // 기본 30d
+        custom.style.display = "none";
+        ov.classList.add("on");
+        load({ mode:"days", days:"30" });
+    };
+})();
+</script>
+HTML;
 }
 
 function set_description($userid, $description){
