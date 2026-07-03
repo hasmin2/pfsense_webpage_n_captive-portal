@@ -464,6 +464,15 @@ function cp_fbb_satlon_from_name($name) {
             return ($m[2] === 'W') ? -$v : $v;
         }
     }
+    // ①-b FBB 단말이 위성을 숫자 ID 로 보고하는 경우의 정확일치 매핑.
+    //     아래 ② 부분일치 맵보다 먼저 처리해 "16"/"63" 등 오매칭을 피한다.
+    //     (관측: 일부 FBB 가 EMEA/Alphasat 을 ID "6" 으로 보고 → 24.9E 로 분류.)
+    $exact = array(
+        '6' => 24.9,    // EMEA / Alphasat (I-4A F4)
+    );
+    if (isset($exact[$n])) {
+        return $exact[$n];
+    }
     // ② 해역명/위성명 키워드 매핑 — Inmarsat I-4/Alphasat FBB 슬롯 (2026-06 검증).
     //    부분 일치라 "I-4 Americas"/"ASIA-PACIFIC" 등 변형도 흡수.
     //    순서 중요: "Middle East & Asia"(MEAS)가 'ASIA'에 먼저 걸리지 않도록
