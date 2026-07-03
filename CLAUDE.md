@@ -1606,6 +1606,19 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `cp_routing_setup.php` 중 하나로 트리거. GUI Floating 최상단 `[CP Routing] self-protect` 4줄 확인 →
   crew 에서 webGUI(443)/SSH(22) 차단 + DNS·포털·인터넷 정상. `captiveportal.inc` 단일 파일이나 버전 섞임 방지 일괄 배포 권장.
 
+### 53. crew_account.php — customer 역할에도 "SET RANDOM PW" 버튼 노출 (develop 미커밋)
+- **배경**: `crew_account.php` 상단이 `$adminlogin` 역할별로 툴바 버튼을 분기(admin/vesseladmin=
+  Export CSV/Reset PW/**SET RANDOM PW**/Reset Data/Check PW/Delete; **customer=Reset PW 만**; 그 외=없음).
+  customer 는 SET RANDOM PW 가 숨겨져 있었음.
+- **수정**: `customer` 브랜치 `$controldisplay` 에 SET RANDOM PW 버튼 1개 추가
+  (`onclick="confirm_setRandomPw()"`, Reset PW 와 동일 스타일). **다른 숨김 버튼(Reset Data/Delete/
+  Check PW/Export CSV)은 그대로 숨김 유지**(의도).
+- **동작 안전성 확인**: `confirm_setRandomPw()` JS 는 페이지 전역 `<script>` 에 역할 무관하게 정의
+  ([crew_account.php:1040]), POST 핸들러 `if(isset($_POST['setrandompw'])){ reset_random_wifi_user_pw(...) }`
+  ([:162])도 **역할 게이트 없음**(Reset PW 와 동일) → customer 에서 버튼→AJAX→백엔드 end-to-end 정상.
+- **범위**: crew 전용(prepaid_account.php 는 customer 브랜치·SET RANDOM PW 자체가 없어 무관). `crew_account.php` 단일 파일.
+- **검증**: php -l 통과.
+
 ## 다음 작업 대기 중
 
 - [x] **#51 커밋 완료(develop `a848caa`+`725e53c`)**: FBB 신호 표시 이름매핑 분리 + ACU state -1 →

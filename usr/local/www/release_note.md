@@ -38,6 +38,8 @@ Beta 1.1.53-Beta · Stable: 1.1.4-Stable
 - FIXED: The theme (System / GPS / Light / Dark) toggle now remembers your last
   choice. It previously reset to the default on some consoles every time the page
   was reopened; the setting is now saved in a cookie so it persists.
+- CHANGED: The "SET RANDOM PW" button is now available to customer logins on the
+  Crew Accounts page (previously only admins could see it).
 
 2026-07-02 Update
 Beta 1.1.49-Beta · Stable: 1.1.3-Stable
