@@ -1646,9 +1646,12 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - [x] **#48 커밋 완료(develop `c473a8f`+확장 `ebc29fa`)**: GMT 이력 기록(신규 `cp_gmt_history.inc` +
   writer 3곳 훅) + 이력 뷰어(사이드바 history 버튼 + 모달 + `gmt_history_data.php`) + description/gps
   컬럼 + Export CSV. (main/prod 미반영 — 명시 지시 시 병합)
-- [x] **#48/#49/#50/#51 패치노트 기록 완료(release_note.md)**: `2026-07-03 Update` — 확정 버전
+- [x] **#48~#53 패치노트 기록 완료(release_note.md)**: **같은 버전 `2026-07-03 Update` 에 병합** — 확정
   서브라인 **`Beta 1.1.53-Beta · Stable: 1.1.4-Stable`**. 항목: GMT 변경 이력 뷰어/계정 변경 이력/
-  per-user History(NEW) + FBB 신호 표시 수정(FIXED)/ACU Comm. Error(CHANGED, #51).
+  per-user History(NEW, #48~#50, 이력 모달 10개 페이지네이션 포함) + FBB 신호 표시 수정(FIXED)/ACU
+  Comm. Error(CHANGED, #51) + crew→This Firewall 접근 제한(CHANGED, #52) + 테마 토글 쿠키 영속화
+  (FIXED, #41) + customer SET RANDOM PW 버튼 노출(CHANGED, #53). **이후 2026-07-03 작업은 별도
+  버전 안 만들고 이 항목에 병합**(사용자 지시).
 - [ ] #48 검증(선상): GMT 팝업으로 오프셋 변경 → `SELECT * FROM radius.gmt_history ORDER BY id DESC LIMIT 5;`
   에 행 추가(timefrom/timeto/**description IP·gps 좌표** 정확, GPS 미수신 시 gps='N/A') /
   크론 자동 갱신·API 푸시 경로도 기록 / 동일값 재저장은 미기록 /
