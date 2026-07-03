@@ -172,6 +172,14 @@ if (!$applied) {
     exit(0);
 }
 
+// #48: GMT 변경 이력 → radius.gmt_history (락 밖 느린 I/O — #22 패턴, 버전섞임 가드)
+if (!function_exists('cp_gmt_history_record') && file_exists('/etc/inc/cp_gmt_history.inc')) {
+    require_once('/etc/inc/cp_gmt_history.inc');
+}
+if (function_exists('cp_gmt_history_record')) {
+    cp_gmt_history_record($cur_offset, $new_offset, 'auto-gps');
+}
+
 $zinfo = ($zone !== null) ? $zone : 'nautical-fallback';
 if (function_exists('log_error')) {
     log_error(sprintf(

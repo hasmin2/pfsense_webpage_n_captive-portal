@@ -58,8 +58,19 @@ if(isset($_POST['gmt'])){
         if ($gf < -11) { $gf = -11; }
         if ($gf > 12)  { $gf = 12; }
         $gv = (floor($gf) == $gf) ? (string)(int)$gf : (string)$gf;
+        $gmt_prev = isset($config['time_offset_enabled']['time_offset'])
+            ? (string)$config['time_offset_enabled']['time_offset'] : '';
         $config['time_offset_enabled']['time_offset'] = $gv;
         write_config("time_offset changed to " . $gv);
+        // #48: GMT 변경 이력 → radius.gmt_history (실제 값이 바뀐 경우만, 버전섞임 가드)
+        if ($gmt_prev !== $gv) {
+            if (!function_exists('cp_gmt_history_record') && file_exists('/etc/inc/cp_gmt_history.inc')) {
+                require_once('/etc/inc/cp_gmt_history.inc');
+            }
+            if (function_exists('cp_gmt_history_record')) {
+                cp_gmt_history_record($gmt_prev, $gv, 'manual-web');
+            }
+        }
         echo '<script> location.replace("processing.php?to=index.php");</script>';
         exit;
     }

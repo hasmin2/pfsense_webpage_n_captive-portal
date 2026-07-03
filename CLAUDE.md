@@ -54,6 +54,7 @@
 | `etc/inc/terminal_status.inc` | Main Panel 상태 문자열 빌더 (return_terminal_state 등) |
 | `etc/inc/cp_geo_tz.inc` | 위경도→타임존 오프셋 오프라인 판정 (#29; 격자=`cp_tz_grid.inc`, 생성기=`tools/generate_cp_tz_grid.js`) |
 | `usr/local/cron/cp_tz_offset_update.php` | 매시 7분 GPS 기반 time_offset 자동 갱신 크론 (#29) |
+| `etc/inc/cp_gmt_history.inc` | GMT time_offset 변경 이력 → MariaDB `radius.gmt_history` 기록 헬퍼 (#48) |
 
 > **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` /
 > `freeradius_datacounter_auth_resync()` 함수가 `datacounter_acct.sh` /
@@ -1373,7 +1374,62 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **배포 정합성**: `system_gateways_edit.php` + `captiveportal.inc`(cp_sync_routing_tables 정의) **같은
   리비전 일괄** 배포(가드 있어 fatal 은 없으나 미탑재 시 동기화 skip).
 
+### 48. GMT time_offset 변경 이력 → MariaDB `radius.gmt_history` 기록 (수동 변경 포함 전 경로) (develop 미커밋)
+- **요구**: mariadb://192.168.209.210:3306 (radius/radius, **MariaDB 5.5**) 의 `radius.gmt_history`
+  테이블(`id` INT AUTO_INCREMENT PK / `timestamp` DATETIME / `timefrom` VARCHAR(10) / `timeto` VARCHAR(10))
+  — **없으면 자동 생성** — 에 GMT time_offset 이 **변경되는 모든 이벤트**(수동 변경 포함)를 기록.
+- **writer 전수(#48 시점, grep 확인 = 이 3곳뿐)** — 각각 훅:
+  - `usr/local/www/index.php` GMT 팝업 저장(#43) → `source=manual-web`. **실제 값이 바뀐 경우만** 기록
+    (`$gmt_prev !== $gv`; 동일값 재저장은 미기록 — write_config 는 기존대로 무조건).
+  - `usr/local/cron/cp_tz_offset_update.php` GPS 자동 갱신(#29) → `source=auto-gps`. 크론이 원래
+    변경 시에만 write 하므로 적용 성공(`$applied`) 후 **락 밖**에서 기록(#22 느린 I/O 락 밖 패턴).
+  - `etc/inc/api/models/APIStatusSetTimeOffset.inc` 외부 REST 푸시 → `source=api-push`. write_config 직후.
+- **신규 `etc/inc/cp_gmt_history.inc`** — `cp_gmt_history_record($timefrom, $timeto, $source)`:
+  - **mysql CLI + defaults-extra-file**(비번 argv 미노출) + `--connect-timeout=3` + `/usr/bin/timeout 8`
+    하드 바운드(#40 패턴; timeout 부재 시 connect-timeout 만) — `freeradius_radcheck_exec_sql`(#23 3-A)
+    동일 패턴이나 **freeradius.inc 비의존 self-contained**(크론/API 에서 무거운 include 회피).
+  - CREATE TABLE IF NOT EXISTS + INSERT 를 **한 배치**(멱등 — 테이블 없으면 첫 이벤트 때 생성).
+  - `timestamp` = **박스 UTC**(`gmdate`, #41 박스 UTC 권위 원칙). timefrom/timeto 는 오프셋 문자열
+    ("9"/"-3.5"; 미설정이면 '') — VARCHAR(10) 클램프 + SQL escape.
+  - **실패해도 throw 없이 false + log_error** (GMT 저장 흐름 불가침 degrade). 성공/실패 모두
+    `GMT HISTORY:` 시스템 로그(빈도 낮아 스팸 없음; source 는 로그 가시화용 — 테이블 스키마는 4컬럼 고정).
+  - 호출측 3곳 모두 `file_exists`+`function_exists` 가드 → **버전 섞임(inc 미배포) 시 fatal 없이 skip**.
+- **주의(수용)**: `gmtcheck`(수동모드 토글) 자체는 오프셋 변경이 아니라 미기록. DB 접속정보는 코드 상수
+  (기존 influx/mysql 하드코딩 관례 — 보안 후속 항목과 동일 범주).
+- **이력 뷰어(사이드바 history 버튼 + 모달)**:
+  - **버튼**: 사이드바 "GMT n"(`common_ui.inc print_sidebar` `#gmt-modify`) 옆 소형 `history` 버튼.
+    클릭 버블은 JS `stopPropagation` 으로 차단(부모 클릭 = 타임존 설정 팝업 pop-gmt 와 분리).
+    버튼 텍스트가 `#gmt-modify` innerText 에 섞여도 common.js `currentOffset()` 은 parseFloat 라 안전
+    ("9.5 history" → 9.5). 사이드바 공용이라 **9개 관리 페이지 전부에서 동작**.
+  - **모달**: "Daily internet usage"(#42) 모달과 동일 계열 스타일(다크 카드 + pill 버튼, `gmthist-*`
+    ID/클래스 격리, 자체 색 고정 = 라이트/다크 테마 무관). 범위 = **1d(기본)/7d/30d/Custom**(네이티브
+    `<input type="date">` 캘린더 2개 + Apply, 역순 입력은 서버가 스왑). 표 = Time (UTC) / Change
+    ("GMT 9 → GMT 9.5", 미설정은 "(unset)"). 빈 결과 "No timezone changes", DB 불통 "History
+    unavailable" — fatal 없음. 닫기 = X/배경클릭/ESC.
+  - **엔드포인트 `usr/local/www/gmt_history_data.php`(신규)**: guiconfig.inc 인증 경유 JSON.
+    `mode=days&days=N`(1~3660 클램프) 또는 `mode=custom&from/to=YYYY-MM-DD`(정규식 검증, UTC 날짜).
+    CSRF 는 렌더된 `#gmtForm` 의 `__csrf_magic` hidden 을 XHR 바디에 재사용.
+  - **헬퍼 확장(`cp_gmt_history.inc`)**: 공통 실행부 `cp_gmt_history_exec_sql($sql,$flags,&$out)` 로
+    리팩터(record/fetch 공유) + `cp_gmt_history_fetch($from,$to,$limit=1000)` — `-N -B`(헤더 생략·탭
+    구분) SELECT, datetime 정규식 검증(비정상 입력 = mysql 호출 전 false), LIMIT 1~5000 클램프,
+    CREATE TABLE IF NOT EXISTS 동배치(테이블 없어도 빈 결과).
+- **검증**: php -l 전부 통과 / 주입 JS node --check + DOM/XHR 스텁 하네스 **20/20**(기본 1d 요청·CSRF
+  첨부·렌더/escape·(unset)·pill 전환·Custom 캘린더·custom 요청·실패/빈 메시지·닫기 3종) /
+  fetch 입력검증·mysql 부재 graceful false 통과.
+- **배포 정합성**: `cp_gmt_history.inc` + `index.php` + `cp_tz_offset_update.php` +
+  `APIStatusSetTimeOffset.inc` + `common_ui.inc` + `gmt_history_data.php` **6파일 일괄**
+  (가드 있어 fatal 없음 — inc 누락 시 기록만 skip, 엔드포인트 누락 시 모달이 unavailable 표시).
+
 ## 다음 작업 대기 중
+
+- [ ] **#48 커밋 대기(develop 미커밋)**: GMT 이력 기록(신규 `cp_gmt_history.inc` + writer 3곳 훅) +
+  이력 뷰어(사이드바 history 버튼 + 모달 + `gmt_history_data.php`). 패치노트는 사용자 지시로 이번 생략
+  (다음 배포 배치 때 일괄 기재).
+- [ ] #48 검증(선상): GMT 팝업으로 오프셋 변경 → `SELECT * FROM radius.gmt_history ORDER BY id DESC LIMIT 5;`
+  에 행 추가(timefrom/timeto 정확) / 크론 자동 갱신·API 푸시 경로도 기록 / 동일값 재저장은 미기록 /
+  DB 불통 시 GMT 저장은 정상 + `clog /var/log/system.log | grep "GMT HISTORY"` 실패 로그 /
+  선상 박스에 mysql CLI 존재 확인(`command -v mysql`) / **history 버튼** → 모달 1d/7d/30d/Custom 조회·
+  사이드바 있는 9페이지 공통 동작·history 클릭 시 타임존 설정 팝업 안 뜸(버블 차단) / Ctrl+F5 캐시.
 
 - [x] **#41 커밋 완료(develop)**: 다크모드 — System(OS)/GPS(일출일몰 civil twilight)/Light/Dark 4-state,
   9페이지 공통(print_css_n_head), dark.css, 오프라인 일출일몰(cp_daynight.inc+크론), 박스 UTC 시각 판정,

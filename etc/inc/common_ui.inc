@@ -160,8 +160,13 @@ function print_sidebar($inputlink)
 
     $rtnstr .= '    <p class="location" id="firewall-login">' . htmlspecialchars($vesselinfo["vesselname"] ?? '', ENT_QUOTES) . '</p>';
 
-    // GMT 표시
-    $rtnstr .= '    <p class="gmt" id="gmt-modify" style="cursor:pointer;">GMT ' . htmlspecialchars($gmt, ENT_QUOTES) . '</p>';
+    // GMT 표시 (+ #48 변경 이력 버튼 — 클릭 버블은 JS stopPropagation 으로 차단해
+    //  타임존 설정 팝업(pop-gmt)과 분리. 버튼 텍스트가 innerText 에 섞여도
+    //  common.js currentOffset() 은 parseFloat 라 "9.5 history" → 9.5 로 안전)
+    $rtnstr .= '    <p class="gmt" id="gmt-modify" style="cursor:pointer;">GMT ' . htmlspecialchars($gmt, ENT_QUOTES)
+        . ' <button type="button" id="gmthist-btn" title="GMT change history"'
+        . ' style="margin-left:6px; height:18px; padding:0 8px; border-radius:9px; font-size:10px; font-weight:700;'
+        . ' background:transparent; border:1px solid #3d5878; color:#9fb6d4; cursor:pointer; vertical-align:middle;">history</button></p>';
 
     // GMT 체크박스(Manual Timezone Enable)
     $rtnstr .= '    <div class="gmt-option">';
@@ -317,6 +322,152 @@ function print_sidebar($inputlink)
             </div>
         </div>
     </div>';
+
+    // ---- GMT 변경 이력 모달 (#48) ----
+    //  사이드바 GMT 옆 history 버튼 → radius.gmt_history 조회(gmt_history_data.php AJAX).
+    //  스타일은 Main Panel "Daily internet usage" 모달과 동일 계열(다크 카드 + pill 버튼)
+    //  — 자체 색 고정이라 라이트/다크 테마 모두 무관. ID/클래스 gmthist-* 로 격리.
+    $rtnstr .= '<style>
+    #gmthist-ov{position:fixed;inset:0;background:rgba(8,12,20,.74);z-index:10001;display:none;align-items:center;justify-content:center;}
+    #gmthist-ov.on{display:flex;}
+    .gmthist-modal{width:min(560px,96vw);max-height:88vh;overflow:auto;background:#0d1726;border:1px solid #24405f;border-radius:14px;padding:18px 20px;box-shadow:0 18px 60px rgba(0,0,0,.55);}
+    .gmthist-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+    .gmthist-head h3{margin:0;font-size:16px;font-weight:800;color:#f2f7ff;}
+    .gmthist-x{background:none;border:0;color:#8ca6c6;font-size:22px;line-height:1;cursor:pointer;padding:0 2px;}
+    .gmthist-x:hover{color:#fff;}
+    .gmthist-range{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .gmthist-range .gh-btn{height:28px;padding:0 12px;border-radius:7px;font-size:12px;font-weight:700;background:#152238;border:1px solid #2c4363;color:#b9cbe4;cursor:pointer;}
+    .gmthist-range .gh-btn.on{background:#1976d2;border-color:#1976d2;color:#fff;}
+    .gmthist-custom{display:none;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
+    .gmthist-custom input[type=date]{height:28px;padding:0 8px;border-radius:7px;background:#0a192f;border:1px solid #2c4363;color:#e7eefc;font-size:12px;color-scheme:dark;}
+    .gmthist-custom .gh-sep{color:#7e95b4;font-size:12px;}
+    .gmthist-apply{height:28px;padding:0 14px;border-radius:7px;font-size:12px;font-weight:700;background:#1976d2;border:1px solid #1976d2;color:#fff;cursor:pointer;}
+    .gmthist-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+    .gmthist-tbl th{color:#9fb6d4;text-align:left;font-weight:700;padding:6px 8px;border-bottom:1px solid #2c4363;}
+    .gmthist-tbl td{color:#e7eefc;padding:6px 8px;border-bottom:1px solid #1a2c49;}
+    .gmthist-tbl .gh-arrow{color:#3aa0ff;font-weight:700;}
+    .gmthist-msg{color:#cdd9ea;text-align:center;padding:32px 12px;font-size:13px;line-height:1.6;margin:0;}
+    .gmthist-note{margin:10px 0 0;font-size:11px;color:#7e95b4;}
+    </style>';
+    $rtnstr .= '<div id="gmthist-ov" role="dialog" aria-modal="true" aria-label="GMT change history">
+        <div class="gmthist-modal">
+            <div class="gmthist-head">
+                <h3>GMT change history</h3>
+                <button type="button" class="gmthist-x" id="gmthist-x" aria-label="Close">&times;</button>
+            </div>
+            <div class="gmthist-range" id="gmthist-range">
+                <button type="button" class="gh-btn on" data-days="1">1d</button>
+                <button type="button" class="gh-btn" data-days="7">7d</button>
+                <button type="button" class="gh-btn" data-days="30">30d</button>
+                <button type="button" class="gh-btn" data-custom="1">Custom</button>
+            </div>
+            <div class="gmthist-custom" id="gmthist-custom">
+                <input type="date" id="gmthist-from"> <span class="gh-sep">~</span> <input type="date" id="gmthist-to">
+                <button type="button" class="gmthist-apply" id="gmthist-apply">Apply</button>
+            </div>
+            <div id="gmthist-body"></div>
+            <p class="gmthist-note">&#9432; Timezone offset change log (times in UTC) &mdash; manual, GPS-auto and remote changes.</p>
+        </div>
+    </div>';
+    $rtnstr .= '<script>
+    (function(){
+        var btn = document.getElementById("gmthist-btn");
+        var ov  = document.getElementById("gmthist-ov");
+        if (!btn || !ov) { return; }
+        var body   = document.getElementById("gmthist-body");
+        var custom = document.getElementById("gmthist-custom");
+        var fromI  = document.getElementById("gmthist-from");
+        var toI    = document.getElementById("gmthist-to");
+        var pills  = document.getElementById("gmthist-range").getElementsByTagName("button");
+
+        function esc(s){
+            return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+        }
+        function fmtOff(v){
+            v = String(v == null ? "" : v).trim();
+            return (v === "") ? "(unset)" : ("GMT " + v);
+        }
+        function csrfToken(){
+            var el = document.querySelector("#gmtForm input[name=__csrf_magic]");
+            return el ? el.value : "";
+        }
+        function render(rows){
+            if (!rows || !rows.length) {
+                body.innerHTML = "<p class=\"gmthist-msg\">No timezone changes in this period.</p>";
+                return;
+            }
+            var h = "<table class=\"gmthist-tbl\"><thead><tr><th>Time (UTC)</th><th>Change</th></tr></thead><tbody>";
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                h += "<tr><td>" + esc(r.timestamp) + "</td><td>" + esc(fmtOff(r.timefrom))
+                   + " <span class=\"gh-arrow\">&rarr;</span> " + esc(fmtOff(r.timeto)) + "</td></tr>";
+            }
+            body.innerHTML = h + "</tbody></table>";
+        }
+        function load(params){
+            body.innerHTML = "<p class=\"gmthist-msg\">Loading&hellip;</p>";
+            var tok = csrfToken();
+            if (tok) { params.__csrf_magic = tok; }
+            var q = [];
+            for (var k in params) { q.push(encodeURIComponent(k) + "=" + encodeURIComponent(params[k])); }
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "/gmt_history_data.php", true);
+            xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+            xhr.onreadystatechange = function(){
+                if (xhr.readyState !== 4) { return; }
+                var d = null;
+                try { d = JSON.parse(xhr.responseText); } catch(e) {}
+                if (!d || !d.ok) {
+                    body.innerHTML = "<p class=\"gmthist-msg\">History unavailable (database unreachable).</p>";
+                    return;
+                }
+                render(d.rows);
+            };
+            xhr.send(q.join("&"));
+        }
+        function setOn(b){
+            for (var i = 0; i < pills.length; i++) { pills[i].classList.remove("on"); }
+            b.classList.add("on");
+        }
+        for (var i = 0; i < pills.length; i++) {
+            (function(b){
+                b.addEventListener("click", function(){
+                    setOn(b);
+                    if (b.getAttribute("data-custom")) { custom.style.display = "flex"; return; }
+                    custom.style.display = "none";
+                    load({ mode: "days", days: b.getAttribute("data-days") });
+                });
+            })(pills[i]);
+        }
+        var applyB = document.getElementById("gmthist-apply");
+        if (applyB) {
+            applyB.addEventListener("click", function(){
+                if (!fromI.value || !toI.value) { return; }
+                load({ mode: "custom", from: fromI.value, to: toI.value });
+            });
+        }
+        function openOv(){
+            var today = new Date().toISOString().slice(0, 10);   // UTC 날짜(저장 timestamp 와 동일 기준)
+            if (fromI && !fromI.value) { fromI.value = today; }
+            if (toI && !toI.value)     { toI.value = today; }
+            setOn(pills[0]);
+            custom.style.display = "none";
+            ov.classList.add("on");
+            load({ mode: "days", days: "1" });
+        }
+        function closeOv(){ ov.classList.remove("on"); }
+        btn.addEventListener("click", function(ev){
+            ev.stopPropagation();      // 부모 #gmt-modify 클릭(타임존 설정 팝업 pop-gmt) 버블 차단
+            ev.preventDefault();
+            openOv();
+        });
+        document.getElementById("gmthist-x").addEventListener("click", closeOv);
+        ov.addEventListener("click", function(ev){ if (ev.target === ov) { closeOv(); } });
+        document.addEventListener("keydown", function(ev){
+            if (ev.key === "Escape" && ov.classList.contains("on")) { closeOv(); }
+        });
+    })();
+    </script>';
 
     // ---- JS: gmtcheck POST를 CSRF 포함해서 안정적으로 ----
     $rtnstr .= '<script>

@@ -195,7 +195,11 @@
       "Bash(python -)",
       "Bash(php -r 'echo intval\\(floatval\\(\"1234567.89\"\\)\\),\"\\\\n\";')",
       "Bash(php -l \"D:\\\\git\\\\pfsense_webpage_n_captive-portal\\\\usr\\\\local\\\\www\\\\system_gateways_edit.php\")",
-      "Bash(bash -n tools/coresystem_influx_write.sh)"
+      "Bash(bash -n tools/coresystem_influx_write.sh)",
+      "Bash(php -l etc/inc/cp_gmt_history.inc)",
+      "Bash(php -l usr/local/www/gmt_history_data.php)",
+      "Bash(node \"C:\\\\Users\\\\Roudy.Ha\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--git-pfsense-webpage-n-captive-portal\\\\51f57724-d5ee-4c4d-82e8-014561cd7fa7\\\\scratchpad\\\\gmthist_harness.js\")",
+      "Read(//d/Windows Information/Downloads/**)"
     ]
   }
 }
