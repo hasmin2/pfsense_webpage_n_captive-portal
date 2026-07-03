@@ -26,7 +26,12 @@
  */
 
 define('OVWD_DEBUG',            file_exists('/tmp/openvpn_watchdog_debug.on'));
-define('OVWD_PING_HOST',        'vpn-server.synersat.noc');
+// 터널 내부 게이트웨이(전 client 공통 서버 터널 IP)를 ping 한다. 공인 엔드포인트
+// (vpn-server.synersat.noc 등)를 ping 하면 목적지가 WAN 라우팅이라 -S 소스바인딩으로도
+// 패킷이 WAN(Starlink)으로 새고 outbound NAT 로 응답까지 와서, 터널이 완전히 죽어도 healthy 로
+// 오판 → liveness 재시작이 영영 안 됨(실측: 6시간+ 무재시작). 목적지를 터널 서브넷 IP 로 두면
+// 라우팅이 터널 인터페이스로 강제되어 터널 사망 시 ping 실패 → 정상 재시작.
+define('OVWD_PING_HOST',        '10.8.128.1');
 define('OVWD_FAIL_THRESHOLD',   3);     // 연속 실패 N회 후 liveness 재시작 (cron 매분 → ~3분)
 define('OVWD_RESTART_COOLDOWN', 300);   // 같은 client 재시작 최소 간격(초) — 재연결 시간 확보
 define('OVWD_STATE_DIR',        '/var/run/openvpn_watchdog');
@@ -136,8 +141,10 @@ foreach ($clients as $client) {
     $failfile = OVWD_STATE_DIR . "/fail-" . $vpnid;
     $rstfile  = OVWD_STATE_DIR . "/restart-" . $vpnid;
 
-    // 헬스 판정: 'up' + virtual_addr 있을 때만 터널 경유 ping. 3패킷 중 1개라도 응답하면 정상(ping
-    // exit 0). timeout 12 로 외부 하드바운드(-t8 이중 안전). 그 외 상태(down/connecting/...)는 미연결.
+    // 헬스 판정: 'up' + virtual_addr 있을 때만 터널 내부 GW(OVWD_PING_HOST=10.8.128.1) 로 ping.
+    // 소스(-S)=client 의 virtual_addr, 목적지=터널 서브넷이라 라우팅이 터널 인터페이스로 강제됨(WAN
+    // 누수 없음). 3패킷 중 1개라도 응답하면 정상(ping exit 0). timeout 12 로 외부 하드바운드(-t8 이중
+    // 안전). 그 외 상태(down/connecting/...)는 미연결로 보고 fail 카운터 누적.
     $healthy = false;
     if ($status === 'up' && $addr !== '') {
         $cmd = $timeout_pfx . $ping_bin . " -c3 -t8 -S " . escapeshellarg($addr) . " "

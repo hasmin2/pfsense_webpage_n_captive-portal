@@ -40,6 +40,12 @@ Beta 1.1.53-Beta · Stable: 1.1.4-Stable
   was reopened; the setting is now saved in a cookie so it persists.
 - CHANGED: The "SET RANDOM PW" button is now available to customer logins on the
   Crew Accounts page (previously only admins could see it).
+- FIXED: OpenVPN auto-restart no longer misses a dead tunnel. The watchdog was
+  checking reachability to the VPN server's public address, which stayed reachable
+  over the satellite link even when the tunnel itself was down — so a broken tunnel
+  looked healthy and was never restarted (observed staying down for 6+ hours until
+  a manual restart). It now checks the tunnel's internal gateway, and runs every
+  minute again, so a dead tunnel is detected and restarted within a few minutes.
 
 2026-07-02 Update
 Beta 1.1.49-Beta · Stable: 1.1.3-Stable
