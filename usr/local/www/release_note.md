@@ -27,7 +27,8 @@ Beta 1.1.53-Beta · Stable: 1.1.4-Stable
   "History" button that opens the change log for that specific account (password
   and data-usage resets, modifications, top-ups, description and schedule edits),
   filtered to that account. Choose the last 1 / 7 / 30 days, all time, or a
-  custom date range, and export the list to CSV.
+  custom date range, and export the list to CSV. Long histories are paged 10
+  entries at a time with Prev / Next controls.
 - CHANGED: Crew Wi-Fi devices can no longer reach the firewall itself except for
   what they actually need — DNS, DHCP and the login portal. Access to the router's
   admin interfaces (web console, SSH, etc.) from the crew network is now blocked.

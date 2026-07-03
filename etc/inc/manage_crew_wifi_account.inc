@@ -659,6 +659,10 @@ function render_account_history_modal() {
 .ah-chip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.3px;border-radius:6px;padding:2px 7px;white-space:nowrap;}
 .accthist-msg{color:#cdd9ea;text-align:center;padding:32px 12px;font-size:13px;line-height:1.6;margin:0;}
 .accthist-note{margin:10px 0 0;font-size:11px;color:#7e95b4;}
+.accthist-pager{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:12px;}
+.accthist-pager .ah-page{height:26px;padding:0 12px;border-radius:7px;font-size:12px;font-weight:700;background:#152238;border:1px solid #2c4363;color:#b9cbe4;cursor:pointer;}
+.accthist-pager .ah-page:disabled{opacity:.4;cursor:default;}
+.accthist-pager .ah-pageinfo{font-size:12px;color:#9fb6d4;white-space:nowrap;}
 .accthist-open-btn{height:24px;padding:0 10px;border-radius:7px;font-size:11px;font-weight:700;background:#eef3f9;border:1px solid #b9c6d6;color:#37506e;cursor:pointer;}
 .accthist-open-btn:hover{background:#e0e8f2;}
 </style>
@@ -697,6 +701,8 @@ function render_account_history_modal() {
     var expB   = document.getElementById("accthist-export");
     var curUser = "";
     var lastRows = [];
+    var PAGE_SIZE = 10;
+    var curPage = 1;
 
     var CHIP = {
         password_reset:   ["#9a6207","#fdf3e1"], password_change: ["#9a6207","#fdf3e1"],
@@ -720,19 +726,45 @@ function render_account_history_modal() {
     function render(rows){
         lastRows = rows || [];
         if (expB) { expB.disabled = (lastRows.length === 0); }
-        if (!rows || !rows.length) {
+        if (!lastRows.length) {
             body.innerHTML = "<p class=\"accthist-msg\">No changes recorded for this account in this period.</p>";
             return;
         }
+        curPage = 1;      // 새 결과는 항상 1페이지부터
+        renderPage();
+    }
+    // 10개 단위 클라이언트 페이지네이션 (lastRows = 전체 결과)
+    function renderPage(){
+        var total = lastRows.length;
+        var pages = Math.ceil(total / PAGE_SIZE) || 1;
+        if (curPage > pages) { curPage = pages; }
+        if (curPage < 1)     { curPage = 1; }
+        var start = (curPage - 1) * PAGE_SIZE;
+        var slice = lastRows.slice(start, start + PAGE_SIZE);
+
         var h = "<table class=\"accthist-tbl\"><thead><tr><th>Time (UTC)</th><th>Type</th><th>Description</th></tr></thead><tbody>";
-        for (var i=0;i<rows.length;i++){
-            var r = rows[i];
+        for (var i=0;i<slice.length;i++){
+            var r = slice[i];
             var c = CHIP[r.change_type] || ["#5b6573","#eef1f5"];
             h += "<tr><td class=\"ah-time\">"+esc(r.timestamp)+"</td>"
                + "<td><span class=\"ah-chip\" style=\"color:"+c[0]+";background:"+c[1]+";\">"+esc(prettyType(r.change_type))+"</span></td>"
                + "<td class=\"ah-desc\">"+esc(r.change_description)+"</td></tr>";
         }
-        body.innerHTML = h + "</tbody></table>";
+        h += "</tbody></table>";
+
+        if (pages > 1) {
+            h += "<div class=\"accthist-pager\">"
+               + "<button type=\"button\" class=\"ah-page\" id=\"accthist-prev\""+(curPage<=1?" disabled":"")+">&lsaquo; Prev</button>"
+               + "<span class=\"ah-pageinfo\">Page "+curPage+" / "+pages+" &middot; "+total+" total</span>"
+               + "<button type=\"button\" class=\"ah-page\" id=\"accthist-next\""+(curPage>=pages?" disabled":"")+">Next &rsaquo;</button>"
+               + "</div>";
+        }
+        body.innerHTML = h;
+
+        var pv = document.getElementById("accthist-prev");
+        var nx = document.getElementById("accthist-next");
+        if (pv) { pv.addEventListener("click", function(){ if (curPage > 1)     { curPage--; renderPage(); } }); }
+        if (nx) { nx.addEventListener("click", function(){ if (curPage < pages) { curPage++; renderPage(); } }); }
     }
     function load(params){
         body.innerHTML = "<p class=\"accthist-msg\">Loading&hellip;</p>";

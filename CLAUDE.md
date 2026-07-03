@@ -1511,6 +1511,10 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
     `accthist-*` 격리. 범위 pill 30d(기본)/7d/1d/All/Custom + Export CSV(BOM/CRLF/5열: id/ts/username/
     type/desc). 표=Time(UTC)/Type(색 chip)/Description. 닫기 X/배경/ESC. crew_account.php `</body>` 앞
     `function_exists` 가드로 echo.
+  - **클라이언트 페이지네이션(10개 단위, 후속 추가)**: `render()` 가 전체 결과를 `lastRows` 에 담고
+    `renderPage()` 가 `PAGE_SIZE=10` 슬라이스만 표시 + Prev/Next + "Page X / Y · N total" pager.
+    총 10개 이하면 pager 미표시. 새 조회(범위 전환)마다 1페이지로 리셋. **Export CSV 는 현재 페이지가
+    아니라 `lastRows` 전체를 내보냄**(변경 없음). pager 는 renderPage 재호출마다 재바인딩(경계에서 disabled).
   - CSRF = crew_account.php 폼에 csrf-magic 이 주입하는 `__csrf_magic` hidden 을 XHR 에 재사용
     (`window.csrfMagicToken` 우선 폴백). 기존 modify AJAX 와 동일 패턴.
 - **검증**: php -l 4파일 / 백엔드 하네스(DDL·username 추출·INSERT·fetch SQL·주입방어·no-op 무시) /
