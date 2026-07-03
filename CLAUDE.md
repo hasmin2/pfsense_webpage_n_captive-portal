@@ -11,9 +11,9 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `725e53c` | **#1~#51 포함**(#48=`c473a8f`+`ebc29fa`, #49=계정 변경 이력+CREWPAY `3666f94`, #50=per-user History 뷰어 `9299f4f`, #51=FBB 신호 이름매핑 분리 + ACU state -1→Comm.Error `a848caa` + FBB "6"→EMEA `725e53c`), 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경)(`c9bd917`); #40: OpenVPN 재시작 크론을 watchdog 으로 안정화 — per-client·hang reap·비블로킹 락(try_lock)·ping timeout 바운드·위성 디바운스·로그 가시화 — 커밋 `66ebfd7`; #41: 다크모드 System(OS)/GPS(일출일몰 civil twilight, 박스 UTC 판정)/Light/Dark 4-state·9페이지공통(print_css_n_head)·dark.css·cp_daynight.inc+크론·외부 day/night API 삭제(`ab95701`·`81c9423`·`e089710`); #42: Daily usage 막대그래프(InfluxDB 일별 rx+tx, This month 기본·MB meter, `ab95701`); #43: GMT 타임존 테마 팝업 + 30분(0.5) 단위 + cp_tz 가드 truthy(`ab95701`); #44: GMT 저장 시 전역 `$g` 오염→웹루트 숫자폴더+config.xml 덤프 버그 수정(`$g`→`$gmt_in`, 보안, `ab95701`)) |
-| `main` | `1ad2cd9` | **#1~#47 전부 반영 완료** (커밋 `1ad2cd9`). 2026-07-02 develop→main 일괄 통합 (#35~#47 포함) |
-| `prod` | `94a8cd9` | **#1~#47 전부 반영** (커밋 `94a8cd9`). 2026-07-02 main→prod 배포 (#35~#47 포함) |
+| `develop` | `3f66d96` | **#1~#53 포함**(#48=`c473a8f`+`ebc29fa`, #49=계정 변경 이력+CREWPAY `3666f94`, #50=per-user History 뷰어 `9299f4f`+이력모달 10개 페이지네이션 `6c06890`, #51=FBB 신호 이름매핑 분리 + ACU state -1→Comm.Error `a848caa` + FBB "6"→EMEA `725e53c`, #52=crew→This Firewall 접근제한 `4c5c519`, #48 GMT모달 페이지네이션 `2155a19`, #41=테마 토글 쿠키 영속화 `763dd19`, #53=customer SET RANDOM PW 버튼 노출 `090e249`), 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경)(`c9bd917`); #40: OpenVPN 재시작 크론을 watchdog 으로 안정화 — per-client·hang reap·비블로킹 락(try_lock)·ping timeout 바운드·위성 디바운스·로그 가시화 — 커밋 `66ebfd7`; #41: 다크모드 System(OS)/GPS(일출일몰 civil twilight, 박스 UTC 판정)/Light/Dark 4-state·9페이지공통(print_css_n_head)·dark.css·cp_daynight.inc+크론·외부 day/night API 삭제(`ab95701`·`81c9423`·`e089710`); #42: Daily usage 막대그래프(InfluxDB 일별 rx+tx, This month 기본·MB meter, `ab95701`); #43: GMT 타임존 테마 팝업 + 30분(0.5) 단위 + cp_tz 가드 truthy(`ab95701`); #44: GMT 저장 시 전역 `$g` 오염→웹루트 숫자폴더+config.xml 덤프 버그 수정(`$g`→`$gmt_in`, 보안, `ab95701`)) |
+| `main` | `d8165bf` | **#1~#53 전부 반영 완료** (커밋 `d8165bf`). 2026-07-03 develop→main 일괄 통합 (#48~#53 포함) |
+| `prod` | `59b6594` | **#1~#53 전부 반영** (커밋 `59b6594`). 2026-07-03 main→prod 배포 (#48~#53 포함). 리모트 `hasmin2/pfsense_webpage_n_captive-portal.git` 의 `main` |
 
 > **develop 최근 작업 묶음(#13확장·#15~#17)**: 배포 시 구룰 자동 purge + 로그인 유지 마이그레이션
 > (`4df5de3`), phantom CP zone 제거·즉시정리(`9bc6053`·`9476e47`), getsession 무효리셋 가드 +
@@ -1160,9 +1160,12 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 ### 40. OpenVPN 재시작 크론을 watchdog 으로 안정화 — "일부 선박 미재시작" 교정 (develop `66ebfd7`)
 - **배경/증상**: `usr/local/cron/openvpn_restart_timeperiod_check.php`(cron, [firewall_cronlist:211~]
   등록됨)가 **일부 선박에서 VPN 재시작을 정상 수행하지 않음**. 로직 검증 결과 결함 다수.
-  - **스케줄(2026-07-02 변경, 의도됨)**: `minute` `*`(매분) → `0`(매시 정각, 시간당 1회). 매분 점검이 불필요하다는
-    판단(사용자 확인). **트레이드오프**: liveness 재시작 판정이 시간당 1회 → 디바운스(연속 실패 threshold)와 겹쳐
-    VPN 끊김 복구가 최대 ~1시간 지연 가능. 더 빠른 복구가 필요하면 `minute` 을 `*` 로 되돌릴 것.
+  - **스케줄(2026-07-03 현재 = 매분 `minute` `*`)**: 2026-07-02 에 매분→매시(`0`)로 바꿨다가, 매시 cadence 가
+    (A) 강제 플래그(경로전환) 재시작을 최대 ~59분 지연시키고 — 위젯/API 는 플래그만 set 하고 재시작은
+    **오직 cron 발화에만 의존**(`manual_routing.widget.php:386` 빈 루프 + `APIStatusOpenVPNRestart.inc` 플래그
+    set only) — (B) liveness 복구를 `OVWD_FAIL_THRESHOLD`(3)×매시 = **최대 ~3시간**으로 늘려서 **2026-07-03 에
+    매분으로 환원**. 매분이면 상수(threshold 3=~3분·cooldown 5분·stale-reap 10분)가 원설계대로 맞고, 매분 부하는
+    flock 단일 인스턴스 가드(#26)+hang reap 이 억제. (firewall_cronlist 항상 함께 커밋.)
 - **이 크론의 2가지 용도**: ① liveness — 터널이 데이터 못 넘기면 재시작. ② 강제 플래그 —
   관리자/경로전환(`manual_routing.widget.php` "Automatic" 분기 + `APIStatusOpenVPNRestart.inc` 가
   `$config['openvpn']['openvpnrestart']=""` set)이 모든 client 즉시 재시작 → **Starlink↔VSAT 업링크
@@ -1201,8 +1204,18 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
     미사용 → lost-update 무관, #16 패턴). cron 매분이라 ~3분 확정 실패 후 재시작.
   - **완전 silent(진단 불가가 곧 문제)**: `log_error("[openvpn-watchdog] …")` 로 재시작/reap/락실패 가시화.
     매분 스팸·디스크풀(#24) 방지 위해 **평시 per-client 상태는 `/tmp/openvpn_watchdog_debug.on` 있을 때만**.
-- **동작 흐름(수정 후)**: liveness=`status==up`+`virtual_addr` 일 때 터널 경유 ping→연속 3실패+쿨다운 경과
-  시 **그 client 만** 재시작 / 강제 플래그=**모든 client 즉시**(쿨다운 무시·1회성) 후 플래그 정리.
+- **⚠️ ping 대상 오류 = 터널 죽어도 무재시작(2026-07-03 교정, 진짜 진범)**: `OVWD_PING_HOST` 가
+  `vpn-server.synersat.noc`(= VPN 서버 **공인 엔드포인트**, 클라이언트가 다이얼하는 그 이름)였음. 헬스체크
+  `ping -S <virtual_addr> <공인IP>` 는 **`-S` 가 소스만 바꿀 뿐 FreeBSD 는 목적지 기준 라우팅** → 목적지가
+  공인 IP 라 **WAN(Starlink)로 나가고 outbound NAT 로 응답까지 옴** → **터널이 완전히 죽어도 ping 성공 →
+  `$healthy=true` → fail 카운터 0 리셋 → liveness 재시작 영영 안 함**. 실측: 선상에서 터널 데이터 경로
+  (10.8.128.1) 사망인데 6시간+ 무재시작, 수동 재기동으로만 복구. 즉 워치독이 **터널 헬스가 아니라 WAN
+  도달성**을 재던 것. **수정**: `OVWD_PING_HOST` → **`10.8.128.1`**(터널 내부 GW, 전 client 공통 — 사용자
+  확인). 목적지가 터널 서브넷이라 라우팅이 터널 인터페이스로 강제 → 터널 사망 시 ping 실패 → 정상 재시작.
+  (다중 client 동시 공유 시 목적지 라우팅이 한 터널로만 갈 수 있어 per-client 정밀도 저하 가능하나, 공유
+  GW+통상 단일 활성 client 환경이면 무관.)
+- **동작 흐름(수정 후)**: liveness=`status==up`+`virtual_addr` 일 때 터널 내부 GW(10.8.128.1) ping→연속 3실패
+  +쿨다운 경과 시 **그 client 만** 재시작 / 강제 플래그=**모든 client 즉시**(쿨다운 무시·1회성) 후 플래그 정리.
 - **⚠️ 의도된 동작 변경**: 기존 ping 1회 실패 시 즉시 전체 재시작 → 이제 liveness 는 **~3분 디바운스**
   (위성 flapping/#21 끊김 방지). 즉시성 원하면 `OVWD_FAIL_THRESHOLD=1`. **경로전환(플래그) 재시작은 변함없이
   즉시** → manual_routing/Starlink↔VSAT 전환 동작 영향 없음.
@@ -1213,7 +1226,10 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `clog /var/log/system.log | grep openvpn-watchdog`(RESTART/reap/락실패) / `touch
   /tmp/openvpn_watchdog_debug.on`(per-client ping rc 상세, 끝나면 삭제) / hang 재현 시 10분 후 stale reap.
 - **튜닝 상수(파일 상단)**: `OVWD_FAIL_THRESHOLD`(3) · `OVWD_RESTART_COOLDOWN`(300) ·
-  `OVWD_STALE_HOLDER_SECS`(600) · `OVWD_LOCK_WAIT`(10) · `OVWD_PING_HOST`(`vpn-server.synersat.noc`).
+  `OVWD_STALE_HOLDER_SECS`(600) · `OVWD_LOCK_WAIT`(10) · `OVWD_PING_HOST`(**`10.8.128.1`** = 터널 내부 GW;
+  공인 엔드포인트 금지 — WAN 누수로 healthy 오판).
+- **2026-07-03 후속(ping 대상 교정 + 매분 환원)**: `openvpn_restart_timeperiod_check.php`(`OVWD_PING_HOST`
+  10.8.128.1) + `firewall_cronlist`(`minute` `*`) 일괄. 패치노트는 `2026-07-03 Update` 항목에 병합(FIXED).
 
 ### 41. 다크모드 — System/GPS(일출일몰)/Light/Dark 토글 (develop `ab95701`·`81c9423`·`e089710`)
 - **요구**: 다크모드 버튼을 전 웹페이지 공통 적용. 이후 시스템 테마 연동(기본) + GPS 일출/일몰 연동으로 확대.
@@ -1566,7 +1582,7 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **검증**: php -l 2파일 통과.
 - **배포 정합성**: `server_module.inc` + `index.php` 2파일(가드 있어 fatal 없음, 표시만 강등).
 
-### 52. crew → This Firewall(자기 자신) 접근 제한 — DNS/DHCP/portal 외 전면 block (develop 미커밋)
+### 52. crew → This Firewall(자기 자신) 접근 제한 — DNS/DHCP/portal 외 전면 block (develop `4c5c519` → main `d8165bf` → prod `59b6594`)
 - **배경/요구**: crew 로그인 시 pfctl 테이블 방식(`add_crew_linked_rule`, #1·#4·#12·#13 배경)으로 라우팅
   pass 룰이 **묵시적으로** 걸리는데, 그 [CP Routing] route-to pass 룰들의 **Destination 이 `any`** 라
   "This Firewall(박스 자기 IP)"까지 포함 → **crew 단말이 firewall 의 webGUI(443/80)·SSH(22) 등 관리
@@ -1606,7 +1622,7 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `cp_routing_setup.php` 중 하나로 트리거. GUI Floating 최상단 `[CP Routing] self-protect` 4줄 확인 →
   crew 에서 webGUI(443)/SSH(22) 차단 + DNS·포털·인터넷 정상. `captiveportal.inc` 단일 파일이나 버전 섞임 방지 일괄 배포 권장.
 
-### 53. crew_account.php — customer 역할에도 "SET RANDOM PW" 버튼 노출 (develop 미커밋)
+### 53. crew_account.php — customer 역할에도 "SET RANDOM PW" 버튼 노출 (develop `090e249` → main `d8165bf` → prod `59b6594`)
 - **배경**: `crew_account.php` 상단이 `$adminlogin` 역할별로 툴바 버튼을 분기(admin/vesseladmin=
   Export CSV/Reset PW/**SET RANDOM PW**/Reset Data/Check PW/Delete; **customer=Reset PW 만**; 그 외=없음).
   customer 는 SET RANDOM PW 가 숨겨져 있었음.
