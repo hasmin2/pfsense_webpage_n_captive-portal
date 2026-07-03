@@ -16,6 +16,10 @@
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 require_once("captiveportal.inc");
+// #49: 계정 변경 이력 헬퍼 (radius.radacct_changehistory) — 미배포(버전섞임) 시 기록만 skip
+if (file_exists('/etc/inc/cp_account_history.inc')) {
+    require_once('/etc/inc/cp_account_history.inc');
+}
 
 class TopUp extends APIModel {
     # Create our method constructor
@@ -98,6 +102,16 @@ class TopUp extends APIModel {
                         }
 
                         $this->write_config("User topped up");
+
+                        // #49: 변경 이력 기록 (quota/usage delta — PW 무관)
+                        if (function_exists('cp_account_history_record')) {
+                            $topup_detail = implode(', ', array_slice($logparts, 1));
+                            if ($topup_detail === '') { $topup_detail = 'no delta'; }
+                            cp_account_history_record('quota_topup',
+                                "user={$userentry['varusersusername']} topup ({$topup_detail}) via API by "
+                                . cp_account_history_actor()
+                                . cp_account_history_tag($userentry['varusersusername']));
+                        }
 
                         return;
                     }

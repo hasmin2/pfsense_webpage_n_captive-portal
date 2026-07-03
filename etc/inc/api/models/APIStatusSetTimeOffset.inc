@@ -31,6 +31,15 @@ class APIStatusSetTimeOffset extends APIModel {
                 }
                 $this->config['time_offset_enabled']['time_offset'] = $this->initial_data['time_offset'];
                 $this->write_config();
+                // #48: GMT 변경 이력 → radius.gmt_history (버전섞임 가드)
+                if (!function_exists('cp_gmt_history_record') && file_exists('/etc/inc/cp_gmt_history.inc')) {
+                    require_once('/etc/inc/cp_gmt_history.inc');
+                }
+                if (function_exists('cp_gmt_history_record')) {
+                    $gmt_ip = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'unknown';
+                    cp_gmt_history_record((string)$last_timeoffset, (string)$this->initial_data['time_offset'],
+                        'api-push', 'Remote change via API from ' . $gmt_ip);
+                }
             }
             else{
                 return APIResponse\get(0, ("Same Timezone, no change made"));

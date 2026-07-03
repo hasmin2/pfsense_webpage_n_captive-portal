@@ -325,7 +325,7 @@ function cp_geo_look_angle($lat, $lon, $satlon) {
 function get_acu_pointing_info() {
     $out = array(
         'ok'          => false,
-        'status'      => 'nodata',   // tracking | searching | blocked | nodata
+        'status'      => 'nodata',   // tracking | searching | blocked | commerror | nodata
         'satellite'   => '',
         'signal'      => null,
         'heading'     => null,
@@ -394,7 +394,9 @@ function get_acu_pointing_info() {
         $out['status'] = 'blocked';
     } else if ($antstatus === '1') {
         $out['status'] = 'tracking';
-    } else if ($antstatus === '0' || $antstatus === '-1') {
+    } else if ($antstatus === '-1') {
+        $out['status'] = 'commerror';   // IntellianACUReader -1 = 통신 오류
+    } else if ($antstatus === '0') {
         $out['status'] = 'searching';
     } else if ($tracked && $signal !== null && $signal >= 1) {
         $out['status'] = 'tracking';
@@ -462,6 +464,15 @@ function cp_fbb_satlon_from_name($name) {
             return ($m[2] === 'W') ? -$v : $v;
         }
     }
+    // ①-b FBB 단말이 위성을 숫자 ID 로 보고하는 경우의 정확일치 매핑.
+    //     아래 ② 부분일치 맵보다 먼저 처리해 "16"/"63" 등 오매칭을 피한다.
+    //     (관측: 일부 FBB 가 EMEA/Alphasat 을 ID "6" 으로 보고 → 24.9E 로 분류.)
+    $exact = array(
+        '6' => 24.9,    // EMEA / Alphasat (I-4A F4)
+    );
+    if (isset($exact[$n])) {
+        return $exact[$n];
+    }
     // ② 해역명/위성명 키워드 매핑 — Inmarsat I-4/Alphasat FBB 슬롯 (2026-06 검증).
     //    부분 일치라 "I-4 Americas"/"ASIA-PACIFIC" 등 변형도 흡수.
     //    순서 중요: "Middle East & Asia"(MEAS)가 'ASIA'에 먼저 걸리지 않도록
@@ -511,14 +522,18 @@ function get_fbb_pointing_info($heading = null) {
         $out['signal'] = round((float)$ss['Signal'], 1);
     }
 
-    $satlon = cp_fbb_satlon_from_name($name);
-    if ($satlon === null) {
-        return $out;   // 이름 미매칭/미추적 — 니들 없이 기존 FBB 텍스트만
-    }
-    $out['satellite'] = cp_format_satlon($satlon);
+    // tracking 판정은 신호값만으로 한다 — 이름 매핑 성공 여부와 무관.
+    // (FBB 가 맵에 없는 위성 이름(예: 숫자 ID "6")을 보고해도 신호가 유효하면
+    //  "No Signal" 로 가려지지 않도록. 이름 매핑은 아래 니들(az/el) 계산에만 사용.)
     if ($out['signal'] !== null && $out['signal'] >= 1) {
         $out['status'] = 'tracking';
     }
+
+    $satlon = cp_fbb_satlon_from_name($name);
+    if ($satlon === null) {
+        return $out;   // 이름 미매칭/미추적 — 니들 없이 신호/상태·raw 이름은 유지
+    }
+    $out['satellite'] = cp_format_satlon($satlon);
 
     // FBB GPS 는 부호 없는 값 + 별도 방향 컬럼(컬럼명도 단말따라 -/_ 혼재) →
     // 방향 문자로 부호 복원. (0,0)은 리더의 파싱실패 기본값이므로 제외.

@@ -173,6 +173,17 @@ if (!$applied) {
 }
 
 $zinfo = ($zone !== null) ? $zone : 'nautical-fallback';
+
+// #48: GMT 변경 이력 → radius.gmt_history (락 밖 느린 I/O — #22 패턴, 버전섞임 가드)
+//   GPS 는 이 크론이 이미 조회한 좌표를 그대로 전달(influx 재조회 없음).
+if (!function_exists('cp_gmt_history_record') && file_exists('/etc/inc/cp_gmt_history.inc')) {
+    require_once('/etc/inc/cp_gmt_history.inc');
+}
+if (function_exists('cp_gmt_history_record')) {
+    cp_gmt_history_record($cur_offset, $new_offset, 'auto-gps',
+        "Automatic change from GPS (src={$src} zone={$zinfo})",
+        sprintf('%.5f,%.5f', $lat, $lon));
+}
 if (function_exists('log_error')) {
     log_error(sprintf(
         "TZ AUTO: offset %s -> %s (lat=%.3f lon=%.3f src=%s zone=%s)",

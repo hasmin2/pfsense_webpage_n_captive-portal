@@ -11,9 +11,9 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `66ebfd7` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경)(`c9bd917`); #40: OpenVPN 재시작 크론을 watchdog 으로 안정화 — per-client·hang reap·비블로킹 락(try_lock)·ping timeout 바운드·위성 디바운스·로그 가시화 — 커밋 `66ebfd7`; #41: 다크모드 System(OS)/GPS(일출일몰 civil twilight, 박스 UTC 판정)/Light/Dark 4-state·9페이지공통(print_css_n_head)·dark.css·cp_daynight.inc+크론·외부 day/night API 삭제(`ab95701`·`81c9423`·`e089710`); #42: Daily usage 막대그래프(InfluxDB 일별 rx+tx, This month 기본·MB meter, `ab95701`); #43: GMT 타임존 테마 팝업 + 30분(0.5) 단위 + cp_tz 가드 truthy(`ab95701`); #44: GMT 저장 시 전역 `$g` 오염→웹루트 숫자폴더+config.xml 덤프 버그 수정(`$g`→`$gmt_in`, 보안, `ab95701`)) |
-| `main` | `369da8e` | **#1~#34 전부 반영 완료** (커밋 `369da8e`). 2026-06-16 develop→main 일괄 통합 |
-| `prod` | `7a7195f` | **#1~#34 전부 반영** (커밋 `7a7195f`). 2026-06-16 main→prod 배포 |
+| `develop` | `725e53c` | **#1~#51 포함**(#48=`c473a8f`+`ebc29fa`, #49=계정 변경 이력+CREWPAY `3666f94`, #50=per-user History 뷰어 `9299f4f`, #51=FBB 신호 이름매핑 분리 + ACU state -1→Comm.Error `a848caa` + FBB "6"→EMEA `725e53c`), 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경)(`c9bd917`); #40: OpenVPN 재시작 크론을 watchdog 으로 안정화 — per-client·hang reap·비블로킹 락(try_lock)·ping timeout 바운드·위성 디바운스·로그 가시화 — 커밋 `66ebfd7`; #41: 다크모드 System(OS)/GPS(일출일몰 civil twilight, 박스 UTC 판정)/Light/Dark 4-state·9페이지공통(print_css_n_head)·dark.css·cp_daynight.inc+크론·외부 day/night API 삭제(`ab95701`·`81c9423`·`e089710`); #42: Daily usage 막대그래프(InfluxDB 일별 rx+tx, This month 기본·MB meter, `ab95701`); #43: GMT 타임존 테마 팝업 + 30분(0.5) 단위 + cp_tz 가드 truthy(`ab95701`); #44: GMT 저장 시 전역 `$g` 오염→웹루트 숫자폴더+config.xml 덤프 버그 수정(`$g`→`$gmt_in`, 보안, `ab95701`)) |
+| `main` | `1ad2cd9` | **#1~#47 전부 반영 완료** (커밋 `1ad2cd9`). 2026-07-02 develop→main 일괄 통합 (#35~#47 포함) |
+| `prod` | `94a8cd9` | **#1~#47 전부 반영** (커밋 `94a8cd9`). 2026-07-02 main→prod 배포 (#35~#47 포함) |
 
 > **develop 최근 작업 묶음(#13확장·#15~#17)**: 배포 시 구룰 자동 purge + 로그인 유지 마이그레이션
 > (`4df5de3`), phantom CP zone 제거·즉시정리(`9bc6053`·`9476e47`), getsession 무효리셋 가드 +
@@ -54,6 +54,9 @@
 | `etc/inc/terminal_status.inc` | Main Panel 상태 문자열 빌더 (return_terminal_state 등) |
 | `etc/inc/cp_geo_tz.inc` | 위경도→타임존 오프셋 오프라인 판정 (#29; 격자=`cp_tz_grid.inc`, 생성기=`tools/generate_cp_tz_grid.js`) |
 | `usr/local/cron/cp_tz_offset_update.php` | 매시 7분 GPS 기반 time_offset 자동 갱신 크론 (#29) |
+| `etc/inc/cp_gmt_history.inc` | GMT time_offset 변경 이력 → MariaDB `radius.gmt_history` 기록 헬퍼 (#48) |
+| `etc/inc/cp_account_history.inc` | crew 계정 변경 이력 → MariaDB `radius.radacct_changehistory` 기록/조회 헬퍼 (#49/#50) |
+| `usr/local/www/crew_account_history_data.php` | per-user 계정 변경 이력 조회 JSON 엔드포인트 (#50) |
 
 > **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` /
 > `freeradius_datacounter_auth_resync()` 함수가 `datacounter_acct.sh` /
@@ -1221,7 +1224,12 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **CSS**: `usr/local/www/css/dark.css` **신규**(`html.dark` 스코프 오버라이드). 기존 CSS 6종은 색 하드코딩
   (변수 미사용)이라 구조요소(body·사이드바·타일·테이블·팝업·폼·버튼)별로 다크색 재지정. 라이트 모드 영향 0.
 - **토글 4-state 순환**: `System`(OS `prefers-color-scheme`, 기본)→`GPS`(일출일몰)→`Light`→`Dark`.
-  localStorage `cp_theme`(auto/gps/light/dark, 내부키는 auto 유지). 사이드바 메뉴 하단 버튼(유니코드 아이콘).
+  저장키 `cp_theme`(auto/gps/light/dark, 내부키는 auto 유지). 사이드바 메뉴 하단 버튼(유니코드 아이콘).
+  - **저장소: 쿠키(주) + localStorage(미러)** — 선박 콘솔(앱 webview 등)에서 **localStorage 가 세션마다
+    초기화되어 매번 기본값(auto)로 돌아가던 문제** 수정. 토글 시 `cp_theme` 쿠키(`path=/`·max-age 1년·
+    samesite=lax) + localStorage 동시 기록. 읽기(FOUC 조기 스크립트 + `cpThemeMode`)는 **쿠키 우선 →
+    localStorage 폴백 → auto**. 기존 localStorage 사용자는 첫 로드 시 쿠키로 1회 자동 이관. 9개 관리
+    페이지 공용(같은 origin·path=/ 라 전 페이지 공유).
   - **FOUC 방지**: `print_css_n_head` 최상단 인라인 스크립트가 CSS 링크보다 먼저 실행 → 첫 페인트 전 `html.dark` 설정.
   - System 모드: `matchMedia change` 리스너로 OS 전환 실시간 반영. 표시 라벨은 "System"(내부키 auto)(`e089710`).
 - **GPS 모드(오프라인 일출/일몰, civil twilight)**:
@@ -1373,7 +1381,283 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **배포 정합성**: `system_gateways_edit.php` + `captiveportal.inc`(cp_sync_routing_tables 정의) **같은
   리비전 일괄** 배포(가드 있어 fatal 은 없으나 미탑재 시 동기화 skip).
 
+### 48. GMT time_offset 변경 이력 → MariaDB `radius.gmt_history` 기록 (수동 변경 포함 전 경로) (develop `c473a8f`)
+- **요구**: mariadb://192.168.209.210:3306 (radius/radius, **MariaDB 5.5**) 의 `radius.gmt_history`
+  테이블(`id` INT AUTO_INCREMENT PK / `timestamp` DATETIME / `timefrom` VARCHAR(10) / `timeto` VARCHAR(10)
+  / `description` VARCHAR(255) / `gps` VARCHAR(32)) — **없으면 자동 생성** — 에 GMT time_offset 이
+  **변경되는 모든 이벤트**(수동 변경 포함)를 기록. gps = 당시 좌표 "lat,lon"(소수 5자리),
+  미수신/influx 불통이면 **'N/A'**.
+- **컬럼 마이그레이션 없음(의도)**: description/gps 는 CREATE TABLE 에 처음부터 포함해 **6컬럼으로
+  바로 생성** — #48 배포 전까지 이 테이블이 존재하는 박스가 없음(사용자 확인). 조건부 ALTER
+  (information_schema+PREPARE) 방식은 검토 후 불필요로 제거. (만약 예외적으로 4컬럼 구버전 테이블이
+  이미 생긴 박스가 발견되면 수동 `ALTER TABLE gmt_history ADD COLUMN ...` 1회 필요.)
+- **writer 전수(#48 시점, grep 확인 = 이 3곳뿐)** — 각각 훅:
+  - `usr/local/www/index.php` GMT 팝업 저장(#43) → `source=manual-web`, desc=**"Manual change from
+    {REMOTE_ADDR}"**. **실제 값이 바뀐 경우만** 기록(`$gmt_prev !== $gv`; 동일값 재저장은 미기록 —
+    write_config 는 기존대로 무조건). gps 는 record 가 influx 자동 취득.
+  - `usr/local/cron/cp_tz_offset_update.php` GPS 자동 갱신(#29) → `source=auto-gps`, desc=**"Automatic
+    change from GPS (src=… zone=…)"**, gps=**크론이 이미 조회한 좌표 그대로 전달**(influx 재조회 0).
+    크론이 원래 변경 시에만 write 하므로 적용 성공(`$applied`) 후 **락 밖**에서 기록(#22 패턴).
+  - `etc/inc/api/models/APIStatusSetTimeOffset.inc` 외부 REST 푸시 → `source=api-push`, desc=**"Remote
+    change via API from {REMOTE_ADDR}"**. write_config 직후. gps 자동 취득.
+- **신규 `etc/inc/cp_gmt_history.inc`** — `cp_gmt_history_record($timefrom, $timeto, $source,
+  $description = '', $gps = '')`:
+  - **mysql CLI + defaults-extra-file**(비번 argv 미노출) + `--connect-timeout=3` + `/usr/bin/timeout 8`
+    하드 바운드(#40 패턴; timeout 부재 시 connect-timeout 만) — `freeradius_radcheck_exec_sql`(#23 3-A)
+    동일 패턴이나 **freeradius.inc 비의존 self-contained**(크론/API 에서 무거운 include 회피).
+  - CREATE TABLE IF NOT EXISTS(6컬럼) + INSERT 를 **한 배치**(멱등 — 테이블 없으면 첫 이벤트 때 생성).
+  - `timestamp` = **박스 UTC**(`gmdate`, #41 박스 UTC 권위 원칙). timefrom/timeto 는 오프셋 문자열
+    ("9"/"-3.5"; 미설정이면 '') — VARCHAR 클램프(10/255/32) + SQL escape.
+  - **gps 자동 채움**: `$gps=''` 이면 `cp_gmt_history_current_gps()` — influx(선내 LAN, 2초 타임아웃)
+    VSAT(vesselposition) 우선 → FBB(satstatus, 방향컬럼 부호 복원) 폴백, (0,0)/불통 = 'N/A'
+    (#29 크론과 동일 정책, self-contained). 웹 경로 최악 지연 ~4초(influx 불통 시)는 수용.
+  - **실패해도 throw 없이 false + log_error** (GMT 저장 흐름 불가침 degrade). 성공/실패 모두
+    `GMT HISTORY:` 시스템 로그(빈도 낮아 스팸 없음; source 는 로그 가시화용 — 테이블 컬럼 아님).
+  - 호출측 3곳 모두 `file_exists`+`function_exists` 가드 → **버전 섞임(inc 미배포) 시 fatal 없이 skip**.
+    구 inc(3인자 record)에 신 호출(5인자)이 와도 PHP 는 초과 인자 무시 → **양방향 버전섞임 안전**.
+- **주의(수용)**: `gmtcheck`(수동모드 토글) 자체는 오프셋 변경이 아니라 미기록. DB 접속정보는 코드 상수
+  (기존 influx/mysql 하드코딩 관례 — 보안 후속 항목과 동일 범주).
+- **이력 뷰어(사이드바 history 버튼 + 모달)**:
+  - **버튼**: 사이드바 "GMT n"(`common_ui.inc print_sidebar` `#gmt-modify`) 옆 소형 `history` 버튼.
+    클릭 버블은 JS `stopPropagation` 으로 차단(부모 클릭 = 타임존 설정 팝업 pop-gmt 와 분리).
+    버튼 텍스트가 `#gmt-modify` innerText 에 섞여도 common.js `currentOffset()` 은 parseFloat 라 안전
+    ("9.5 history" → 9.5). 사이드바 공용이라 **9개 관리 페이지 전부에서 동작**.
+  - **모달**: "Daily internet usage"(#42) 모달과 동일 계열 스타일(다크 카드 + pill 버튼, `gmthist-*`
+    ID/클래스 격리, 자체 색 고정 = 라이트/다크 테마 무관). 범위 = **1d(기본)/7d/30d/Custom**(네이티브
+    `<input type="date">` 캘린더 2개 + Apply, 역순 입력은 서버가 스왑). 표 = Time (UTC) / Change
+    ("GMT 9 → GMT 9.5", 미설정은 "(unset)") / **Description / GPS**(빈값 = "N/A" 표기, 모달 폭 760px).
+    빈 결과 "No timezone changes", DB 불통 "History unavailable" — fatal 없음. 닫기 = X/배경클릭/ESC.
+  - **클라이언트 페이지네이션(10개 단위, #50 과 동일 패턴)**: `render()` 가 전체 결과를 `lastRows` 에
+    담고 `renderPage()` 가 `PAGE_SIZE=10` 슬라이스만 표시 + Prev/Next + "Page X / Y · N total"
+    (`gmthist-pager`/`gh-page`). 총 10개 이하면 pager 미표시, 범위 전환마다 1페이지 리셋, 경계 disabled.
+    **Export CSV 는 현재 페이지가 아니라 `lastRows` 전체**를 내보냄(변경 없음).
+  - **Export CSV**: range 줄 우측 녹색 pill 버튼 — **현재 표시 중인 조회 결과**를 클라이언트에서
+    CSV 생성해 다운로드(`gmt_history_YYYYMMDD_HHMMSS.csv`). 헤더
+    `id,timestamp_utc,timefrom,timeto,description,gps`,
+    RFC4180 인용부호 escape, CRLF, **BOM(U+FEFF) 프리픽스 = Excel 한글판 호환**(코드엔 이스케이프
+    문자열로 기재 — 리터럴 BOM 금지, 에디터/인코딩에 취약). 결과 없거나 로딩 중엔 disabled.
+    범위 pill 선택자는 `data-days/data-custom` 속성 기준이라 Export 버튼은 range 로직에서 제외.
+  - **엔드포인트 `usr/local/www/gmt_history_data.php`(신규)**: guiconfig.inc 인증 경유 JSON.
+    `mode=days&days=N`(1~3660 클램프) 또는 `mode=custom&from/to=YYYY-MM-DD`(정규식 검증, UTC 날짜).
+    CSRF 는 렌더된 `#gmtForm` 의 `__csrf_magic` hidden 을 XHR 바디에 재사용.
+  - **헬퍼 확장(`cp_gmt_history.inc`)**: 공통 실행부 `cp_gmt_history_exec_sql($sql,$flags,&$out)` 로
+    리팩터(record/fetch 공유) + `cp_gmt_history_fetch($from,$to,$limit=1000)` — `-N -B`(헤더 생략·탭
+    구분) SELECT, datetime 정규식 검증(비정상 입력 = mysql 호출 전 false), LIMIT 1~5000 클램프,
+    CREATE TABLE IF NOT EXISTS 동배치(테이블 없어도 빈 결과).
+- **검증**: php -l 전부 통과 / 생성 DDL 배치 출력 검수(MariaDB 5.5 호환) /
+  주입 JS node --check + DOM/XHR 스텁 하네스 **34/34**(기본 1d 요청·CSRF 첨부·렌더/escape·(unset)·
+  Description/GPS 컬럼·gps 빈값→N/A·pill 전환·Custom 캘린더·custom 요청·실패/빈 메시지·닫기 3종 +
+  Export: 로딩중 disabled·렌더 후 활성·BOM·헤더 6컬럼·quote/comma escape·CRLF·파일명) /
+  fetch 입력검증·mysql 부재 graceful false·구버전 3인자 record 호출 호환 통과.
+- **배포 정합성**: `cp_gmt_history.inc` + `index.php` + `cp_tz_offset_update.php` +
+  `APIStatusSetTimeOffset.inc` + `common_ui.inc` + `gmt_history_data.php` **6파일 일괄**
+  (가드 있어 fatal 없음 — inc 누락 시 기록만 skip, 엔드포인트 누락 시 모달이 unavailable 표시).
+
+### 49. crew 계정 변경 이력 → MariaDB `radius.radacct_changehistory` 기록 (PW리셋/사용량리셋/생성/삭제/수정 전 경로) (develop 미커밋)
+- **요구**: Crew Account 의 user id 별 Password 리셋 / Data Usage 리셋 / 업데이트 등 **모든 계정 변경**을
+  #48 과 동일 방식으로 mariadb://192.168.209.210:3306 의 `radius.radacct_changehistory`
+  (`id` INT AUTO_INCREMENT PK / `timestamp` DATETIME / `change_type` VARCHAR(64) /
+  `change_description` VARCHAR(1024)) 에 기록 — 없으면 자동 생성. **실제 비밀번호는 절대 미기재**
+  ("(changed)"/"initial"/"random"/"(set)" 마스킹만).
+- **신규 `etc/inc/cp_account_history.inc`** — `cp_account_history_record($change_type, $descriptions)`:
+  - 실행부는 **#48 `cp_gmt_history_exec_sql` 재사용**(같은 DB/자격증명·defaults-extra-file·타임아웃).
+    #48 inc 미배포 시 `function_exists` 가드로 조용히 skip(버전섞임 안전).
+  - 다건은 배열로 → **단일 INSERT 배치, 사용자별 1행**. timestamp=박스 UTC(gmdate). desc 1024 클램프
+    + 개행/탭 정리. 실패 시 false + `ACCT HISTORY:` log_error(흐름 불가침).
+  - `cp_account_history_actor()`: `cp_admin_actor()`(관리 세션명→IP) 있으면 재사용, 없으면
+    세션명→REMOTE_ADDR→'system' 폴백(API 컨텍스트에서 captiveportal.inc 없어도 동작).
+- **prepaid 구분 = `cp_account_history_tag($username)`** — username 이 `crewpay-`(대소문자 무시,
+  `/^crewpay-/i`)로 시작하면 desc 끝에 **` (CREWPAY)`** 태그, 아니면 ''. **진입점(crew/prepaid 페이지·
+  위젯·API)이 아니라 "변경 대상 계정이 prepaid 인가"로 판정** — prepaid 계정은 코드베이스 전역에서
+  `crewpay-` 접두사로 식별되므로(build_wifi_rows 필터/captiveportal index.php 로그인 시 접두사 부여/
+  cp_usage_reset·prepaid 크론 제외 기준과 동일) username 만으로 정확·불변. **모든 per-user hook 이
+  사용자별로 태그 적용**(혼합 배치면 crewpay- 사용자 행만 태그). **예외: 포털 자가 비번변경
+  (`commit_change_pw`)은 태그 미적용**(사용자 지시 — prepaid 구분 불필요).
+- **hook 전수(계정 변경 writer — grep 전수조사)**:
+  - `manage_crew_wifi_account.inc`(crew/prepaid 웹 + API bulk-create/delete 공용, 8곳):
+    `create_wifi_user`→user_create(quota/period/terminaltype/password=random|initial) /
+    `del_wifi_user`→user_delete / `modify_wifi_user`→user_modify(새 값 요약) /
+    `reset_wifi_user`→usage_reset / `reset_wifi_user_pw`→password_reset("initial value") /
+    `reset_random_wifi_user_pw`→password_reset("random value") / `set_description`→description_change /
+    `set_scheduler`→schedule_change(활성 행 "HH:MM-HH:MM(days)" 요약). PW 계열은 **락 밖**에서 기록(#22).
+  - `manage_freeradiususer.widget.php`(대시보드 위젯 4분기, 인라인 구현이라 별도 훅): deluser/resetuser/
+    resetpw/createuser → 동일 타입 + desc 에 "(widget)" 표기. 전부 락 밖.
+  - API: `APIFreeRadiusUserUpdate`→user_modify(전송된 freeradius_* 필드 요약, **password=(changed)
+    마스킹** — israndompw 주입 password 포함) + usersreset→usage_reset(터미널타입별) /
+    `APIFreeRadiusUserTopup`→quota_topup(quota±MB, usage±MB) / `APIFreeRadiusUserCreate` 단건→
+    user_create(password=(set)) — bulk 는 create_wifi_user 훅이 커버, Delete 는 del_wifi_user 재사용이라 자동 커버.
+  - `captiveportal.inc commit_change_pw`(포털 자가 비번변경)→password_change(client IP 기재, lazy require).
+- **의도적 제외**: 주기 리셋 크론(daily/weekly/halfmonthly/monthly/prepaid/selfheal)의 자동 리셋 —
+  관리자 행위가 아니고 유저수×주기로 매일 쌓여 노이즈. 필요 시 같은 헬퍼 한 줄로 추가 가능.
+- **검증**: php -l 전파일 통과(captiveportal.inc 의 `${var}` deprecated 경고는 기존 코드, PHP7.4 무관) /
+  스텁 하네스 **14/14**(다건 단일배치·행수·quote escape·개행정리·timestamp 형식·단건 문자열 인자·
+  빈 입력 false·1024 클램프·actor 폴백 2종) + **태그 하네스 9/9**(crewpay- 대소문자/정상/synersat/
+  빈값/substring-not-prefix/null) + **CREWPAY 통합 하네스 11/11**(crew 무태그·prepaid 태그·혼합배치
+  선별·API 마스킹+태그·record SQL 태그) / #48 미배포 시 graceful false 확인 /
+  **멀티에이전트 적대검증 워크플로**(pw-writers·usage-reset·create-delete·pw-leak·prepaid-signal 5차원).
+- **배포 정합성**: `cp_account_history.inc` + `cp_gmt_history.inc`(#48 실행부) +
+  `manage_crew_wifi_account.inc` + `manage_freeradiususer.widget.php` + `APIFreeRadiusUser{Create,Update,Topup}.inc`
+  + `captiveportal.inc` **8파일 일괄**(#48 묶음과 같이 배포 권장. 가드 전면 — inc 누락 시 기록만 skip).
+
+### 50. crew_account.php per-user "History" 버튼 → 계정별 변경 이력 모달 (develop 미커밋)
+- **요구**: MANAGE CREW ACCOUNT(crew_account.php)에 사용자마다 "History" 버튼 → 해당 계정의 Modify
+  History(=#49 `radacct_changehistory`) 조회. 양식은 #42/#48 "Daily/GMT" 모달과 유사.
+- **per-user 조회 설계 = `username` 컬럼 추가**: `radacct_changehistory` CREATE TABLE 에
+  `username VARCHAR(64)` + `KEY idx_username` **바로 포함**(마이그레이션 없음 — 아직 미배포라
+  새로 생성하면 됨). **모든 #49 훅 desc 가 `user=<username> ...` 로 시작**하므로 record() 가
+  `cp_account_history_extract_username`(`/^user=(\S+)/`)로 **자동 추출·저장** → 16개 훅 무수정.
+- **조회 헬퍼 `cp_account_history_fetch($username,$from,$to,$limit)`**: username 정규식 검증
+  (`^[A-Za-z0-9._-]+$`) + escape + `=`(LIKE 아님, `_` 와일드카드 무해) + datetime 정규식 + LIMIT
+  클램프(≤5000). `-N -B` 출력의 빈/불완전 행은 컬럼수<4 가드로 무시.
+- **엔드포인트 `usr/local/www/crew_account_history_data.php`(신규)**: guiconfig 인증 JSON.
+  `mode=days&days=1|7|30|3660(All)` 또는 `mode=custom&from/to`. 기본 30일. 입력 불량/DB 불통 = ok:false.
+- **UI**:
+  - 행별 "History" 버튼 — `draw_wifi_contents` 에 추가하되 **crew 페이지 전용**(`$isPrepaid!=='prepaid'`
+    가드; prepaid 페이지는 컬럼 미추가라 정렬 안 깨짐). crew_account.php thead 에 `<th>History</th>` +
+    colgroup 1열 추가(9열 정합).
+  - 모달 = 공유 함수 `render_account_history_modal()`(manage_crew_wifi_account.inc, nowdoc) — 전역
+    `openAcctHistory(username, displayname)` 정의. GMT 모달(#48)과 동일 다크카드(테마 무관 고정색),
+    `accthist-*` 격리. 범위 pill 30d(기본)/7d/1d/All/Custom + Export CSV(BOM/CRLF/5열: id/ts/username/
+    type/desc). 표=Time(UTC)/Type(색 chip)/Description. 닫기 X/배경/ESC. crew_account.php `</body>` 앞
+    `function_exists` 가드로 echo.
+  - **클라이언트 페이지네이션(10개 단위, 후속 추가)**: `render()` 가 전체 결과를 `lastRows` 에 담고
+    `renderPage()` 가 `PAGE_SIZE=10` 슬라이스만 표시 + Prev/Next + "Page X / Y · N total" pager.
+    총 10개 이하면 pager 미표시. 새 조회(범위 전환)마다 1페이지로 리셋. **Export CSV 는 현재 페이지가
+    아니라 `lastRows` 전체를 내보냄**(변경 없음). pager 는 renderPage 재호출마다 재바인딩(경계에서 disabled).
+  - CSRF = crew_account.php 폼에 csrf-magic 이 주입하는 `__csrf_magic` hidden 을 XHR 에 재사용
+    (`window.csrfMagicToken` 우선 폴백). 기존 modify AJAX 와 동일 패턴.
+- **검증**: php -l 4파일 / 백엔드 하네스(DDL·username 추출·INSERT·fetch SQL·주입방어·no-op 무시) /
+  모달 DOM·XHR 하네스 **28/28**(열기·30d 기본·csrf·렌더/chip/escape·All·Custom·CSV 5열·실패/빈·닫기 3종) /
+  #48·#49 회귀 없음(GMT 34/34, 다건 username 추출+CREWPAY+PW마스크) / 멀티에이전트 적대검증(prefix 완전성·
+  엔드포인트 주입/인증/XSS·테이블 정합).
+- **배포 정합성**: `cp_account_history.inc` + `crew_account_history_data.php` + `manage_crew_wifi_account.inc`
+  + `crew_account.php` (+ #48 실행부 `cp_gmt_history.inc`) 일괄. `radacct_changehistory` 는 아직 미배포라
+  **username 컬럼 포함 신 스키마로 그냥 새로 생성**(마이그레이션 불필요 — 사용자 방침).
+
+### 51. FBB 신호 "No Signal" 오표시(이름매핑 종속) 분리 + ACU state -1 → "Comm. Error" (develop `a848caa`)
+- **증상**: Main Panel Satellite 타일 안테나 나침반에서 **FBB 는 정상 데이터가 들어오는데 Signal 이
+  "No Signal" 로 표시**됨(`FBB : 6 (No Signal)`). 실제 influx 에는 신호값이 있음.
+- **근본 원인(FBB 신호)**: `get_fbb_pointing_info()`([server_module.inc:508~])가 신호를 `$out['signal']`
+  로 읽은 **뒤** `cp_fbb_satlon_from_name($name)` 로 위성 궤도경도를 매핑하는데, 이름이 맵(MEAS/APAC/
+  AMER/EMEA/ALPHASAT…)에 없으면(예: FBB 가 보고한 이름 "6") `null` → **조기 리턴**. 그런데 tracking
+  판정(`signal>=1 → status='tracking'`)이 이 조기 리턴 **뒤**에 있어 status 가 'searching' 에 머묾.
+  index.php JS(`updateFbbCompass`)는 **`status==='tracking'` 일 때만 신호를 표시** → 신호가 있어도
+  "No Signal". **즉 FBB 신호 표시가 위성 이름 매핑 성공에 종속**된 구조 버그.
+- **수정(FBB)** `server_module.inc get_fbb_pointing_info`: **tracking 판정을 신호값(≥1)만으로** 조기
+  리턴 **앞**으로 이동. 이름 매핑(`cp_fbb_satlon_from_name`)은 **니들(az/el) 계산에만** 사용 —
+  미매핑 시 니들만 생략하고 신호/상태·raw 이름은 유지. JS 무수정(이미 tracking 시 신호 표시).
+  - 양쪽 안전: 신호가 진짜 0/빈값이면 status='searching' 유지 → 여전히 "No Signal"(정상).
+  - **FBB "6" → EMEA/Alphasat(24.9E) 매핑 완료(`725e53c`)**: `cp_fbb_satlon_from_name` 에 숫자 ID
+    **정확일치 맵(①-b, `$exact = ['6'=>24.9]`)** 추가 — 부분일치(②)보다 먼저 처리해 "16"/"63" 등
+    오매칭 방지. 이제 "6" 보고 시 `FBB : 24.9E (Signal : n)` + 니들(GPS 있으면 az/el) 표시.
+    다른 숫자 ID 관측 시 `$exact` 에 한 줄 추가.
+- **ACU state code -1 → Comm. Error**: `get_acu_pointing_info()` 의 antstatus 해석에서 `-1` 이
+  `0`(SEARCHING)과 함께 'searching' 으로 뭉뚱그려져 있었음. `-1`(IntellianACUReader = 통신 오류)을
+  **별도 `commerror` 상태로 분리** → index.php 컴퍼스에 **"VSAT : Comm. Error"(빨강)** 표시.
+  - `server_module.inc`: `-1` → `'commerror'`, `0` → `'searching'` 분리. status 주석에 commerror 추가.
+  - `index.php`: labels 에 `commerror: 'VSAT : Comm. Error'` + CSS `[data-status="commerror"]`
+    빨강 텍스트·도트·회색 el니들 + 3D 돔 `satColor` 빨강 처리.
+  - **주의**: `terminal_status.inc` 의 `$vsat_status[0]=="-1"`="DB read error" 는 `check_vsat_status_influxdb`
+    의 curl 실패 센티널(별개 필드)이라 **무관·미수정**. antstatus 코드 -1 과 혼동 금지.
+- **상태 코드 매핑(확정)**: `1`=tracking / `0`=searching / `2`=blocked / `-1`=**commerror**(Comm. Error) /
+  (antstatus 컬럼 없음)=`Longitude≠0`+`AGC/Signal≥1`이면 tracking, 아니면 searching. antstatus 컬럼명은
+  고정 아님 — `/ant.*status/i` 정규식으로 탐색(파이프라인 구성별 상이). **인코딩(state code 저장)은
+  레포 밖 acureader(IntellianACUReader.java)** — 레포엔 reader 만 존재.
+- **검증**: php -l 2파일 통과.
+- **배포 정합성**: `server_module.inc` + `index.php` 2파일(가드 있어 fatal 없음, 표시만 강등).
+
+### 52. crew → This Firewall(자기 자신) 접근 제한 — DNS/DHCP/portal 외 전면 block (develop 미커밋)
+- **배경/요구**: crew 로그인 시 pfctl 테이블 방식(`add_crew_linked_rule`, #1·#4·#12·#13 배경)으로 라우팅
+  pass 룰이 **묵시적으로** 걸리는데, 그 [CP Routing] route-to pass 룰들의 **Destination 이 `any`** 라
+  "This Firewall(박스 자기 IP)"까지 포함 → **crew 단말이 firewall 의 webGUI(443/80)·SSH(22) 등 관리
+  서비스에 접근 가능**한 누수. crew 는 **DNS(udp/53) + portal(tcp/8002)** 만 firewall 에 접근하고
+  나머지는 막고자 함(+ DHCP 갱신 udp/67 은 운영 필수라 함께 허용).
+- **원인 확인(선상 GUI 스크린샷)**: CP 클라이언트 인터페이스 = `CREW`. floating 목록에 crew→self 를
+  제한하는 룰이 **명시적으로 없음**. `[System Rule] Default allow for requesting to Firewall` 은 인터페이스가
+  `MACHINE/NOC_VPN/BUSINESS/OpenVPN` 이라 CREW 무관(누수 원인 아님). 원인은 오직 `[CP Routing] route-to`/
+  `cp_gw_default pass` 4룰의 `dest any`. (route-to 는 self 목적지엔 사실상 미적용이라 트래픽이 그냥 박스로 pass됨.)
+- **결정: raw pfctl 아니라 config 기반 floating 룰** — 보안 block 은 `filter_configure()` flush(게이트웨이
+  up/down 자동 트리거)에도 **살아있어야** 하므로 config 에 둔다. pfctl-only 앵커/테이블은 flush 되면
+  block 이 사라져 **fail-open 노출**(#20 의 보안판). 라우팅 pass 가 flush 되면 최악이 오라우팅이지만
+  self-admin block 이 flush 되면 관리콘솔 노출이라 훨씬 위험.
+- **수정 (`captiveportal.inc` `cp_refresh_pass_rules()` 단일 함수)**:
+  - `$expected[]` 에 self-protect 4룰 추가(floating·quick·direction=in·interface=`$lan_iface`(CREW)·
+    **source=any**·**dest=`(self)`**): pass udp/53(DNS) / pass udp/67(DHCP 갱신 unicast) /
+    pass tcp/8002(portal, `$portal_port` 변수) / **block any(나머지 전부)**. descr 접두 `[CP Routing] self-protect`.
+  - 룰 빌더 확장: 엔트리에 `src_any`(source=any) / `dst_self`(dest=`(self)`) / `protocol` / `dstport` 옵션
+    키 처리. **기존 route-to/block-out 빌더는 완전 하위호환**(미설정 시 src alias + dst any 유지).
+  - **정렬 불변식 강제(핵심)**: add 루프의 `array_unshift` 는 순서를 뒤섞고, **게이트웨이 추가 시 새 route-to
+    가 self-protect 위로** 올라갈 수 있음(quick first-match → self-protect block 이 route-to dest-any 밑으로
+    가면 crew 가 다시 샘). → add 후 self-protect 룰을 **항상 [CP Routing] 최상단**으로 재배치(pass 3개 먼저,
+    block 마지막; PHP7.4 usort 비안정이나 pass끼리 순서 무관). 변경(add/remove) 있을 때만 실행 → 불필요 write 없음.
+- **DHCP(udp/67) 포함 사유**: crew 가 DHCP 면 **임대 갱신이 서버(=firewall) IP 로 unicast** → block 에
+  걸려 주기적 IP 유실. 정적 IP 환경이면 `self-protect pass DHCP` 한 룰만 제거 가능.
+- **범위/주의**: IPv4(`inet`)만(기존 라우팅 룰과 동일; crew IPv6→firewall 있으면 별도 필요). portal 포트
+  8002 는 `$portal_port` 로 하드코딩(스크린샷 System Rule 12 와 일치); HTTPS 로그인 별도 포트면 pass 추가.
+  source=any(=CREW in)이라 **인증 여부 무관 전 crew** 적용(미인증도 admin 차단, CP redirect 는 53/8002 로 정상).
+- **Suricata 충돌 분석(질의 답)**: **룰 차원 충돌 없음**(Suricata 는 시그니처 판정, pf 룰/pfctl 테이블 미참조 —
+  직교 레이어. self-protect 룰과 상호작용 0). 단 **모드 차원**: Legacy(Blocking, snort2c 테이블) 모드는 안전
+  (다만 crew IP 오탐 차단 시 snort2c drop 이 pass 위에서 걸려 #19/#21 스타일 끊김으로 오진 가능 →
+  `pfctl -t snort2c -T show` 진단). **Inline IPS(netmap) 모드는 CP 의 ipfw/dummynet + route-to 정책라우팅과
+  잘 알려진 비호환** → CREW/route-to WAN 에 걸면 끊김/블랙홀. 권장: Legacy 모드 + WAN 한정 + crew 서브넷 Pass List.
+- **검증**: php -l 통과(기존 `${var}` deprecated 경고만, 무관) / 독립 하네스 — self-protect 4룰 최상단·
+  pass(53/67/8002) block 앞·각 룰 구조(proto/port/dst=(self)/src=any/no-gw)·route-to 하위호환(src alias/dst any/gw) 전부 통과.
+- **적용(선상)**: `cp_refresh_pass_rules()` 발화 시 생성 → 배포 후 CP 재구성 / 게이트웨이 저장(#47 훅) /
+  `cp_routing_setup.php` 중 하나로 트리거. GUI Floating 최상단 `[CP Routing] self-protect` 4줄 확인 →
+  crew 에서 webGUI(443)/SSH(22) 차단 + DNS·포털·인터넷 정상. `captiveportal.inc` 단일 파일이나 버전 섞임 방지 일괄 배포 권장.
+
+### 53. crew_account.php — customer 역할에도 "SET RANDOM PW" 버튼 노출 (develop 미커밋)
+- **배경**: `crew_account.php` 상단이 `$adminlogin` 역할별로 툴바 버튼을 분기(admin/vesseladmin=
+  Export CSV/Reset PW/**SET RANDOM PW**/Reset Data/Check PW/Delete; **customer=Reset PW 만**; 그 외=없음).
+  customer 는 SET RANDOM PW 가 숨겨져 있었음.
+- **수정**: `customer` 브랜치 `$controldisplay` 에 SET RANDOM PW 버튼 1개 추가
+  (`onclick="confirm_setRandomPw()"`, Reset PW 와 동일 스타일). **다른 숨김 버튼(Reset Data/Delete/
+  Check PW/Export CSV)은 그대로 숨김 유지**(의도).
+- **동작 안전성 확인**: `confirm_setRandomPw()` JS 는 페이지 전역 `<script>` 에 역할 무관하게 정의
+  ([crew_account.php:1040]), POST 핸들러 `if(isset($_POST['setrandompw'])){ reset_random_wifi_user_pw(...) }`
+  ([:162])도 **역할 게이트 없음**(Reset PW 와 동일) → customer 에서 버튼→AJAX→백엔드 end-to-end 정상.
+- **범위**: crew 전용(prepaid_account.php 는 customer 브랜치·SET RANDOM PW 자체가 없어 무관). `crew_account.php` 단일 파일.
+- **검증**: php -l 통과.
+
 ## 다음 작업 대기 중
+
+- [x] **#51 커밋 완료(develop `a848caa`+`725e53c`)**: FBB 신호 표시 이름매핑 분리 + ACU state -1 →
+  Comm. Error + FBB "6"→EMEA(24.9E) 매핑. 패치노트 기록 완료(`2026-07-03 Update`,
+  **Beta 1.1.53-Beta · Stable: 1.1.4-Stable**). (main/prod 미반영)
+- [ ] #51 검증(선상): FBB 정상 신호 시 나침반에 `FBB : {이름} (Signal : n)` 표시(이름 미매핑이어도
+  신호 노출) / **"6" 보고 시 `FBB : 24.9E` + 니들 표시** / ACU 통신오류(state -1) 시 `VSAT : Comm. Error`
+  (빨강) 표시 — searching/blocked 와 구분 / `server_module.inc` + `index.php` 2파일 일괄 배포 + Ctrl+F5.
+- [x] **#50 커밋 완료(develop `9299f4f`)**: crew_account.php per-user History 버튼 + 계정별 변경 이력 모달
+  + `radacct_changehistory.username` 컬럼 + 조회 엔드포인트. 패치노트 기록 완료(`2026-07-03 Update`
+  NEW 불릿, 버전 미정). (main/prod 미반영 — 명시 지시 시 병합)
+- [ ] #50 검증(선상): crew_account 각 행 History 버튼 → 모달에 그 계정 변경만 표시(1d/7d/30d/All/Custom) /
+  prepaid_account 는 History 컬럼 없음·정렬 정상 / Export CSV / `radacct_changehistory` 를 username 컬럼
+  포함 신 스키마로 새로 생성(`DESCRIBE radius.radacct_changehistory`).
+
+- [x] **#49 커밋 완료(develop `3666f94`)**: crew 계정 변경 이력 기록 — 신규 `cp_account_history.inc` +
+  writer 훅(공용함수 8 + 위젯 4 + API 3 + 포털 자가변경) + prepaid(CREWPAY) 태그. 패치노트 기록 완료
+  (`2026-07-03 Update`, 버전 미정). (main/prod 미반영 — 명시 지시 시 병합)
+- [ ] #49 검증(선상): crew_account 에서 PW리셋/랜덤PW/데이터리셋/수정/생성/삭제/설명/스케줄 →
+  `SELECT * FROM radius.radacct_changehistory ORDER BY id DESC LIMIT 20;` 사용자별 1행 + actor 정확 /
+  위젯·API(update/topup/단건·다건 create/delete/usersreset)·포털 자가 비번변경 경로 기록 /
+  **어떤 행에도 실제 비밀번호 미노출**(랜덤 6자리·1111 검색) / **prepaid(crewpay-) 계정 변경 행에만
+  `(CREWPAY)` 태그**(crew 계정 행엔 없음), 포털 자가 비번변경엔 태그 없음 / DB 불통 시 계정 변경
+  자체는 정상 + `clog /var/log/system.log | grep "ACCT HISTORY"`.
+- [x] **#48 커밋 완료(develop `c473a8f`+확장 `ebc29fa`)**: GMT 이력 기록(신규 `cp_gmt_history.inc` +
+  writer 3곳 훅) + 이력 뷰어(사이드바 history 버튼 + 모달 + `gmt_history_data.php`) + description/gps
+  컬럼 + Export CSV. (main/prod 미반영 — 명시 지시 시 병합)
+- [x] **#48~#53 패치노트 기록 완료(release_note.md)**: **같은 버전 `2026-07-03 Update` 에 병합** — 확정
+  서브라인 **`Beta 1.1.53-Beta · Stable: 1.1.4-Stable`**. 항목: GMT 변경 이력 뷰어/계정 변경 이력/
+  per-user History(NEW, #48~#50, 이력 모달 10개 페이지네이션 포함) + FBB 신호 표시 수정(FIXED)/ACU
+  Comm. Error(CHANGED, #51) + crew→This Firewall 접근 제한(CHANGED, #52) + 테마 토글 쿠키 영속화
+  (FIXED, #41) + customer SET RANDOM PW 버튼 노출(CHANGED, #53). **이후 2026-07-03 작업은 별도
+  버전 안 만들고 이 항목에 병합**(사용자 지시).
+- [ ] #48 검증(선상): GMT 팝업으로 오프셋 변경 → `SELECT * FROM radius.gmt_history ORDER BY id DESC LIMIT 5;`
+  에 행 추가(timefrom/timeto/**description IP·gps 좌표** 정확, GPS 미수신 시 gps='N/A') /
+  크론 자동 갱신·API 푸시 경로도 기록 / 동일값 재저장은 미기록 /
+  DB 불통 시 GMT 저장은 정상 + `clog /var/log/system.log | grep "GMT HISTORY"` 실패 로그 /
+  선상 박스에 mysql CLI 존재 확인(`command -v mysql`) / **history 버튼** → 모달 1d/7d/30d/Custom 조회·
+  사이드바 있는 9페이지 공통 동작·history 클릭 시 타임존 설정 팝업 안 뜸(버블 차단) / Ctrl+F5 캐시.
 
 - [x] **#41 커밋 완료(develop)**: 다크모드 — System(OS)/GPS(일출일몰 civil twilight)/Light/Dark 4-state,
   9페이지 공통(print_css_n_head), dark.css, 오프라인 일출일몰(cp_daynight.inc+크론), 박스 UTC 시각 판정,

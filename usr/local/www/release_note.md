@@ -2,6 +2,45 @@ BlueWave Link — Release Notes
 
 Developed by SynerSAT Korea
 
+2026-07-03 Update
+Beta 1.1.53-Beta · Stable: 1.1.4-Stable
+
+- FIXED: FBB antenna signal now displays whenever a valid signal is present,
+  even if the FBB reports a satellite name the console doesn't recognize.
+  Previously the signal was hidden as "No Signal" in that case even though a
+  good signal was coming in.
+- CHANGED: The antenna (VSAT/ACU) compass now shows "Comm. Error" when the ACU
+  reports a communication error, instead of grouping it with "Searching".
+- NEW: Timezone (GMT) change history — the sidebar "GMT" now has a small
+  "history" button that opens a log of every timezone-offset change over the
+  last 1, 7 or 30 days, or a custom date range. Each row shows the time (UTC),
+  the change (e.g. GMT 9 → GMT 9.5), how it changed (a manual change from an
+  operator's IP address, an automatic GPS-based change, or a remote API change),
+  and the vessel's GPS position at that moment. Long histories are paged 10
+  entries at a time with Prev / Next controls. The list can be exported to CSV.
+- NEW: Account change history — every crew Wi-Fi account change is now recorded
+  to the database: account creation, deletion, modification, password reset,
+  data-usage reset, quota top-up, description edit and duty-schedule change,
+  whether made from the account page, the dashboard widget or the remote API.
+  Each record notes who made the change and when. Prepaid (crewpay-) account
+  changes are marked "(CREWPAY)". Actual passwords are never written to the log.
+- NEW: Per-account history view — each row in the Crew Accounts page now has a
+  "History" button that opens the change log for that specific account (password
+  and data-usage resets, modifications, top-ups, description and schedule edits),
+  filtered to that account. Choose the last 1 / 7 / 30 days, all time, or a
+  custom date range, and export the list to CSV. Long histories are paged 10
+  entries at a time with Prev / Next controls.
+- CHANGED: Crew Wi-Fi devices can no longer reach the firewall itself except for
+  what they actually need — DNS, DHCP and the login portal. Access to the router's
+  admin interfaces (web console, SSH, etc.) from the crew network is now blocked.
+  This closes a gap where the per-user routing rules also let crew devices reach
+  the firewall's management services.
+- FIXED: The theme (System / GPS / Light / Dark) toggle now remembers your last
+  choice. It previously reset to the default on some consoles every time the page
+  was reopened; the setting is now saved in a cookie so it persists.
+- CHANGED: The "SET RANDOM PW" button is now available to customer logins on the
+  Crew Accounts page (previously only admins could see it).
+
 2026-07-02 Update
 Beta 1.1.49-Beta · Stable: 1.1.3-Stable
 
