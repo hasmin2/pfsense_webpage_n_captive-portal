@@ -588,6 +588,8 @@ $cp_coverage_json = '{}';
     .acu-trk[data-status="searching"] .acu-trk-status:not(.acu-fbb-status) .acu-dot {background:#FAB005;}
     .acu-trk[data-status="blocked"] .acu-trk-status:not(.acu-fbb-status) {color:#FA5252;}
     .acu-trk[data-status="blocked"] .acu-trk-status:not(.acu-fbb-status) .acu-dot {background:#FA5252;}
+    .acu-trk[data-status="commerror"] .acu-trk-status:not(.acu-fbb-status) {color:#FA5252;}
+    .acu-trk[data-status="commerror"] .acu-trk-status:not(.acu-fbb-status) .acu-dot {background:#FA5252;}
     .acu-fbb-status {margin-top:5px;}
     .acu-trk .acu-fbb-status.on {color:#4C6EF5;}
     .acu-trk .acu-fbb-status.on .acu-dot {background:#4C6EF5;}
@@ -620,6 +622,7 @@ $cp_coverage_json = '{}';
     .acu-el-needle {stroke:#12B886; stroke-width:2.4; stroke-linecap:round;}
     .acu-trk[data-status="blocked"] .acu-el-needle,
     .acu-trk[data-status="searching"] .acu-el-needle,
+    .acu-trk[data-status="commerror"] .acu-el-needle,
     .acu-trk[data-status="nodata"] .acu-el-needle {stroke:#ADB5BD;}
     .acu-el-pivot {fill:#495057;}
     .acu-el-lbl {font-size:7px; fill:#ADB5BD; text-anchor:middle;}
@@ -953,6 +956,7 @@ $cp_coverage_json = '{}';
         var labels = {
             searching: 'VSAT : Searching satellite…',
             blocked: 'VSAT : Blockage / TX off',
+            commerror: 'VSAT : Comm. Error',
             nodata: 'VSAT : ACU data unavailable'
         };
         var lbl;
@@ -1431,7 +1435,7 @@ $cp_coverage_json = '{}';
             ctx.restore();
         }
         function satColor(d) {
-            if (d.status === 'blocked' || (d.elevation !== null && d.elevation !== undefined && d.elevation < 0)) { return '#FA5252'; }
+            if (d.status === 'blocked' || d.status === 'commerror' || (d.elevation !== null && d.elevation !== undefined && d.elevation < 0)) { return '#FA5252'; }
             if (d.status === 'searching') { return '#FAB005'; }
             return d._fbb ? '#4C6EF5' : '#19c37d';
         }
