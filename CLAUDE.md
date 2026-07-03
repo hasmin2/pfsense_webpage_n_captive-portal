@@ -11,7 +11,7 @@
 
 | 브랜치 | 커밋 | 설명 |
 |---|---|---|
-| `develop` | `66ebfd7` | **#1~#34 전부 포함**, 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경)(`c9bd917`); #40: OpenVPN 재시작 크론을 watchdog 으로 안정화 — per-client·hang reap·비블로킹 락(try_lock)·ping timeout 바운드·위성 디바운스·로그 가시화 — 커밋 `66ebfd7`; #41: 다크모드 System(OS)/GPS(일출일몰 civil twilight, 박스 UTC 판정)/Light/Dark 4-state·9페이지공통(print_css_n_head)·dark.css·cp_daynight.inc+크론·외부 day/night API 삭제(`ab95701`·`81c9423`·`e089710`); #42: Daily usage 막대그래프(InfluxDB 일별 rx+tx, This month 기본·MB meter, `ab95701`); #43: GMT 타임존 테마 팝업 + 30분(0.5) 단위 + cp_tz 가드 truthy(`ab95701`); #44: GMT 저장 시 전역 `$g` 오염→웹루트 숫자폴더+config.xml 덤프 버그 수정(`$g`→`$gmt_in`, 보안, `ab95701`)) |
+| `develop` | `c473a8f` | **#1~#48 포함**(#45~#47 은 2026-07-02 배치에 커밋, #48=GMT 이력 `c473a8f`), 작업 기준 브랜치 (#18~#21: vnstat예외·게이트웨이flapping/과금누수·끊김진단/다국어/blank단락; #22: PW리셋 무작위미반영 — writer크론 lost-update 차단; #23: PW변경 무반영 진범=HUP가 rlm_files 미재로딩 — A응급=재시작 + radcheck(SQL) 이행도구 + step3-A dual-write(`b121dda`) + step3-B radcheck 권위화 구현(`de4daf7`, 플래그 게이트 기본 off + 토글도구); #24~26: 캡티브포털 무한 self-redirect 루프→25GB로그→ZFS풀full→전면장애(502/OOM) — 루프차단+무제한로깅차단+크론flock가드; #27: Main Panel 안테나 트래킹 나침반 — VSAT/FBB look-angle 시각화 + FULL HD 세로압축; #28: 항구 미니맵 WoW UI 전면 통합 — 544항구·292해역·존플레이트·시계배지·줌버튼·GPS회색처리·on-map점표시(`1775f85`); #29: time_offset 외부 API 의존 제거 — GPS→오프라인 시차격자 자동판정(`660727e`); #30: 위젯 stale write → 전원 mass-disconnect + 비CP계정 영구 kick 차단; #31: CNA Copy address 블록(기본 off); #32: voucher REST API 다건 CRUD 정합 + timeperiod 대소문자 방어; #33: 관리/Main Panel UI 보강; #34: API random PW / israndompw true/false / Topup delta / 3D돔 방향 수정; #35: 위성 커버리지 맵 — 월드맵은 항상 열되 커버리지 오버레이만 NexusWave(terminal_type=nexuswave_*) 시 + 비-NexusWave 안내 팝업(`2c23248`); #36: 3D 스카이돔 바닥 세계지도 dome 과 함께 yaw 회전(`82fc3d4`); #37: Release Note 사이드바 메뉴 + 패치노트 표시 페이지(`1f0c4da`) + 단일 소스화(A안: 루트 RELEASENOTE.md 제거, usr/local/www/release_note.md 단독)·사용자 양식 파서(`deb779c`); #38: terminaltype 미해석(현존 게이트웨이 없음)→로그인 차단+"antenna offline"(잠재 3경로 불일치 블랙홀 차단); #39: 같은 MAC·다른 ID(공유기 NAT/MAC클론) 세션 탈취·핑퐁→MAC 자동이관 폐지(1b)(#4 동작변경)(`c9bd917`); #40: OpenVPN 재시작 크론을 watchdog 으로 안정화 — per-client·hang reap·비블로킹 락(try_lock)·ping timeout 바운드·위성 디바운스·로그 가시화 — 커밋 `66ebfd7`; #41: 다크모드 System(OS)/GPS(일출일몰 civil twilight, 박스 UTC 판정)/Light/Dark 4-state·9페이지공통(print_css_n_head)·dark.css·cp_daynight.inc+크론·외부 day/night API 삭제(`ab95701`·`81c9423`·`e089710`); #42: Daily usage 막대그래프(InfluxDB 일별 rx+tx, This month 기본·MB meter, `ab95701`); #43: GMT 타임존 테마 팝업 + 30분(0.5) 단위 + cp_tz 가드 truthy(`ab95701`); #44: GMT 저장 시 전역 `$g` 오염→웹루트 숫자폴더+config.xml 덤프 버그 수정(`$g`→`$gmt_in`, 보안, `ab95701`)) |
 | `main` | `1ad2cd9` | **#1~#47 전부 반영 완료** (커밋 `1ad2cd9`). 2026-07-02 develop→main 일괄 통합 (#35~#47 포함) |
 | `prod` | `94a8cd9` | **#1~#47 전부 반영** (커밋 `94a8cd9`). 2026-07-02 main→prod 배포 (#35~#47 포함) |
 
@@ -1374,7 +1374,7 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **배포 정합성**: `system_gateways_edit.php` + `captiveportal.inc`(cp_sync_routing_tables 정의) **같은
   리비전 일괄** 배포(가드 있어 fatal 은 없으나 미탑재 시 동기화 skip).
 
-### 48. GMT time_offset 변경 이력 → MariaDB `radius.gmt_history` 기록 (수동 변경 포함 전 경로) (develop 미커밋)
+### 48. GMT time_offset 변경 이력 → MariaDB `radius.gmt_history` 기록 (수동 변경 포함 전 경로) (develop `c473a8f`)
 - **요구**: mariadb://192.168.209.210:3306 (radius/radius, **MariaDB 5.5**) 의 `radius.gmt_history`
   테이블(`id` INT AUTO_INCREMENT PK / `timestamp` DATETIME / `timefrom` VARCHAR(10) / `timeto` VARCHAR(10))
   — **없으면 자동 생성** — 에 GMT time_offset 이 **변경되는 모든 이벤트**(수동 변경 포함)를 기록.
@@ -1422,9 +1422,9 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 
 ## 다음 작업 대기 중
 
-- [ ] **#48 커밋 대기(develop 미커밋)**: GMT 이력 기록(신규 `cp_gmt_history.inc` + writer 3곳 훅) +
+- [x] **#48 커밋 완료(develop `c473a8f`)**: GMT 이력 기록(신규 `cp_gmt_history.inc` + writer 3곳 훅) +
   이력 뷰어(사이드바 history 버튼 + 모달 + `gmt_history_data.php`). 패치노트는 사용자 지시로 이번 생략
-  (다음 배포 배치 때 일괄 기재).
+  (다음 배포 배치 때 일괄 기재). (main/prod 미반영 — 명시 지시 시 병합)
 - [ ] #48 검증(선상): GMT 팝업으로 오프셋 변경 → `SELECT * FROM radius.gmt_history ORDER BY id DESC LIMIT 5;`
   에 행 추가(timefrom/timeto 정확) / 크론 자동 갱신·API 푸시 경로도 기록 / 동일값 재저장은 미기록 /
   DB 불통 시 GMT 저장은 정상 + `clog /var/log/system.log | grep "GMT HISTORY"` 실패 로그 /
