@@ -2,6 +2,22 @@ BlueWave Link — Release Notes
 
 Developed by SynerSAT Korea
 
+2026-07-03 Update
+Version: to be confirmed · Beta (develop)
+
+- NEW: Timezone (GMT) change history — the sidebar "GMT" now has a small
+  "history" button that opens a log of every timezone-offset change over the
+  last 1, 7 or 30 days, or a custom date range. Each row shows the time (UTC),
+  the change (e.g. GMT 9 → GMT 9.5), how it changed (a manual change from an
+  operator's IP address, an automatic GPS-based change, or a remote API change),
+  and the vessel's GPS position at that moment. The list can be exported to CSV.
+- NEW: Account change history — every crew Wi-Fi account change is now recorded
+  to the database: account creation, deletion, modification, password reset,
+  data-usage reset, quota top-up, description edit and duty-schedule change,
+  whether made from the account page, the dashboard widget or the remote API.
+  Each record notes who made the change and when. Prepaid (crewpay-) account
+  changes are marked "(CREWPAY)". Actual passwords are never written to the log.
+
 2026-07-02 Update
 Beta 1.1.49-Beta · Stable: 1.1.3-Stable
 

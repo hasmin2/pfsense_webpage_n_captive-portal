@@ -1492,17 +1492,20 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 ## 다음 작업 대기 중
 
 - [x] **#49 커밋 완료(develop `3666f94`)**: crew 계정 변경 이력 기록 — 신규 `cp_account_history.inc` +
-  writer 훅(공용함수 8 + 위젯 4 + API 3 + 포털 자가변경) + prepaid(CREWPAY) 태그. 패치노트는 다음
-  배포 배치 때 일괄. (main/prod 미반영 — 명시 지시 시 병합)
+  writer 훅(공용함수 8 + 위젯 4 + API 3 + 포털 자가변경) + prepaid(CREWPAY) 태그. 패치노트 기록 완료
+  (`2026-07-03 Update`, 버전 미정). (main/prod 미반영 — 명시 지시 시 병합)
 - [ ] #49 검증(선상): crew_account 에서 PW리셋/랜덤PW/데이터리셋/수정/생성/삭제/설명/스케줄 →
   `SELECT * FROM radius.radacct_changehistory ORDER BY id DESC LIMIT 20;` 사용자별 1행 + actor 정확 /
   위젯·API(update/topup/단건·다건 create/delete/usersreset)·포털 자가 비번변경 경로 기록 /
   **어떤 행에도 실제 비밀번호 미노출**(랜덤 6자리·1111 검색) / **prepaid(crewpay-) 계정 변경 행에만
   `(CREWPAY)` 태그**(crew 계정 행엔 없음), 포털 자가 비번변경엔 태그 없음 / DB 불통 시 계정 변경
   자체는 정상 + `clog /var/log/system.log | grep "ACCT HISTORY"`.
-- [x] **#48 커밋 완료(develop `c473a8f`)**: GMT 이력 기록(신규 `cp_gmt_history.inc` + writer 3곳 훅) +
-  이력 뷰어(사이드바 history 버튼 + 모달 + `gmt_history_data.php`). 패치노트는 사용자 지시로 이번 생략
-  (다음 배포 배치 때 일괄 기재). (main/prod 미반영 — 명시 지시 시 병합)
+- [x] **#48 커밋 완료(develop `c473a8f`+확장 `ebc29fa`)**: GMT 이력 기록(신규 `cp_gmt_history.inc` +
+  writer 3곳 훅) + 이력 뷰어(사이드바 history 버튼 + 모달 + `gmt_history_data.php`) + description/gps
+  컬럼 + Export CSV. (main/prod 미반영 — 명시 지시 시 병합)
+- [x] **#48/#49 패치노트 기록 완료(release_note.md)**: `2026-07-03 Update` 항목 2건 NEW(GMT 변경
+  이력 뷰어, 계정 변경 이력). **확정 버전 미정** — 서브라인 `Version: to be confirmed · Beta (develop)`.
+  **사용자가 확정 버전 알려주면 헤더/서브라인 갱신 필요**(현재 날짜형 헤더라 파서 정상 인식).
 - [ ] #48 검증(선상): GMT 팝업으로 오프셋 변경 → `SELECT * FROM radius.gmt_history ORDER BY id DESC LIMIT 5;`
   에 행 추가(timefrom/timeto/**description IP·gps 좌표** 정확, GPS 미수신 시 gps='N/A') /
   크론 자동 갱신·API 푸시 경로도 기록 / 동일값 재저장은 미기록 /
