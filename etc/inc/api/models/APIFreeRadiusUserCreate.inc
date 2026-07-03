@@ -16,6 +16,10 @@
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 require_once("manage_crew_wifi_account.inc");
+// #49: 계정 변경 이력 헬퍼 (radius.radacct_changehistory) — 미배포(버전섞임) 시 기록만 skip
+if (file_exists('/etc/inc/cp_account_history.inc')) {
+    require_once('/etc/inc/cp_account_history.inc');
+}
 
 
 class APIFreeRADIUSUserCreate extends APIModel {
@@ -44,6 +48,16 @@ class APIFreeRADIUSUserCreate extends APIModel {
                     $enc = $this->config["installedpackages"]["freeradius"]["config"][$this->id]['varuserspasswordencryption'];
                 }
                 freeradius_radcheck_sync_users(array(array('user' => $this->validated_data['freeradius_username'], 'pass' => $this->validated_data['freeradius_password'], 'enc' => $enc)));
+            }
+            # #49: 변경 이력 기록 (단건 생성 — bulk 는 create_wifi_user 내부에서 기록. 실제 PW 미기재)
+            if (function_exists('cp_account_history_record') && !empty($this->validated_data['freeradius_username'])) {
+                cp_account_history_record('user_create',
+                    'user=' . $this->validated_data['freeradius_username']
+                    . ' created via API (quota=' . ($this->validated_data['freeradius_maxtotaloctets'] ?? '') . 'MB'
+                    . ', timerange=' . ($this->validated_data['freeradius_maxtotaloctetstimerange'] ?? '')
+                    . ', terminaltype=' . ($this->validated_data['freeradius_terminaltype'] ?? '')
+                    . ', password=(set)) by ' . cp_account_history_actor()
+                    . cp_account_history_tag($this->validated_data['freeradius_username']));
             }
         }
         return APIResponse\get(0, $this->validated_data);

@@ -16,6 +16,10 @@
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 require_once("freeradius.inc");   // freeradius_users_resync (radiusd 전파) — update 컨텍스트엔 미로드
+// #49: 계정 변경 이력 헬퍼 (radius.radacct_changehistory) — 미배포(버전섞임) 시 기록만 skip
+if (file_exists('/etc/inc/cp_account_history.inc')) {
+    require_once('/etc/inc/cp_account_history.inc');
+}
 
 
 class APIFreeRADIUSUserUpdate extends APIModel {
@@ -37,6 +41,16 @@ class APIFreeRADIUSUserUpdate extends APIModel {
         # #23 step3-A: random PW 변경 시 radcheck 동기화(락 밖).
         if (!empty($this->_radcheck_entries) && function_exists('freeradius_radcheck_sync_users')) {
             freeradius_radcheck_sync_users($this->_radcheck_entries);
+        }
+        # #49: 변경 이력 기록 (사용자별 1행 — password 값은 "(changed)" 마스킹, 실제 PW 미기재.
+        #   prepaid=crewpay- 이면 CREWPAY 태그를 "by {actor}" 뒤에 붙인다.)
+        if (!empty($this->_history_entries) && function_exists('cp_account_history_record')) {
+            $actor = cp_account_history_actor();
+            $descs = array();
+            foreach ($this->_history_entries as $he) {
+                $descs[] = $he['text'] . " by {$actor}" . cp_account_history_tag($he['user']);
+            }
+            cp_account_history_record('user_modify', $descs);
         }
         return APIResponse\get(0, $this->validated_data);
     }
@@ -166,6 +180,18 @@ class APIFreeRADIUSUserUpdate extends APIModel {
         }
         $this->validated_data['freeradius_username'] = 'usersreset';
         $this->validated_data['reset_users'] = array_values(array_unique($reset_users));
+
+        # #49: 변경 이력 기록 (usersreset — 터미널타입별 일괄 리셋, 사용자별 1행)
+        if (function_exists('cp_account_history_record') && !empty($reset_users)) {
+            $actor = cp_account_history_actor();
+            $tt = (string)($this->initial_data['freeradius_terminaltype'] ?? '');
+            $descs = array();
+            foreach (array_unique($reset_users) as $ru) {
+                $descs[] = "user={$ru} data usage reset via API (usersreset, terminaltype={$tt}) by {$actor}"
+                    . cp_account_history_tag($ru);
+            }
+            cp_account_history_record('usage_reset', $descs);
+        }
     }
 
     private function __validate_priv() {
@@ -289,6 +315,26 @@ class APIFreeRADIUSUserUpdate extends APIModel {
 
         $this->config["installedpackages"]["freeradius"]["config"][$index]['varuserscreatedate'] = date('Y/m/d H:i:s');
         $this->config["installedpackages"]["freeradius"]["config"][$index]["varusersmodified"] = "update";
+
+        # #49: 변경 이력 항목 수집 — 전송된 freeradius_* 필드 요약. password 값은 절대 미기재
+        #   (israndompw 가 주입한 freeradius_password 포함 → "(changed)" 마스킹).
+        if (!isset($this->_history_entries)) { $this->_history_entries = array(); }
+        $hist_fields = array();
+        foreach ($this->initial_data as $hk => $hv) {
+            if ($hk === 'timeperiod' || $hk === 'freeradius_timeperiod') {
+                if (is_scalar($hv)) { $hist_fields[] = 'timeperiod=' . $hv; }
+                continue;
+            }
+            if (strpos($hk, 'freeradius_') !== 0) { continue; }
+            $hname = substr($hk, 11);
+            if ($hname === 'username') { continue; }
+            if ($hname === 'password') { $hist_fields[] = 'password=(changed)'; continue; }
+            if (is_scalar($hv)) { $hist_fields[] = $hname . '=' . $hv; }
+        }
+        $this->_history_entries[] = array(
+            'text' => "user={$username} updated via API (" . implode(', ', $hist_fields) . ")",
+            'user' => $username,
+        );
     }
 
     private function startsWith($haystack, $needle) {

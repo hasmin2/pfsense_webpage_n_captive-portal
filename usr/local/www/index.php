@@ -58,8 +58,20 @@ if(isset($_POST['gmt'])){
         if ($gf < -11) { $gf = -11; }
         if ($gf > 12)  { $gf = 12; }
         $gv = (floor($gf) == $gf) ? (string)(int)$gf : (string)$gf;
+        $gmt_prev = isset($config['time_offset_enabled']['time_offset'])
+            ? (string)$config['time_offset_enabled']['time_offset'] : '';
         $config['time_offset_enabled']['time_offset'] = $gv;
         write_config("time_offset changed to " . $gv);
+        // #48: GMT 변경 이력 → radius.gmt_history (실제 값이 바뀐 경우만, 버전섞임 가드)
+        if ($gmt_prev !== $gv) {
+            if (!function_exists('cp_gmt_history_record') && file_exists('/etc/inc/cp_gmt_history.inc')) {
+                require_once('/etc/inc/cp_gmt_history.inc');
+            }
+            if (function_exists('cp_gmt_history_record')) {
+                $gmt_ip = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'unknown';
+                cp_gmt_history_record($gmt_prev, $gv, 'manual-web', 'Manual change from ' . $gmt_ip);
+            }
+        }
         echo '<script> location.replace("processing.php?to=index.php");</script>';
         exit;
     }
@@ -576,6 +588,8 @@ $cp_coverage_json = '{}';
     .acu-trk[data-status="searching"] .acu-trk-status:not(.acu-fbb-status) .acu-dot {background:#FAB005;}
     .acu-trk[data-status="blocked"] .acu-trk-status:not(.acu-fbb-status) {color:#FA5252;}
     .acu-trk[data-status="blocked"] .acu-trk-status:not(.acu-fbb-status) .acu-dot {background:#FA5252;}
+    .acu-trk[data-status="commerror"] .acu-trk-status:not(.acu-fbb-status) {color:#FA5252;}
+    .acu-trk[data-status="commerror"] .acu-trk-status:not(.acu-fbb-status) .acu-dot {background:#FA5252;}
     .acu-fbb-status {margin-top:5px;}
     .acu-trk .acu-fbb-status.on {color:#4C6EF5;}
     .acu-trk .acu-fbb-status.on .acu-dot {background:#4C6EF5;}
@@ -608,6 +622,7 @@ $cp_coverage_json = '{}';
     .acu-el-needle {stroke:#12B886; stroke-width:2.4; stroke-linecap:round;}
     .acu-trk[data-status="blocked"] .acu-el-needle,
     .acu-trk[data-status="searching"] .acu-el-needle,
+    .acu-trk[data-status="commerror"] .acu-el-needle,
     .acu-trk[data-status="nodata"] .acu-el-needle {stroke:#ADB5BD;}
     .acu-el-pivot {fill:#495057;}
     .acu-el-lbl {font-size:7px; fill:#ADB5BD; text-anchor:middle;}
@@ -941,6 +956,7 @@ $cp_coverage_json = '{}';
         var labels = {
             searching: 'VSAT : Searching satellite…',
             blocked: 'VSAT : Blockage / TX off',
+            commerror: 'VSAT : Comm. Error',
             nodata: 'VSAT : ACU data unavailable'
         };
         var lbl;
@@ -1419,7 +1435,7 @@ $cp_coverage_json = '{}';
             ctx.restore();
         }
         function satColor(d) {
-            if (d.status === 'blocked' || (d.elevation !== null && d.elevation !== undefined && d.elevation < 0)) { return '#FA5252'; }
+            if (d.status === 'blocked' || d.status === 'commerror' || (d.elevation !== null && d.elevation !== undefined && d.elevation < 0)) { return '#FA5252'; }
             if (d.status === 'searching') { return '#FAB005'; }
             return d._fbb ? '#4C6EF5' : '#19c37d';
         }
