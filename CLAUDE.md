@@ -1700,21 +1700,44 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **알려진 범위 제한(수용)**: Usage 탭은 완료된 세션만(사용자 확인, 진행 중 세션 실시간 사용량
   미포함) / 데이터리셋 로그아웃 사유가 "ADMIN RESET"으로 다소 뭉뚱그려짐(위 참고) / crew_account.php
   전용(#50 과 동일하게 prepaid_account.php 는 History 버튼 자체가 없어 미포함).
+- **스키마 self-heal(추가 반영, 발견된 실사용 이슈)**: 최초 계획은 "#49/#50 이후 어떤 선박에도
+  `radacct_changehistory` 미배포"라는 CLAUDE.md 기록을 전제로 마이그레이션 없이 CREATE TABLE
+  단계에서 바로 최종 스키마를 만드는 것이었으나, **실제로는 최소 1개 박스(스크린샷으로 확인,
+  fx_corpuser00001 계정에 2026-07-03 자 Description Change 행 존재)에 5컬럼 구버전 테이블이
+  이미 존재**함이 드러남 — `CREATE TABLE IF NOT EXISTS`는 테이블이 있으면 무효과라, 그대로 두면
+  이런 박스에서 login/logout/usage 기록이 "컬럼 없음" SQL 에러로 조용히 실패했을 것.
+  - **수정 (`cp_account_history.inc`)**: 신규 `cp_account_history_ensure_schema()` — 마커 파일
+    `/var/run/cp_account_history_schema_ok` 존재 시 **DB 왕복 없이 즉시 스킵**(steady-state
+    비용 0). 없으면 `INFORMATION_SCHEMA.COLUMNS`로 실제 컬럼을 조회해 **누락분만** `ALTER TABLE
+    ADD COLUMN`(MariaDB 5.5는 `ADD COLUMN IF NOT EXISTS` 미지원(10.0.2+ 전용)이라 이 방식 필요) →
+    성공 시 마커 터치(이후 스킵). 신규(테이블 없음) 박스에서는 이 ALTER가 "Unknown table"로
+    실패하지만 무해 — 뒤이어 실행되는 `CREATE TABLE IF NOT EXISTS` + INSERT/SELECT가 정상적으로
+    전체 스키마를 만들고, 다음 호출에서 self-heal이 재확인해 마커를 남김. 실패해도 throw 없이
+    false(#48/#49 패턴과 동일, 계정 변경 흐름 불가침).
+  - `cp_account_history_record_event()`/`cp_account_history_fetch()` 시작부에서 호출.
+  - **검증**: 실제 파일(`cp_account_history.inc`) 대상 하네스 — 구버전(5컬럼) 시뮬레이션 시
+    `record_event()` 호출 한 번으로 information_schema 조회 → ALTER(INSERT **이전**에 실행) →
+    마커 생성 → 다음 호출은 DB 왕복 없이 스킵 6/6 통과. 별도 단위 하네스(전체-컬럼-존재/부분-누락/
+    DB불통/ALTER실패 등 8케이스) 18/18 통과. 기존 28개 회귀 테스트 그대로 통과(마커 파일이
+    `/var/run` 부재 시 self-heal이 매번 재시도되어도 마지막 SQL(INSERT/SELECT)엔 영향 없음 확인).
 
 ## 다음 작업 대기 중
 
-- [ ] **#54 커밋 대기(미커밋)**: Account History 모달 Change/Login/Usage 3탭 — `radacct_changehistory`
-  스키마 확장(client_ip/client_mac/session_id/session_duration/input_octets/output_octets) +
-  로그인/로그아웃 이력 기록(portal_allow/captiveportal_disconnect/captiveportal_radius_stop_all 훅) +
-  세션 사용량 표시 + `cp_account_history_fetch()` tab 필터 + 모달 3탭 UI. develop 커밋 + 패치노트
-  기록 필요(버전명은 사용자 확인 후 기재).
+- [x] **#54 커밋 완료(develop `d5cb8c7` + 스키마 self-heal 후속 커밋)**: Account History 모달
+  Change/Login/Usage 3탭 — `radacct_changehistory` 스키마 확장(client_ip/client_mac/session_id/
+  session_duration/input_octets/output_octets) + 로그인/로그아웃 이력 기록(portal_allow/
+  captiveportal_disconnect/captiveportal_radius_stop_all 훅) + 세션 사용량 표시 +
+  `cp_account_history_fetch()` tab 필터 + 모달 3탭 UI + **스키마 self-heal**(`cp_account_history_ensure_schema()`,
+  기존 5컬럼 구버전 테이블 자동 마이그레이션 — 실사용에서 발견된 이슈, 위 상세 참고). 패치노트
+  기록 완료(`2026-07-06 Update`). (main/prod 미반영)
 - [ ] #54 검증(선상): 실제 로그인 → Login 탭에 즉시 행 생성(IP/MAC/사유) / 로그아웃(명시적·idle
   timeout·session timeout·quota exceeded·동시로그인 킥) → Login 탭에 LOGOUT 행 + Usage 탭에 완료된
   세션(Duration/Data In/Data Out/Total) 표시 / 탭 전환 시 기간 유지·기간 전환 시 탭 유지 / Export
   CSV 3종(Change/Login/Usage 헤더 상이) / 게스트(passthrough `unauthenticated`) 로그인/로그아웃은
   기록 안 됨(계정 없음, 의도) / 대량 "Disconnect All" 이후 로그아웃 행도 생성되는지(관리자 저빈도
-  작업) / `radacct_changehistory` 를 신규 컬럼 포함 스키마로 새로 생성(아직 미배포 확인 — 만약 구
-  스키마로 이미 생성된 박스가 있으면 수동 `ALTER TABLE` 1회 필요) / **배포 정합성: cp_account_history.inc
+  작업) / **기존 5컬럼 테이블이 있던 박스에서 self-heal 이 자동으로 6컬럼 추가하는지**
+  (`clog /var/log/system.log | grep "ACCT HISTORY: schema self-heal"`로 확인, `DESCRIBE
+  radius.radacct_changehistory` 로 컬럼 6개 존재 확인) / **배포 정합성: cp_account_history.inc
   + captiveportal.inc + crew_account_history_data.php + manage_crew_wifi_account.inc 4파일 일괄**
   (버전 섞이면 신규 컬럼/함수 불일치로 기록만 조용히 skip — fatal 은 없음).
 - [x] **#51 커밋 완료(develop `a848caa`+`725e53c`)**: FBB 신호 표시 이름매핑 분리 + ACU state -1 →

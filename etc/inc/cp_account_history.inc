@@ -46,6 +46,13 @@
  * 실행부는 cp_gmt_history.inc(#48)의 mysql CLI 헬퍼(cp_gmt_history_exec_sql)를 재사용
  * — 같은 DB/자격증명, defaults-extra-file(비번 argv 미노출) + connect-timeout + timeout 바운드.
  * 실패해도 throw 하지 않고 false + log_error (계정 변경 흐름 불가침).
+ *
+ * 스키마 self-heal(#54): 이 테이블이 #49 시절 5컬럼(신규 6개 컬럼 없음)으로 이미 배포된 박스가
+ * 실사용에서 확인됨 — CREATE TABLE IF NOT EXISTS 는 테이블이 이미 있으면 무효과라 그대로 두면
+ * login/logout/usage 기록이 "컬럼 없음" 에러로 조용히 실패한다. record_event()/fetch() 호출
+ * 시작부에서 cp_account_history_ensure_schema()가 information_schema 로 누락 컬럼을 확인해
+ * 자동 ALTER TABLE ADD COLUMN(MariaDB 5.5 는 ADD COLUMN IF NOT EXISTS 미지원이라 이 방식 필요).
+ * 최초 1회만 DB 왕복하고 이후엔 `/var/run/cp_account_history_schema_ok` 마커로 즉시 스킵.
  */
 
 // #48 헬퍼 재사용 (버전섞임 가드 — 미배포면 record 가 조용히 false)
@@ -54,6 +61,79 @@ if (file_exists('/etc/inc/cp_gmt_history.inc')) {
 }
 
 define('CP_ACCT_HISTORY_TABLE', 'radacct_changehistory');
+// #54 self-heal: 스키마 확인 성공 시 마커 터치 — 이후 호출은 DB 왕복 없이 즉시 스킵.
+// /var/run(tmpfs) 라 재부팅 시 소실 → 1회 재확인(무해·멱등).
+define('CP_ACCT_HISTORY_SCHEMA_MARKER', '/var/run/cp_account_history_schema_ok');
+
+/**
+ * #54 스키마 self-heal: radacct_changehistory 가 #49 시절 5컬럼(client_ip 등 6개 컬럼 없음)으로
+ * 이미 배포된 박스에서 login/logout/usage 기록이 "컬럼 없음" SQL 에러로 조용히 실패하는 것을 방지.
+ * CREATE TABLE IF NOT EXISTS 는 테이블이 이미 존재하면 아무 효과가 없으므로(#48 과 동일 한계),
+ * information_schema 로 실제 컬럼 목록을 확인해 **누락분만** ALTER TABLE ADD COLUMN 한다.
+ * MariaDB 5.5 는 `ALTER ... ADD COLUMN IF NOT EXISTS` 미지원(10.0.2+ 전용)이라 이 방식이 필요.
+ * 신규(테이블 없음) 박스에서는 이 함수의 ALTER 가 "Unknown table" 로 실패하지만 무해 — 호출부가
+ * 이어서 실행하는 CREATE TABLE IF NOT EXISTS + INSERT/SELECT 가 정상적으로 전체 스키마를 만든다.
+ * 실패해도 throw 없이 false(호출측 흐름 불가침, #48/#49 패턴과 동일).
+ */
+function cp_account_history_ensure_schema() {
+	if (@file_exists(CP_ACCT_HISTORY_SCHEMA_MARKER)) {
+		return true;
+	}
+	if (!function_exists('cp_gmt_history_exec_sql') || !function_exists('cp_gmt_history_sql_str')) {
+		return false;
+	}
+
+	// #54 신규 컬럼 6개 (인덱스 idx_session 은 성능용이라 self-heal 대상에서 제외 — 없어도 기능 정상)
+	$required = array(
+		'client_ip'        => "VARCHAR(45) NOT NULL DEFAULT ''",
+		'client_mac'       => "VARCHAR(20) NOT NULL DEFAULT ''",
+		'session_id'       => "VARCHAR(64) NOT NULL DEFAULT ''",
+		'session_duration' => 'INT NOT NULL DEFAULT 0',
+		'input_octets'     => 'BIGINT NOT NULL DEFAULT 0',
+		'output_octets'    => 'BIGINT NOT NULL DEFAULT 0',
+	);
+
+	$sql = "SELECT `COLUMN_NAME` FROM `INFORMATION_SCHEMA`.`COLUMNS`"
+		. ' WHERE `TABLE_SCHEMA` = DATABASE() AND `TABLE_NAME` = \''
+		. cp_gmt_history_sql_str(CP_ACCT_HISTORY_TABLE) . "';\n";
+	$out = array();
+	$ret = cp_gmt_history_exec_sql($sql, '-N -B', $out);
+	if ($ret !== 0) {
+		if (function_exists('log_error')) {
+			log_error('ACCT HISTORY: schema check failed: ' . implode(' | ', $out));
+		}
+		return false;
+	}
+	$existing = array_map('trim', $out);
+
+	$missingCols = array();
+	$alterClauses = array();
+	foreach ($required as $col => $def) {
+		if (!in_array($col, $existing, true)) {
+			$missingCols[] = $col;
+			$alterClauses[] = "ADD COLUMN `{$col}` {$def}";
+		}
+	}
+	if (empty($alterClauses)) {
+		@touch(CP_ACCT_HISTORY_SCHEMA_MARKER);
+		return true;
+	}
+
+	$alter = 'ALTER TABLE `' . CP_ACCT_HISTORY_TABLE . '` ' . implode(', ', $alterClauses) . ";\n";
+	$out2 = array();
+	$ret2 = cp_gmt_history_exec_sql($alter, '', $out2);
+	if ($ret2 !== 0) {
+		if (function_exists('log_error')) {
+			log_error('ACCT HISTORY: schema self-heal ALTER failed (missing=' . implode(',', $missingCols) . '): ' . implode(' | ', $out2));
+		}
+		return false;
+	}
+	if (function_exists('log_error')) {
+		log_error('ACCT HISTORY: schema self-heal added columns: ' . implode(',', $missingCols));
+	}
+	@touch(CP_ACCT_HISTORY_SCHEMA_MARKER);
+	return true;
+}
 
 /* prepaid(crewpay-) 계정이면 " (CREWPAY)" 태그, 아니면 ''.
  * 코드베이스 전역 prepaid 식별 규약과 동일(username 접두사 crewpay-, 대소문자 무시) —
@@ -186,6 +266,10 @@ function cp_account_history_record_event($change_type, $username, $ip, $mac, $se
 	if (!function_exists('cp_gmt_history_exec_sql') || !function_exists('cp_gmt_history_sql_str')) {
 		return false;
 	}
+	// #54: 구버전(5컬럼) 테이블이 이미 배포된 박스 self-heal(최초 1회만 DB 왕복, 이후 마커로 스킵)
+	if (function_exists('cp_account_history_ensure_schema')) {
+		cp_account_history_ensure_schema();
+	}
 	$type = substr(trim((string)$change_type), 0, 64);
 	$username = substr(trim((string)$username), 0, 64);
 	if ($type === '' || $username === '') {
@@ -234,6 +318,10 @@ function cp_account_history_record_event($change_type, $username, $ip, $mac, $se
 function cp_account_history_fetch($username, $from_dt, $to_dt, $limit = 1000, $tab = 'change') {
 	if (!function_exists('cp_gmt_history_exec_sql') || !function_exists('cp_gmt_history_sql_str')) {
 		return false;
+	}
+	// #54: fetch 도 신규 컬럼을 SELECT 하므로 동일하게 self-heal
+	if (function_exists('cp_account_history_ensure_schema')) {
+		cp_account_history_ensure_schema();
 	}
 	$username = trim((string)$username);
 	// username 형식 방어 (SQL 은 escape 하지만 예상 밖 입력 조기 차단)
