@@ -16,9 +16,11 @@
  *       #54 후속 — 별도 기록 대신 기존 accounting 테이블을 직접 사용, 사용자 지시).
  *   기본 = 최근 30일 (계정 변경은 GMT 변경보다 드물어 기본 창을 넓게).
  *
- * 응답: {ok, username, rows:[{id,timestamp,change_type,change_description,client_ip,client_mac,
- *   session_id,session_duration,input_octets,output_octets}], from, to}
- *   탭에 상관없이 항상 동일 필드셋 반환 — 프런트가 탭별로 필요한 컬럼만 렌더링(#54).
+ * 응답: {ok, username, rows:[...], from, to}
+ *   change/login: rows = [{id,timestamp,change_type,change_description}] (radacct_changehistory,
+ *     IP/MAC/사유는 change_description 텍스트 안에 포함 — 별도 컬럼 없음, #54 후속).
+ *   usage: rows = [{id,timestamp,change_type,change_description,client_ip,client_mac,session_id,
+ *     session_duration,input_octets,output_octets}] (radius.radacct 조회, 표준 accounting 컬럼).
  *   ok=false = 라이브러리 미배포(버전섞임)/DB 불통/입력 오류 — fatal 없음.
  */
 

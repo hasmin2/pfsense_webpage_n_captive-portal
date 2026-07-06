@@ -784,12 +784,12 @@ function render_account_history_modal() {
     function buildRows(slice){
         var i, r, h = "";
         if (curTab === "login") {
+            // IP/MAC/사유는 change_description 텍스트 안에 포함(#54 후속) — 별도 컬럼 없음
             for (i=0;i<slice.length;i++){
                 r = slice[i];
                 var ec = EVENT_CHIP[r.change_type] || ["#5b6573","#eef1f5"];
                 h += "<tr><td class=\"ah-time\">"+esc(r.timestamp)+"</td>"
                    + "<td><span class=\"ah-chip\" style=\"color:"+ec[0]+";background:"+ec[1]+";\">"+esc(prettyType(r.change_type))+"</span></td>"
-                   + "<td>"+esc(r.client_ip)+"</td><td>"+esc(r.client_mac)+"</td>"
                    + "<td class=\"ah-desc\">"+esc(r.change_description)+"</td></tr>";
             }
         } else if (curTab === "usage") {
@@ -815,7 +815,7 @@ function render_account_history_modal() {
         return h;
     }
     function tableHead(){
-        if (curTab === "login") { return "<tr><th>Time (UTC)</th><th>Event</th><th>IP</th><th>MAC</th><th>Description</th></tr>"; }
+        if (curTab === "login") { return "<tr><th>Time (UTC)</th><th>Event</th><th>Description</th></tr>"; }
         if (curTab === "usage") { return "<tr><th>Time (UTC)</th><th>Duration</th><th>Data In</th><th>Data Out</th><th>Total</th><th>IP</th></tr>"; }
         return "<tr><th>Time (UTC)</th><th>Type</th><th>Description</th></tr>";
     }
@@ -905,10 +905,10 @@ function render_account_history_modal() {
             if (!lastRows.length) { return; }
             var i, r, lines;
             if (curTab === "login") {
-                lines = ["id,timestamp_utc,username,event,ip,mac,session_id,description"];
+                lines = ["id,timestamp_utc,username,event,description"];
                 for (i=0;i<lastRows.length;i++){
                     r = lastRows[i];
-                    lines.push([r.id,r.timestamp,curUser,r.change_type,r.client_ip,r.client_mac,r.session_id,r.change_description].map(csvField).join(","));
+                    lines.push([r.id,r.timestamp,curUser,r.change_type,r.change_description].map(csvField).join(","));
                 }
             } else if (curTab === "usage") {
                 lines = ["id,timestamp_utc,username,ip,mac,duration_sec,data_in_bytes,data_out_bytes,total_bytes"];

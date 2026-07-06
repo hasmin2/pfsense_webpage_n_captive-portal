@@ -1769,43 +1769,44 @@ function cp_term_cause_label($code) {
 
 /* #54: 로그인 이력 기록 (crew_account.php History 모달 Login 탭, radacct_changehistory 공용테이블).
  * portal_allow() 의 "진짜 신규 세션 생성" 지점에서만 호출됨 — 동시로그인 재사용 경로는 자동 제외.
- * 게스트 passthrough('unauthenticated') 는 계정이 없어 기록 대상에서 제외. 버전섞임 안전(lazy require). */
+ * 게스트 passthrough('unauthenticated') 는 계정이 없어 기록 대상에서 제외. 버전섞임 안전(lazy require).
+ * IP/MAC 은 별도 컬럼이 아니라 change_description 텍스트에 포함(#54 후속, 사용자 지시) — 기존
+ * cp_account_history_record() 를 그대로 재사용해 스키마를 절대 건드리지 않는다(ALTER TABLE 불필요). */
 function cp_log_account_login($username, $clientip, $clientmac, $sessionid, $authmethod) {
     if ($username === '' || strcasecmp((string)$username, 'unauthenticated') === 0) {
         return;
     }
-    if (!function_exists('cp_account_history_record_event') && file_exists('/etc/inc/cp_account_history.inc')) {
+    if (!function_exists('cp_account_history_record') && file_exists('/etc/inc/cp_account_history.inc')) {
         require_once('/etc/inc/cp_account_history.inc');
     }
-    if (!function_exists('cp_account_history_record_event')) {
+    if (!function_exists('cp_account_history_record')) {
         return;
     }
     $tag = function_exists('cp_account_history_tag') ? cp_account_history_tag($username) : '';
-    $desc = "Logged in via " . ($authmethod !== '' ? $authmethod : 'unknown') . $tag;
-    cp_account_history_record_event('login', $username, (string)$clientip, (string)$clientmac,
-        (string)$sessionid, 0, 0, 0, $desc);
+    $auth = ($authmethod !== '') ? $authmethod : 'unknown';
+    $desc = "user={$username} logged in from ip={$clientip} mac={$clientmac} via {$auth}{$tag}";
+    cp_account_history_record('login', $desc);
 }
 
-/* #54: 로그아웃 + 세션 사용량 이력 기록. $dbent: [0]=allow_time [1]=ruleno [2]=ip [3]=mac
- * [4]=username [5]=sessionid (captiveportal DB 행 형식, captiveportal_disconnect()/
- * captiveportal_radius_stop_all() 공용). 세션 사용량(바이트)은 여기서 별도로 기록하지 않는다 —
- * Usage 탭이 radius.radacct(표준 FreeRADIUS SQL accounting)를 직접 조회하도록 변경(#54 후속,
- * 사용자 지시) — 이 로그아웃 이벤트는 IP/MAC/사유만 남기고 duration/bytes 는 0 고정.
+/* #54: 로그아웃 이력 기록. $dbent: [0]=allow_time [1]=ruleno [2]=ip [3]=mac [4]=username
+ * [5]=sessionid (captiveportal DB 행 형식, captiveportal_disconnect()/
+ * captiveportal_radius_stop_all() 공용). 세션 사용량(바이트)은 여기서 기록하지 않는다 — Usage
+ * 탭이 radius.radacct(표준 FreeRADIUS SQL accounting)를 직접 조회한다(#54 후속, 사용자 지시).
+ * IP/MAC/사유는 별도 컬럼이 아니라 change_description 텍스트에 포함(login 과 동일 이유).
  * $reason 을 명시하면 term_cause 매핑보다 우선한다(quota 초과 등 상세 문구 보존용). */
 function cp_log_account_logout($dbent, $term_cause, $stop_time, $reason = null) {
     $username = isset($dbent[4]) ? $dbent[4] : '';
     if ($username === '' || strcasecmp((string)$username, 'unauthenticated') === 0) {
         return;
     }
-    if (!function_exists('cp_account_history_record_event') && file_exists('/etc/inc/cp_account_history.inc')) {
+    if (!function_exists('cp_account_history_record') && file_exists('/etc/inc/cp_account_history.inc')) {
         require_once('/etc/inc/cp_account_history.inc');
     }
-    if (!function_exists('cp_account_history_record_event')) {
+    if (!function_exists('cp_account_history_record')) {
         return;
     }
     $ip  = isset($dbent[2]) ? $dbent[2] : '';
     $mac = isset($dbent[3]) ? $dbent[3] : '';
-    $sid = isset($dbent[5]) ? $dbent[5] : '';
 
     if ($reason !== null && trim((string)$reason) !== '') {
         $label = trim((string)$reason);
@@ -1816,9 +1817,8 @@ function cp_log_account_logout($dbent, $term_cause, $stop_time, $reason = null) 
     }
 
     $tag = function_exists('cp_account_history_tag') ? cp_account_history_tag($username) : '';
-    $desc = "Logged out ({$label})" . $tag;
-    cp_account_history_record_event('logout', $username, (string)$ip, (string)$mac, (string)$sid,
-        0, 0, 0, $desc);
+    $desc = "user={$username} logged out from ip={$ip} mac={$mac} reason={$label}{$tag}";
+    cp_account_history_record('logout', $desc);
 }
 
 function cp_wireless_auth($user, $mac, $ip, $status, $message = null): bool {

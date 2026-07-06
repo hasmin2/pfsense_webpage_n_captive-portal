@@ -1637,145 +1637,119 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 
 ### 54. Account History 모달 — Login/Logout + Session Usage 탭 추가 (Change | Login | Usage) (develop 미커밋)
 - **요구**: crew_account.php per-user History 모달(#50, `radacct_changehistory` 단일 조회)에
-  ① **로그인/로그아웃 이력**, ② **세션별 데이터 사용량**을 추가로 표시. "같은 테이블에 같이
-  기록해도 된다"는 사용자 지시에 따라 **`radacct_changehistory` 단일 테이블**을 그대로 재사용
-  (change_type 신규 값 `login`/`logout`) — 별도 테이블 신설 없음. 최종 모달은 **Change / Login /
-  Usage 3탭**, 셋 다 **동일한 기간 선택 UI(30d/7d/1d/All/Custom)** 공유(탭 전환 시 기간 유지,
-  기간 변경 시 탭 유지). Usage 탭 범위는 사용자 확인 결과 **완료(로그아웃 완료)된 세션만**
-  (진행 중 세션의 실시간 사용량은 미포함 — 별도 기능 영역).
-- **스키마 확장(`cp_account_history.inc` `cp_account_history_create_table_sql()`)**: 기존 5컬럼에
-  6개 추가(전부 기본값 있어 기존 change_type 이벤트와 하위호환) — `client_ip` VARCHAR(45) /
-  `client_mac` VARCHAR(20) / `session_id` VARCHAR(64) / `session_duration` INT(초, logout 전용) /
-  `input_octets` BIGINT(logout 전용) / `output_octets` BIGINT(logout 전용) + `idx_session` 인덱스.
-  **아직 어떤 선박에도 이 테이블이 배포된 적이 없어(#49/#50 미검증 상태) 마이그레이션 없이 CREATE
-  TABLE 단계에서 바로 최종 스키마로 생성**(#48 GMT 이력 테이블과 동일 패턴).
-- **기록 함수(`cp_account_history.inc`)**: 신규 `cp_account_history_record_event($change_type,
-  $username, $ip, $mac, $sessionid, $duration, $bytesIn, $bytesOut, $description)` — 단일 이벤트
-  실시간 INSERT(배치 아님). 기존 배치용 `cp_account_history_record()`(change_type 전용)는 무수정.
-  `cp_account_history_fetch()`에 `$tab` 파라미터 추가(`change`=login/logout 제외 기본 / `login`=
-  login+logout / `usage`=logout 만) — SELECT 컬럼도 신규 6개 포함.
-- **캡티브포털 훅(`captiveportal.inc`, 순수 추가·기존 로직 무변경)**:
-  - 신규 `cp_term_cause_label($code)` — RADIUS term_cause 숫자→사람이 읽는 사유
-    (1=LOGOUT/4=IDLE TIMEOUT/5=SESSION TIMEOUT/6=ADMIN RESET/10=QUOTA EXHAUSTED/13=CONCURRENT
-    LOGIN/17=REAUTH FAILED). 코드베이스가 이미 몇몇 호출부(`captiveportal_disconnect_client($sid,
-    "Usage-Exceed")`/`"No-Gateway"`)에서 **문자열을 term_cause 슬롯에 그대로 넘기는 기존 관행**이
-    있어, 숫자가 아니면 그 문자열을 그대로 사유로 채택(별도 수정 없이 정확한 사유 확보).
+  ① **로그인/로그아웃 이력**, ② **세션별 데이터 사용량**을 추가로 표시. 최종 모달은
+  **Change / Login / Usage 3탭**, 셋 다 **동일한 기간 선택 UI(30d/7d/1d/All/Custom)** 공유
+  (탭 전환 시 기간 유지, 기간 변경 시 탭 유지). Usage 탭 범위는 사용자 확인 결과 **완료(로그아웃
+  완료)된 세션만**(진행 중 세션의 실시간 사용량은 미포함 — 별도 기능 영역).
+- **시행착오(교훈, 중요)**: 처음엔 Login/Usage 를 위해 `radacct_changehistory`에 `client_ip`/
+  `client_mac`/`session_id`/`session_duration`/`input_octets`/`output_octets` 6컬럼을 새로
+  추가했었다(#48 GMT 이력 테이블처럼 "아직 미배포 박스 前提"로 마이그레이션 없이 CREATE TABLE
+  단계에서 확장). 그런데 실사용 스크린샷으로 **이미 그 5컬럼 구버전 테이블이 배포된 박스가 최소
+  1개 있음**이 확인되어(`CREATE TABLE IF NOT EXISTS`는 테이블이 있으면 무효과라 그대로 두면
+  조용히 실패) `information_schema` 기반 런타임 self-heal(`cp_account_history_ensure_schema()`,
+  MariaDB 5.5 는 `ADD COLUMN IF NOT EXISTS` 미지원이라 필요)을 한 차례 추가했었다. 이어서 사용자가
+  ① Usage(세션 데이터량)는 별도로 기록하지 말고 **기존 표준 FreeRADIUS SQL accounting 테이블
+  `radius.radacct`**를 직접 조회하라고 지시했고, ② 최종적으로 **"ALTER TABLE 자체를 아예 일으키고
+  싶지 않다"**는 지시에 따라 **Login/Logout 도 새 컬럼 없이 원본 5컬럼 스키마(#49)만으로 기록**
+  (IP/MAC/사유를 `change_description` 텍스트에 포함, 다른 change_type 이벤트와 동일한 방식)하도록
+  최종 되돌림. **6컬럼 스키마 확장과 self-heal 함수는 전부 제거되고 현재 남아있지 않다** — 아래는
+  최종 구현만 설명.
+- **최종 구현 — Login/Change 탭 (`radacct_changehistory`, #49 원본 5컬럼 그대로)**:
+  - 스키마 변경 없음(`cp_account_history_create_table_sql()` 은 #49 그대로: id/timestamp/
+    username/change_type/change_description). `change_type` 에 `login`/`logout` 두 값 추가.
+  - login/logout 이벤트도 기존 배치용 `cp_account_history_record($change_type, $description)`
+    를 **그대로 재사용**(전용 함수를 따로 두지 않음) — description 을 다른 이벤트들과 동일하게
+    `"user={username} ..."` 로 시작시켜 기존 `cp_account_history_extract_username()` 파싱에
+    그대로 태움. IP/MAC/사유는 컬럼이 아니라 이 텍스트 안에 포함:
+    `"user={username} logged in from ip={ip} mac={mac} via {authmethod}{tag}"` /
+    `"user={username} logged out from ip={ip} mac={mac} reason={label}{tag}"`.
+  - `captiveportal.inc` 신규 `cp_term_cause_label($code)` — RADIUS term_cause 숫자→사람이 읽는
+    사유(1=LOGOUT/4=IDLE TIMEOUT/5=SESSION TIMEOUT/6=ADMIN RESET/10=QUOTA EXHAUSTED/
+    13=CONCURRENT LOGIN/17=REAUTH FAILED). 코드베이스가 이미 몇몇 호출부(`captiveportal_
+    disconnect_client($sid, "Usage-Exceed")`/`"No-Gateway"`)에서 **문자열을 term_cause 슬롯에
+    그대로 넘기는 기존 관행**이 있어, 숫자가 아니면 그 문자열을 그대로 사유로 채택.
   - 신규 `cp_log_account_login($username, $ip, $mac, $sessionid, $authmethod)` /
     `cp_log_account_logout($dbent, $term_cause, $stop_time, $reason=null)` — 둘 다 게스트
     passthrough(`unauthenticated`)는 계정이 없어 스킵, lazy-require+`function_exists` 가드로
-    버전섞임 안전. logout 은 `getVolume($dbent[2])`로 세션 바이트 캡처.
+    버전섞임 안전. **`getVolume()` 호출 없음**(세션 바이트는 Usage 탭에서 radacct 로만 다룸 —
+    이벤트 로그는 로그인/로그아웃 "발생 여부·사유"만 남긴다).
   - 호출 지점 4곳: ① `portal_allow()`의 **"진짜 신규 세션 생성" 지점**(동시로그인 재사용 경로는
     `if (!isset($sessionid))` 밖이라 자동 제외)에 로그인 기록. ② `captiveportal_disconnect()` —
     **모든 개별 세션 종료의 단일 관문**(명시적 로그아웃/idle·session timeout/quota exceeded/
-    no-gateway/동시로그인 킥/데이터리셋 등 전부 경유)이라 여기 한 곳으로 대부분 커버, ipfw auth
-    테이블 XDEL **이전**에 훅을 넣어 `getVolume()`이 유효한 시점에 바이트 캡처. ③
+    no-gateway/동시로그인 킥/데이터리셋 등 전부 경유)이라 여기 한 곳으로 대부분 커버. ③
     `captiveportal_radius_stop_all()`(대량 `captiveportal_disconnect_all()` 전용 — 개별
-    disconnect()를 안 거치는 별도 경로) foreach 안에도 동일 훅 추가해 대량 로그아웃도 누락 없이
-    기록. ④ `captiveportal_prune_old()`의 quota-exceeded 호출부만 이미 만들어진 상세 문자열
-    `$logout_cause`(예: "QUOTA EXHAUSTED: used=120MB max=100MB")를 `$reason` 인자로 전달해 더
-    정확한 사유 보존 — 이 한 곳 외 다른 `captiveportal_disconnect()` 호출부는 무수정(새 인자는
-    선택적 5번째 파라미터라 순수 추가).
+    disconnect()를 안 거치는 별도 경로) foreach 안에도 동일 훅 추가. ④ `captiveportal_prune_old()`
+    의 quota-exceeded 호출부만 이미 만들어진 상세 문자열 `$logout_cause`(예: "QUOTA EXHAUSTED:
+    used=120MB max=100MB")를 `$reason` 인자로 전달해 더 정확한 사유 보존 — 이 한 곳 외 다른
+    `captiveportal_disconnect()` 호출부는 무수정(새 인자는 선택적 5번째 파라미터라 순수 추가).
   - **의도적으로 손대지 않음**: `captiveportal_disconnect_client()`의 죽은 파라미터
     `$logoutReason`은 그대로 방치 — 살리려면 term_cause 슬롯 문자열 관행과 우선순위 충돌 위험이
     있어 리스크 대비 이득이 작음. 결과적으로 `captiveportal_reset_user_usage()`(#14, 데이터리셋)
     로그아웃은 "DATA RESET" 대신 term_cause=6 매핑값인 **"ADMIN RESET"**으로 다소 뭉뚱그려 표시됨
     (기능상 문제 없음, 후속 개선 가능).
-- **엔드포인트(`crew_account_history_data.php`)**: POST `tab`(change/login/usage, 기본 change)
-  파라미터 추가. 응답에 신규 6컬럼 항상 포함(탭 무관, 프런트가 탭별로 필요한 컬럼만 렌더).
+  - `cp_account_history_fetch($username,$from,$to,$limit,$tab)` — `$tab='change'`(기본,
+    login/logout 제외) | `'login'`(login+logout). SELECT 는 원본 4컬럼(id/timestamp/change_type/
+    change_description) 그대로.
+- **최종 구현 — Usage 탭 (`radius.radacct`, 표준 FreeRADIUS SQL accounting 테이블 직접 조회)**:
+  - 신규 `cp_account_history_fetch_usage($username,$from,$to,$limit)` (`cp_account_history.inc`)
+    — `radacct` 를 `LOWER(username)` 매칭(대소문자 무시, #6/#17 관례) + **`acctstarttime` 기준
+    기간 필터**(사용자 지시) + `acctstoptime IS NOT NULL`(완료된 세션만) 로 조회.
+    `acctstarttime`/`acctstoptime`/`acctsessiontime`/`acctinputoctets`/`acctoutputoctets`/
+    `framedipaddress`/`callingstationid` — `usr/local/etc/raddb/mods-config/sql/main/mysql/
+    queries.conf` 의 표준 스키마와 동일. 응답 필드명은 모달 JS Usage 탭 렌더 규약(`client_ip`=
+    framedipaddress, `client_mac`=callingstationid, `session_duration`=acctsessiontime,
+    `input_octets`=acctinputoctets, `output_octets`=acctoutputoctets, `id`=radacctid,
+    `timestamp`=acctstoptime)에 맞춰 매핑 — **radacct_changehistory 스키마와는 완전히 무관**
+    (이 테이블은 손대지 않음, ALTER TABLE 불필요).
+  - **주의(선상 전제)**: `radacct` 조회가 유효하려면 **해당 박스에서 FreeRADIUS SQL accounting 이
+    활성화되어 실제로 `radacct` 테이블에 세션이 쌓이고 있어야** 함(`varsqlconfenableaccounting ==
+    'Enable'`, #23 분석 참고). 비활성 박스에서는 Usage 탭이 "완료된 세션 없음"으로 빈 결과 표시
+    (fatal 없음, graceful degrade).
+- **엔드포인트(`crew_account_history_data.php`)**: POST `tab`(change/login/usage, 기본 change).
+  change/login 은 `cp_account_history_fetch()`, usage 만 `cp_account_history_fetch_usage()`로 분기.
 - **모달 UI(`manage_crew_wifi_account.inc` `render_account_history_modal()`)**: 탭바
   (Change/Login/Usage) 추가, range pill 은 공유(탭 전환 시 `lastRangeParams` 재사용, range 변경
-  시 `curTab` 유지). 탭별 컬럼: Change=기존 그대로(Time/Type chip/Description) · Login=Time/Event
-  chip(LOGIN 녹색·LOGOUT 파랑)/IP/MAC/Description · Usage=Time/Duration/Data In/Data Out/Total/IP
-  (위젯 내 self-contained `formatBytes()`/`formatDuration()`, 외부 의존 없음). Export CSV·빈 결과
-  메시지·하단 안내문 전부 탭별 분기. 기존 10개 클라이언트 페이지네이션 패턴 그대로 재사용.
-  모달 너비 860px→980px(추가 컬럼 수용).
-- **검증**: php -l 4파일 전부 통과. DB 레이어(`cp_account_history_record_event`/
-  `cp_account_history_fetch` tab 필터/DDL) PHP 스텁 하네스 28/28. captiveportal.inc 신규 헬퍼
-  (term_cause 매핑·reason 우선순위 3단계·게스트 스킵 대소문자 무시) 스텁 하네스 23/23. 모달 JS
-  (탭 전환 시 기간 유지·기간 전환 시 탭 유지·탭별 컬럼 렌더·CSV 헤더 3종·빈결과/실패 메시지)
-  DOM/XHR 스텁 하네스 23/23.
+  시 `curTab` 유지). 탭별 컬럼: **Change=Time/Type chip/Description · Login=Time/Event chip
+  (LOGIN 녹색·LOGOUT 파랑)/Description(IP/MAC/사유는 텍스트에 포함, 별도 컬럼 없음) · Usage=
+  Time/Duration/Data In/Data Out/Total/IP**(위젯 내 self-contained `formatBytes()`/
+  `formatDuration()`, 외부 의존 없음). Export CSV·빈 결과 메시지·하단 안내문 전부 탭별 분기.
+  기존 10개 클라이언트 페이지네이션 패턴 그대로 재사용. 모달 너비 860px→980px.
+- **검증**: php -l 4파일 전부 통과. DB 레이어(`cp_account_history_record`/`fetch`/DDL 원본 5컬럼
+  확인·`fetch_usage` radacct 타깃/컬럼매핑/NULL처리) PHP 스텁 하네스 30/30 + 21/21. captiveportal.inc
+  헬퍼(term_cause 매핑·reason 우선순위 3단계·게스트 스킵·**getVolume 미호출 확인**) 스텁 하네스
+  24/24. 모달 JS(탭 전환 시 기간 유지·Login 탭에 IP/MAC 별도 컬럼 없음 확인·Usage 탭 구조화 컬럼
+  렌더·CSV 헤더 3종·빈결과/실패 메시지) DOM/XHR 스텁 하네스 24/24.
 - **배포 정합성**: `cp_account_history.inc` + `captiveportal.inc` + `crew_account_history_data.php`
   + `manage_crew_wifi_account.inc` **4파일 일괄**(가드 있어 fatal 없음 — 구버전 섞여도 로그인/
   로그아웃 기록만 skip, 기존 Change 탭은 영향 없음).
 - **알려진 범위 제한(수용)**: Usage 탭은 완료된 세션만(사용자 확인, 진행 중 세션 실시간 사용량
   미포함) / 데이터리셋 로그아웃 사유가 "ADMIN RESET"으로 다소 뭉뚱그려짐(위 참고) / crew_account.php
-  전용(#50 과 동일하게 prepaid_account.php 는 History 버튼 자체가 없어 미포함).
-- **스키마 self-heal(추가 반영, 발견된 실사용 이슈)**: 최초 계획은 "#49/#50 이후 어떤 선박에도
-  `radacct_changehistory` 미배포"라는 CLAUDE.md 기록을 전제로 마이그레이션 없이 CREATE TABLE
-  단계에서 바로 최종 스키마를 만드는 것이었으나, **실제로는 최소 1개 박스(스크린샷으로 확인,
-  fx_corpuser00001 계정에 2026-07-03 자 Description Change 행 존재)에 5컬럼 구버전 테이블이
-  이미 존재**함이 드러남 — `CREATE TABLE IF NOT EXISTS`는 테이블이 있으면 무효과라, 그대로 두면
-  이런 박스에서 login/logout/usage 기록이 "컬럼 없음" SQL 에러로 조용히 실패했을 것.
-  - **수정 (`cp_account_history.inc`)**: 신규 `cp_account_history_ensure_schema()` — 마커 파일
-    `/var/run/cp_account_history_schema_ok` 존재 시 **DB 왕복 없이 즉시 스킵**(steady-state
-    비용 0). 없으면 `INFORMATION_SCHEMA.COLUMNS`로 실제 컬럼을 조회해 **누락분만** `ALTER TABLE
-    ADD COLUMN`(MariaDB 5.5는 `ADD COLUMN IF NOT EXISTS` 미지원(10.0.2+ 전용)이라 이 방식 필요) →
-    성공 시 마커 터치(이후 스킵). 신규(테이블 없음) 박스에서는 이 ALTER가 "Unknown table"로
-    실패하지만 무해 — 뒤이어 실행되는 `CREATE TABLE IF NOT EXISTS` + INSERT/SELECT가 정상적으로
-    전체 스키마를 만들고, 다음 호출에서 self-heal이 재확인해 마커를 남김. 실패해도 throw 없이
-    false(#48/#49 패턴과 동일, 계정 변경 흐름 불가침).
-  - `cp_account_history_record_event()`/`cp_account_history_fetch()` 시작부에서 호출.
-  - **검증**: 실제 파일(`cp_account_history.inc`) 대상 하네스 — 구버전(5컬럼) 시뮬레이션 시
-    `record_event()` 호출 한 번으로 information_schema 조회 → ALTER(INSERT **이전**에 실행) →
-    마커 생성 → 다음 호출은 DB 왕복 없이 스킵 6/6 통과. 별도 단위 하네스(전체-컬럼-존재/부분-누락/
-    DB불통/ALTER실패 등 8케이스) 18/18 통과. 기존 28개 회귀 테스트 그대로 통과(마커 파일이
-    `/var/run` 부재 시 self-heal이 매번 재시도되어도 마지막 SQL(INSERT/SELECT)엔 영향 없음 확인).
-- **Usage 탭 데이터 소스 변경(사용자 지시로 되돌림)**: crew usage(세션 데이터 사용량)는 별도
-  테이블에 새로 기록하지 말고 **기존 표준 FreeRADIUS SQL accounting 테이블 `radius.radacct`**
-  (`acctstarttime`/`acctstoptime`/`acctsessiontime`/`acctinputoctets`/`acctoutputoctets`/
-  `framedipaddress`/`callingstationid` — `usr/local/etc/raddb/mods-config/sql/main/mysql/queries.conf`
-  의 표준 스키마와 동일)를 직접 조회하라는 지시. **Login 탭은 기존대로 유지**(captiveportal.inc
-  훅이 `radacct_changehistory`에 login/logout 이벤트를 계속 기록) — Usage 탭만 데이터 소스 교체.
-  - **`cp_account_history.inc`**: 신규 `cp_account_history_fetch_usage($username,$from,$to,$limit)`
-    — `radacct`를 `LOWER(username)` 매칭(대소문자 무시, #6/#17 관례) + **`acctstarttime` 기준
-    기간 필터**(사용자 지시) + `acctstoptime IS NOT NULL`(완료된 세션만, #54 확정 그대로 유지)로
-    조회. 응답 필드명을 기존 `cp_account_history_fetch()`의 login/logout row 형식과 **동일하게
-    맞춰**(`client_ip`=framedipaddress, `client_mac`=callingstationid, `session_duration`=
-    acctsessiontime, `input_octets`=acctinputoctets, `output_octets`=acctoutputoctets, `id`=
-    radacctid, `timestamp`=acctstoptime) **모달 JS(Usage 탭 렌더)는 완전히 무수정**으로 재사용.
-  - **`captiveportal.inc` `cp_log_account_logout()` 단순화**: `getVolume()` 호출 + duration 계산
-    제거(더 이상 필요 없음 — Usage 탭이 radacct 를 직접 읽으므로 중복 기록 불필요). logout 이벤트는
-    이제 IP/MAC/사유만 남기고 `cp_account_history_record_event()`에 duration/bytesIn/bytesOut 은
-    항상 0 전달(로그인/로그아웃 "이벤트 발생 여부" 기록 목적만 남음, 데이터량은 radacct 가 권위).
-    `radacct_changehistory` 의 `session_duration`/`input_octets`/`output_octets` 컬럼(#54 self-heal
-    포함)은 스키마상 남아있으나 이제 login/logout 행에선 항상 0 — 제거하지 않고 그대로 둠(이미
-    커밋+푸시된 self-heal 재수정 방지, 무해한 미사용 컬럼).
-  - **`crew_account_history_data.php`**: `tab=usage` 요청만 `cp_account_history_fetch_usage()`로
-    분기(change/login 은 기존 `cp_account_history_fetch()` 그대로).
-  - **검증**: `cp_account_history_fetch_usage()` 단위 하네스(radacct 테이블 타깃 확인·
-    radacct_changehistory 미참조 확인·acctstoptime IS NOT NULL 필터·acctstarttime 기간 필터·
-    LOWER username 매칭·컬럼→필드 매핑 8종·NULL framedipaddress/callingstationid 그레이스풀·
-    불완전 행 드롭·입력검증·DB실패 graceful) 21/21. `cp_log_account_logout()` 재검증(getVolume
-    미호출 확인 포함) 24/24. 기존 회귀(cp_account_history 28/28, 모달 JS 23/23, 스키마 self-heal
-    6/6) 전부 유지.
-  - **주의(선상 전제)**: `radacct` 조회가 유효하려면 **해당 박스에서 FreeRADIUS SQL accounting 이
-    활성화되어 실제로 `radacct` 테이블에 세션이 쌓이고 있어야** 함(`varsqlconfenableaccounting ==
-    'Enable'`, #23 분석 참고). 비활성 박스에서는 Usage 탭이 "완료된 세션 없음"으로 빈 결과 표시
-    (fatal 없음, graceful degrade).
+  전용(#50 과 동일하게 prepaid_account.php 는 History 버튼 자체가 없어 미포함) / `radacct` 조회는
+  해당 박스의 SQL accounting 활성 여부에 종속(위 참고).
 
 ## 다음 작업 대기 중
 
-- [x] **#54 커밋 완료(develop `d5cb8c7`+`142ea74`+Usage 데이터소스 변경 커밋, origin 에 push 완료)**:
-  Account History 모달 Change/Login/Usage 3탭 — `radacct_changehistory` 스키마 확장(client_ip/
-  client_mac/session_id/session_duration/input_octets/output_octets) + 로그인/로그아웃 이력 기록
-  (portal_allow/captiveportal_disconnect/captiveportal_radius_stop_all 훅) + `cp_account_history_fetch()`
-  tab 필터 + 모달 3탭 UI + **스키마 self-heal**(`cp_account_history_ensure_schema()`, 기존 5컬럼
-  구버전 테이블 자동 마이그레이션 — 실사용에서 발견된 이슈) + **Usage 탭 데이터소스를 radius.radacct
-  직접조회로 변경**(사용자 지시, 위 상세 참고 — 세션 사용량은 별도 기록 안 함). 패치노트 기록 완료
-  (`2026-07-06 Update`). (main/prod 미반영)
-- [ ] #54 검증(선상): 실제 로그인 → Login 탭에 즉시 행 생성(IP/MAC/사유) / 로그아웃(명시적·idle
-  timeout·session timeout·quota exceeded·동시로그인 킥) → Login 탭에 LOGOUT 행 표시 / **Usage 탭이
-  radius.radacct 에서 완료된 세션(acctstoptime IS NOT NULL)을 Duration/Data In/Data Out/Total 로
-  정상 표시하는지**(SQL accounting 이 꺼진 박스에선 빈 결과가 정상) / 탭 전환 시 기간 유지·기간
-  전환 시 탭 유지 / Export CSV 3종(Change/Login/Usage 헤더 상이) / 게스트(passthrough
-  `unauthenticated`) 로그인/로그아웃은 기록 안 됨(계정 없음, 의도) / 대량 "Disconnect All" 이후
-  로그아웃 행도 생성되는지(관리자 저빈도 작업) / **기존 5컬럼 테이블이 있던 박스에서 self-heal 이
-  자동으로 6컬럼 추가하는지**(`clog /var/log/system.log | grep "ACCT HISTORY: schema self-heal"`로
-  확인, `DESCRIBE radius.radacct_changehistory` 로 컬럼 존재 확인) / **배포 정합성:
-  cp_account_history.inc + captiveportal.inc + crew_account_history_data.php +
-  manage_crew_wifi_account.inc 4파일 일괄**(버전 섞이면 신규 컬럼/함수 불일치로 기록만 조용히
-  skip — fatal 은 없음) / **커밋만으로는 배포 안 됨 — 반드시 `git push origin develop` 까지 해야
-  Jenkins 등 배포 파이프라인이 원격 develop 을 가져감**(이번 세션에서 push 누락으로 실제 재현됨).
+- [x] **#54 커밋 완료(develop, origin 에 push 완료 — 최종 커밋이 스키마확장/self-heal 시행착오를
+  되돌린 상태)**: Account History 모달 Change/Login/Usage 3탭. **`radacct_changehistory` 는
+  #49 원본 5컬럼 그대로**(신규 컬럼·self-heal 전부 제거됨, ALTER TABLE 불필요) — login/logout 은
+  IP/MAC/사유를 `change_description` 텍스트에 포함해 기존 `cp_account_history_record()` 재사용
+  (portal_allow/captiveportal_disconnect/captiveportal_radius_stop_all 훅). **Usage 탭은
+  radius.radacct(표준 FreeRADIUS SQL accounting) 직접 조회**(`cp_account_history_fetch_usage()`)
+  — 별도 기록 없음. 패치노트 기록 완료(`2026-07-06 Update`). (main/prod 미반영)
+- [ ] #54 검증(선상): 실제 로그인 → Login 탭에 즉시 행 생성(설명에 IP/MAC/via 포함) / 로그아웃
+  (명시적·idle timeout·session timeout·quota exceeded·동시로그인 킥) → Login 탭에 LOGOUT 행 표시
+  (설명에 reason 포함) / **Usage 탭이 radius.radacct 에서 완료된 세션(acctstoptime IS NOT NULL)을
+  Duration/Data In/Data Out/Total 로 정상 표시하는지**(SQL accounting 이 꺼진 박스에선 빈 결과가
+  정상) / 탭 전환 시 기간 유지·기간 전환 시 탭 유지 / Export CSV 3종(Change/Login/Usage 헤더 상이,
+  Login 은 ip/mac/session_id 컬럼 없이 id/timestamp_utc/username/event/description 만) / 게스트
+  (passthrough `unauthenticated`) 로그인/로그아웃은 기록 안 됨(계정 없음, 의도) / 대량 "Disconnect
+  All" 이후 로그아웃 행도 생성되는지(관리자 저빈도 작업) / **이 박스에 `radacct_changehistory` 가
+  이미 있어도(5컬럼 구버전이든 뭐든) ALTER 없이 그대로 정상 동작해야 함**(스키마 절대 안 건드림이
+  이번 최종 설계의 핵심) / **배포 정합성: cp_account_history.inc + captiveportal.inc +
+  crew_account_history_data.php + manage_crew_wifi_account.inc 4파일 일괄**(가드 있어 fatal 없음,
+  버전 섞이면 로그인/로그아웃 기록만 조용히 skip) / **커밋만으로는 배포 안 됨 — 반드시 `git push
+  origin develop` 까지 해야 Jenkins 등 배포 파이프라인이 원격 develop 을 가져감**(이번 세션에서
+  push 누락으로 실제 재현됨, [[feedback_push_required_for_deploy]]).
 - [x] **#51 커밋 완료(develop `a848caa`+`725e53c`)**: FBB 신호 표시 이름매핑 분리 + ACU state -1 →
   Comm. Error + FBB "6"→EMEA(24.9E) 매핑. 패치노트 기록 완료(`2026-07-03 Update`,
   **Beta 1.1.53-Beta · Stable: 1.1.4-Stable**). (main/prod 미반영)
