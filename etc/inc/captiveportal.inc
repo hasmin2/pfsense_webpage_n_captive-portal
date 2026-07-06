@@ -1788,8 +1788,9 @@ function cp_log_account_login($username, $clientip, $clientmac, $sessionid, $aut
 
 /* #54: 로그아웃 + 세션 사용량 이력 기록. $dbent: [0]=allow_time [1]=ruleno [2]=ip [3]=mac
  * [4]=username [5]=sessionid (captiveportal DB 행 형식, captiveportal_disconnect()/
- * captiveportal_radius_stop_all() 공용). getVolume() 은 ipfw 테이블이 아직 살아있는 동안
- * (auth 테이블 XDEL 이전/init_rules 이전) 호출해야 정확한 세션 바이트를 얻는다.
+ * captiveportal_radius_stop_all() 공용). 세션 사용량(바이트)은 여기서 별도로 기록하지 않는다 —
+ * Usage 탭이 radius.radacct(표준 FreeRADIUS SQL accounting)를 직접 조회하도록 변경(#54 후속,
+ * 사용자 지시) — 이 로그아웃 이벤트는 IP/MAC/사유만 남기고 duration/bytes 는 0 고정.
  * $reason 을 명시하면 term_cause 매핑보다 우선한다(quota 초과 등 상세 문구 보존용). */
 function cp_log_account_logout($dbent, $term_cause, $stop_time, $reason = null) {
     $username = isset($dbent[4]) ? $dbent[4] : '';
@@ -1805,12 +1806,6 @@ function cp_log_account_logout($dbent, $term_cause, $stop_time, $reason = null) 
     $ip  = isset($dbent[2]) ? $dbent[2] : '';
     $mac = isset($dbent[3]) ? $dbent[3] : '';
     $sid = isset($dbent[5]) ? $dbent[5] : '';
-    $start = isset($dbent[0]) ? (int)$dbent[0] : 0;
-    $duration = ($start > 0) ? max(0, (int)$stop_time - $start) : 0;
-
-    $vol = function_exists('getVolume') ? getVolume($ip) : array();
-    $bytesIn  = isset($vol['input_bytes'])  ? (int)$vol['input_bytes']  : 0;
-    $bytesOut = isset($vol['output_bytes']) ? (int)$vol['output_bytes'] : 0;
 
     if ($reason !== null && trim((string)$reason) !== '') {
         $label = trim((string)$reason);
@@ -1823,7 +1818,7 @@ function cp_log_account_logout($dbent, $term_cause, $stop_time, $reason = null) 
     $tag = function_exists('cp_account_history_tag') ? cp_account_history_tag($username) : '';
     $desc = "Logged out ({$label})" . $tag;
     cp_account_history_record_event('logout', $username, (string)$ip, (string)$mac, (string)$sid,
-        $duration, $bytesIn, $bytesOut, $desc);
+        0, 0, 0, $desc);
 }
 
 function cp_wireless_auth($user, $mac, $ip, $status, $message = null): bool {

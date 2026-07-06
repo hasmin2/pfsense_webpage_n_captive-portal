@@ -381,3 +381,75 @@ function cp_account_history_fetch($username, $from_dt, $to_dt, $limit = 1000, $t
 	}
 	return $rows;
 }
+
+/**
+ * #54 Usage 탭 데이터 소스 = radius.radacct (표준 FreeRADIUS SQL accounting 테이블,
+ * 사용자 지시로 별도 기록 대신 이 테이블을 직접 조회). radacct_changehistory 와 같은
+ * `radius` DB 라 cp_gmt_history_exec_sql() 연결을 그대로 재사용.
+ *
+ * "완료된 세션만"(#54 확정) = acctstoptime IS NOT NULL(로그아웃/Stop 미수신 세션은 제외).
+ * 기간 필터는 acctstarttime 기준(사용자 지시), 표시 시각은 acctstoptime(세션 종료 시각).
+ * username 은 대소문자 무시 매칭(#6/#17 과 동일 관례 — NAS 가 보고한 대소문자가 계정 표기와
+ * 다를 수 있음).
+ *
+ * 응답 필드명은 cp_account_history_fetch() 의 login/logout row 형식과 동일하게 맞춰
+ * (client_ip/client_mac/session_duration/input_octets/output_octets) 모달 JS(Usage 탭 렌더)를
+ * 무수정으로 재사용한다.
+ *
+ * @return array|false [['id','timestamp','change_type','change_description','client_ip',
+ *                       'client_mac','session_id','session_duration','input_octets',
+ *                       'output_octets'], ...] — 실패 시 false (radacct 미존재/SQL accounting
+ *                       비활성 등도 여기 포함, throw 없이 graceful degrade)
+ */
+function cp_account_history_fetch_usage($username, $from_dt, $to_dt, $limit = 1000) {
+	if (!function_exists('cp_gmt_history_exec_sql') || !function_exists('cp_gmt_history_sql_str')) {
+		return false;
+	}
+	$username = trim((string)$username);
+	if ($username === '' || !preg_match('/^[A-Za-z0-9._-]+$/', $username)) {
+		return false;
+	}
+	$re = '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/';
+	if (!preg_match($re, (string)$from_dt) || !preg_match($re, (string)$to_dt)) {
+		return false;
+	}
+	$limit = (int)$limit;
+	if ($limit < 1) { $limit = 1; }
+	if ($limit > 5000) { $limit = 5000; }
+
+	$sql = 'SELECT `radacctid`,`acctstoptime`,`acctsessiontime`,`acctinputoctets`,`acctoutputoctets`,'
+		. '`framedipaddress`,`callingstationid` FROM `radacct`'
+		. " WHERE LOWER(`username`) = '" . cp_gmt_history_sql_str(strtolower($username)) . "'"
+		. ' AND `acctstoptime` IS NOT NULL'
+		. " AND `acctstarttime` >= '" . cp_gmt_history_sql_str($from_dt) . "'"
+		. " AND `acctstarttime` <= '" . cp_gmt_history_sql_str($to_dt) . "'"
+		. " ORDER BY `acctstarttime` DESC LIMIT {$limit};\n";
+
+	$out = array();
+	// -N(헤더 생략) -B(탭 구분 배치 출력)
+	$ret = cp_gmt_history_exec_sql($sql, '-N -B', $out);
+	if ($ret !== 0) {
+		if (function_exists('log_error')) {
+			log_error('ACCT HISTORY: usage fetch (radacct) failed (' . $username . '): ' . implode(' | ', $out));
+		}
+		return false;
+	}
+	$rows = array();
+	foreach ($out as $line) {
+		$parts = explode("\t", $line, 7);
+		if (count($parts) < 7) { continue; }   // 빈/불완전 행 방어
+		$rows[] = array(
+			'id'                 => (int)$parts[0],
+			'timestamp'          => $parts[1],
+			'change_type'        => 'logout',
+			'change_description' => '',
+			'client_ip'          => ($parts[5] === 'NULL') ? '' : $parts[5],
+			'client_mac'         => ($parts[6] === 'NULL') ? '' : $parts[6],
+			'session_id'         => '',
+			'session_duration'   => (int)$parts[2],
+			'input_octets'       => (int)$parts[3],
+			'output_octets'      => (int)$parts[4],
+		);
+	}
+	return $rows;
+}
