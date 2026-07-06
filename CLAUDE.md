@@ -1750,6 +1750,24 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   버전 섞이면 로그인/로그아웃 기록만 조용히 skip) / **커밋만으로는 배포 안 됨 — 반드시 `git push
   origin develop` 까지 해야 Jenkins 등 배포 파이프라인이 원격 develop 을 가져감**(이번 세션에서
   push 누락으로 실제 재현됨, [[feedback_push_required_for_deploy]]).
+- **#54 Usage 탭 수동 검증용 SQL (`cp_account_history_fetch_usage()` 와 동일 쿼리, 계정명만 교체)**:
+  ```sql
+  SELECT radacctid, acctstoptime, acctsessiontime, acctinputoctets, acctoutputoctets,
+         framedipaddress, callingstationid
+  FROM radacct
+  WHERE LOWER(username) = 'landlineuser00001'
+    AND acctstoptime IS NOT NULL
+    AND acctstarttime >= '2026-06-06 00:00:00'
+    AND acctstarttime <= '2026-07-06 23:59:59'
+  ORDER BY acctstarttime DESC
+  LIMIT 1000;
+  ```
+  결과가 비면 그 계정의 완료 세션이 그 기간에 없거나(정상일 수 있음), 해당 박스에서 FreeRADIUS
+  SQL accounting 자체가 꺼져 있어 `radacct` 가 애초에 안 쌓이는 경우 — `SELECT COUNT(*) FROM
+  radacct;` 로 테이블에 아무 데이터가 있는지부터 확인. 컬럼 매핑: `acctstoptime`→timestamp(표시
+  시각) · `acctsessiontime`→Duration(초) · `acctinputoctets`/`acctoutputoctets`→Data In/Out ·
+  `framedipaddress`/`callingstationid`→IP/MAC. 기간 필터는 `acctstarttime` 기준(표시는
+  `acctstoptime`)이라 세션 시작이 기간 밖이면 종료가 기간 안이어도 안 잡힐 수 있음(의도된 동작).
 - [x] **#51 커밋 완료(develop `a848caa`+`725e53c`)**: FBB 신호 표시 이름매핑 분리 + ACU state -1 →
   Comm. Error + FBB "6"→EMEA(24.9E) 매핑. 패치노트 기록 완료(`2026-07-03 Update`,
   **Beta 1.1.53-Beta · Stable: 1.1.4-Stable**). (main/prod 미반영)
