@@ -1635,8 +1635,88 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **범위**: crew 전용(prepaid_account.php 는 customer 브랜치·SET RANDOM PW 자체가 없어 무관). `crew_account.php` 단일 파일.
 - **검증**: php -l 통과.
 
+### 54. Account History 모달 — Login/Logout + Session Usage 탭 추가 (Change | Login | Usage) (develop 미커밋)
+- **요구**: crew_account.php per-user History 모달(#50, `radacct_changehistory` 단일 조회)에
+  ① **로그인/로그아웃 이력**, ② **세션별 데이터 사용량**을 추가로 표시. "같은 테이블에 같이
+  기록해도 된다"는 사용자 지시에 따라 **`radacct_changehistory` 단일 테이블**을 그대로 재사용
+  (change_type 신규 값 `login`/`logout`) — 별도 테이블 신설 없음. 최종 모달은 **Change / Login /
+  Usage 3탭**, 셋 다 **동일한 기간 선택 UI(30d/7d/1d/All/Custom)** 공유(탭 전환 시 기간 유지,
+  기간 변경 시 탭 유지). Usage 탭 범위는 사용자 확인 결과 **완료(로그아웃 완료)된 세션만**
+  (진행 중 세션의 실시간 사용량은 미포함 — 별도 기능 영역).
+- **스키마 확장(`cp_account_history.inc` `cp_account_history_create_table_sql()`)**: 기존 5컬럼에
+  6개 추가(전부 기본값 있어 기존 change_type 이벤트와 하위호환) — `client_ip` VARCHAR(45) /
+  `client_mac` VARCHAR(20) / `session_id` VARCHAR(64) / `session_duration` INT(초, logout 전용) /
+  `input_octets` BIGINT(logout 전용) / `output_octets` BIGINT(logout 전용) + `idx_session` 인덱스.
+  **아직 어떤 선박에도 이 테이블이 배포된 적이 없어(#49/#50 미검증 상태) 마이그레이션 없이 CREATE
+  TABLE 단계에서 바로 최종 스키마로 생성**(#48 GMT 이력 테이블과 동일 패턴).
+- **기록 함수(`cp_account_history.inc`)**: 신규 `cp_account_history_record_event($change_type,
+  $username, $ip, $mac, $sessionid, $duration, $bytesIn, $bytesOut, $description)` — 단일 이벤트
+  실시간 INSERT(배치 아님). 기존 배치용 `cp_account_history_record()`(change_type 전용)는 무수정.
+  `cp_account_history_fetch()`에 `$tab` 파라미터 추가(`change`=login/logout 제외 기본 / `login`=
+  login+logout / `usage`=logout 만) — SELECT 컬럼도 신규 6개 포함.
+- **캡티브포털 훅(`captiveportal.inc`, 순수 추가·기존 로직 무변경)**:
+  - 신규 `cp_term_cause_label($code)` — RADIUS term_cause 숫자→사람이 읽는 사유
+    (1=LOGOUT/4=IDLE TIMEOUT/5=SESSION TIMEOUT/6=ADMIN RESET/10=QUOTA EXHAUSTED/13=CONCURRENT
+    LOGIN/17=REAUTH FAILED). 코드베이스가 이미 몇몇 호출부(`captiveportal_disconnect_client($sid,
+    "Usage-Exceed")`/`"No-Gateway"`)에서 **문자열을 term_cause 슬롯에 그대로 넘기는 기존 관행**이
+    있어, 숫자가 아니면 그 문자열을 그대로 사유로 채택(별도 수정 없이 정확한 사유 확보).
+  - 신규 `cp_log_account_login($username, $ip, $mac, $sessionid, $authmethod)` /
+    `cp_log_account_logout($dbent, $term_cause, $stop_time, $reason=null)` — 둘 다 게스트
+    passthrough(`unauthenticated`)는 계정이 없어 스킵, lazy-require+`function_exists` 가드로
+    버전섞임 안전. logout 은 `getVolume($dbent[2])`로 세션 바이트 캡처.
+  - 호출 지점 4곳: ① `portal_allow()`의 **"진짜 신규 세션 생성" 지점**(동시로그인 재사용 경로는
+    `if (!isset($sessionid))` 밖이라 자동 제외)에 로그인 기록. ② `captiveportal_disconnect()` —
+    **모든 개별 세션 종료의 단일 관문**(명시적 로그아웃/idle·session timeout/quota exceeded/
+    no-gateway/동시로그인 킥/데이터리셋 등 전부 경유)이라 여기 한 곳으로 대부분 커버, ipfw auth
+    테이블 XDEL **이전**에 훅을 넣어 `getVolume()`이 유효한 시점에 바이트 캡처. ③
+    `captiveportal_radius_stop_all()`(대량 `captiveportal_disconnect_all()` 전용 — 개별
+    disconnect()를 안 거치는 별도 경로) foreach 안에도 동일 훅 추가해 대량 로그아웃도 누락 없이
+    기록. ④ `captiveportal_prune_old()`의 quota-exceeded 호출부만 이미 만들어진 상세 문자열
+    `$logout_cause`(예: "QUOTA EXHAUSTED: used=120MB max=100MB")를 `$reason` 인자로 전달해 더
+    정확한 사유 보존 — 이 한 곳 외 다른 `captiveportal_disconnect()` 호출부는 무수정(새 인자는
+    선택적 5번째 파라미터라 순수 추가).
+  - **의도적으로 손대지 않음**: `captiveportal_disconnect_client()`의 죽은 파라미터
+    `$logoutReason`은 그대로 방치 — 살리려면 term_cause 슬롯 문자열 관행과 우선순위 충돌 위험이
+    있어 리스크 대비 이득이 작음. 결과적으로 `captiveportal_reset_user_usage()`(#14, 데이터리셋)
+    로그아웃은 "DATA RESET" 대신 term_cause=6 매핑값인 **"ADMIN RESET"**으로 다소 뭉뚱그려 표시됨
+    (기능상 문제 없음, 후속 개선 가능).
+- **엔드포인트(`crew_account_history_data.php`)**: POST `tab`(change/login/usage, 기본 change)
+  파라미터 추가. 응답에 신규 6컬럼 항상 포함(탭 무관, 프런트가 탭별로 필요한 컬럼만 렌더).
+- **모달 UI(`manage_crew_wifi_account.inc` `render_account_history_modal()`)**: 탭바
+  (Change/Login/Usage) 추가, range pill 은 공유(탭 전환 시 `lastRangeParams` 재사용, range 변경
+  시 `curTab` 유지). 탭별 컬럼: Change=기존 그대로(Time/Type chip/Description) · Login=Time/Event
+  chip(LOGIN 녹색·LOGOUT 파랑)/IP/MAC/Description · Usage=Time/Duration/Data In/Data Out/Total/IP
+  (위젯 내 self-contained `formatBytes()`/`formatDuration()`, 외부 의존 없음). Export CSV·빈 결과
+  메시지·하단 안내문 전부 탭별 분기. 기존 10개 클라이언트 페이지네이션 패턴 그대로 재사용.
+  모달 너비 860px→980px(추가 컬럼 수용).
+- **검증**: php -l 4파일 전부 통과. DB 레이어(`cp_account_history_record_event`/
+  `cp_account_history_fetch` tab 필터/DDL) PHP 스텁 하네스 28/28. captiveportal.inc 신규 헬퍼
+  (term_cause 매핑·reason 우선순위 3단계·게스트 스킵 대소문자 무시) 스텁 하네스 23/23. 모달 JS
+  (탭 전환 시 기간 유지·기간 전환 시 탭 유지·탭별 컬럼 렌더·CSV 헤더 3종·빈결과/실패 메시지)
+  DOM/XHR 스텁 하네스 23/23.
+- **배포 정합성**: `cp_account_history.inc` + `captiveportal.inc` + `crew_account_history_data.php`
+  + `manage_crew_wifi_account.inc` **4파일 일괄**(가드 있어 fatal 없음 — 구버전 섞여도 로그인/
+  로그아웃 기록만 skip, 기존 Change 탭은 영향 없음).
+- **알려진 범위 제한(수용)**: Usage 탭은 완료된 세션만(사용자 확인, 진행 중 세션 실시간 사용량
+  미포함) / 데이터리셋 로그아웃 사유가 "ADMIN RESET"으로 다소 뭉뚱그려짐(위 참고) / crew_account.php
+  전용(#50 과 동일하게 prepaid_account.php 는 History 버튼 자체가 없어 미포함).
+
 ## 다음 작업 대기 중
 
+- [ ] **#54 커밋 대기(미커밋)**: Account History 모달 Change/Login/Usage 3탭 — `radacct_changehistory`
+  스키마 확장(client_ip/client_mac/session_id/session_duration/input_octets/output_octets) +
+  로그인/로그아웃 이력 기록(portal_allow/captiveportal_disconnect/captiveportal_radius_stop_all 훅) +
+  세션 사용량 표시 + `cp_account_history_fetch()` tab 필터 + 모달 3탭 UI. develop 커밋 + 패치노트
+  기록 필요(버전명은 사용자 확인 후 기재).
+- [ ] #54 검증(선상): 실제 로그인 → Login 탭에 즉시 행 생성(IP/MAC/사유) / 로그아웃(명시적·idle
+  timeout·session timeout·quota exceeded·동시로그인 킥) → Login 탭에 LOGOUT 행 + Usage 탭에 완료된
+  세션(Duration/Data In/Data Out/Total) 표시 / 탭 전환 시 기간 유지·기간 전환 시 탭 유지 / Export
+  CSV 3종(Change/Login/Usage 헤더 상이) / 게스트(passthrough `unauthenticated`) 로그인/로그아웃은
+  기록 안 됨(계정 없음, 의도) / 대량 "Disconnect All" 이후 로그아웃 행도 생성되는지(관리자 저빈도
+  작업) / `radacct_changehistory` 를 신규 컬럼 포함 스키마로 새로 생성(아직 미배포 확인 — 만약 구
+  스키마로 이미 생성된 박스가 있으면 수동 `ALTER TABLE` 1회 필요) / **배포 정합성: cp_account_history.inc
+  + captiveportal.inc + crew_account_history_data.php + manage_crew_wifi_account.inc 4파일 일괄**
+  (버전 섞이면 신규 컬럼/함수 불일치로 기록만 조용히 skip — fatal 은 없음).
 - [x] **#51 커밋 완료(develop `a848caa`+`725e53c`)**: FBB 신호 표시 이름매핑 분리 + ACU state -1 →
   Comm. Error + FBB "6"→EMEA(24.9E) 매핑. 패치노트 기록 완료(`2026-07-03 Update`,
   **Beta 1.1.53-Beta · Stable: 1.1.4-Stable**). (main/prod 미반영)

@@ -10,9 +10,12 @@
  * 파라미터(POST):
  *   username=<계정명>  (필수)
  *   mode=days + days=1|7|30  또는  mode=custom + from=YYYY-MM-DD + to=YYYY-MM-DD
+ *   tab=change(기본, login/logout 제외) | login(login+logout) | usage(logout 만) — #54
  *   기본 = 최근 30일 (계정 변경은 GMT 변경보다 드물어 기본 창을 넓게).
  *
- * 응답: {ok, username, rows:[{id,timestamp,change_type,change_description}], from, to}
+ * 응답: {ok, username, rows:[{id,timestamp,change_type,change_description,client_ip,client_mac,
+ *   session_id,session_duration,input_octets,output_octets}], from, to}
+ *   탭에 상관없이 항상 전체 컬럼 반환 — 프런트가 탭별로 필요한 컬럼만 렌더링(#54).
  *   ok=false = 라이브러리 미배포(버전섞임)/DB 불통/입력 오류 — fatal 없음.
  */
 
@@ -60,7 +63,12 @@ if ($mode === 'custom') {
     $to   = gmdate('Y-m-d H:i:s');
 }
 
-$rows = cp_account_history_fetch($username, $from, $to);
+$tab = isset($_POST['tab']) ? (string)$_POST['tab'] : 'change';
+if (!in_array($tab, array('change', 'login', 'usage'), true)) {
+    $tab = 'change';
+}
+
+$rows = cp_account_history_fetch($username, $from, $to, 1000, $tab);
 if ($rows !== false) {
     $resp['ok']   = true;
     $resp['rows'] = $rows;

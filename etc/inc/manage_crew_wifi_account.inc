@@ -625,9 +625,10 @@ function draw_wifi_contents($isPrepaid) {
 }
 
 /**
- * #50: 계정 변경 이력 모달 (crew_account.php per-user "History" 버튼용).
- *   전역 JS 함수 openAcctHistory(username, displayname) 를 정의 — 버튼 onclick 에서 호출.
- *   crew_account_history_data.php(radacct_changehistory 조회) 를 AJAX 로 읽어 표시.
+ * #50/#54: 계정 이력 모달 (crew_account.php per-user "History" 버튼용).
+ *   Change / Login / Usage 3개 탭 — 모두 radacct_changehistory 단일 테이블을 tab 파라미터로
+ *   필터해 공유(#54). 전역 JS 함수 openAcctHistory(username, displayname) 를 정의 — 버튼 onclick
+ *   에서 호출. crew_account_history_data.php 를 AJAX 로 읽어 표시.
  *   스타일은 GMT 변경 이력 모달(#48)과 동일 계열(다크 카드, 테마 무관 고정색), accthist-* 격리.
  *   crew_account.php </body> 앞에서 echo. (미배포 시 버튼만 있고 데이터는 unavailable — fatal 없음.)
  */
@@ -636,12 +637,16 @@ function render_account_history_modal() {
 <style>
 #accthist-ov{position:fixed;inset:0;background:rgba(8,12,20,.74);z-index:10002;display:none;align-items:center;justify-content:center;}
 #accthist-ov.on{display:flex;}
-.accthist-modal{width:min(860px,96vw);max-height:88vh;overflow:auto;background:#0d1726;border:1px solid #24405f;border-radius:14px;padding:18px 20px;box-shadow:0 18px 60px rgba(0,0,0,.55);}
+.accthist-modal{width:min(980px,96vw);max-height:88vh;overflow:auto;background:#0d1726;border:1px solid #24405f;border-radius:14px;padding:18px 20px;box-shadow:0 18px 60px rgba(0,0,0,.55);}
 .accthist-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
 .accthist-head h3{margin:0;font-size:16px;font-weight:800;color:#f2f7ff;}
 .accthist-head h3 span{color:#7fd4ff;}
 .accthist-x{background:none;border:0;color:#8ca6c6;font-size:22px;line-height:1;cursor:pointer;padding:0 2px;}
 .accthist-x:hover{color:#fff;}
+.accthist-tabs{display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid #1a2c49;padding-bottom:10px;flex-wrap:wrap;}
+.accthist-tabs .ah-tab{height:30px;padding:0 16px;border-radius:7px;font-size:12.5px;font-weight:800;background:transparent;border:1px solid transparent;color:#7e95b4;cursor:pointer;}
+.accthist-tabs .ah-tab.on{background:#152238;border-color:#2c4363;color:#e7eefc;}
+.accthist-tabs .ah-tab:hover{color:#cdd9ea;}
 .accthist-range{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
 .accthist-range .ah-btn{height:28px;padding:0 12px;border-radius:7px;font-size:12px;font-weight:700;background:#152238;border:1px solid #2c4363;color:#b9cbe4;cursor:pointer;}
 .accthist-range .ah-btn.on{background:#1976d2;border-color:#1976d2;color:#fff;}
@@ -656,6 +661,7 @@ function render_account_history_modal() {
 .accthist-tbl td{color:#e7eefc;padding:6px 8px;border-bottom:1px solid #1a2c49;vertical-align:top;}
 .accthist-tbl td.ah-time{white-space:nowrap;color:#9fb6d4;}
 .accthist-tbl td.ah-desc{color:#dbe6f5;}
+.accthist-tbl td.ah-num{white-space:nowrap;color:#dbe6f5;}
 .ah-chip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.3px;border-radius:6px;padding:2px 7px;white-space:nowrap;}
 .accthist-msg{color:#cdd9ea;text-align:center;padding:32px 12px;font-size:13px;line-height:1.6;margin:0;}
 .accthist-note{margin:10px 0 0;font-size:11px;color:#7e95b4;}
@@ -666,11 +672,16 @@ function render_account_history_modal() {
 .accthist-open-btn{height:24px;padding:0 10px;border-radius:7px;font-size:11px;font-weight:700;background:#eef3f9;border:1px solid #b9c6d6;color:#37506e;cursor:pointer;}
 .accthist-open-btn:hover{background:#e0e8f2;}
 </style>
-<div id="accthist-ov" role="dialog" aria-modal="true" aria-label="Account change history">
+<div id="accthist-ov" role="dialog" aria-modal="true" aria-label="Account history">
     <div class="accthist-modal">
         <div class="accthist-head">
-            <h3>Account change history &mdash; <span id="accthist-user"></span></h3>
+            <h3>Account history &mdash; <span id="accthist-user"></span></h3>
             <button type="button" class="accthist-x" id="accthist-x" aria-label="Close">&times;</button>
+        </div>
+        <div class="accthist-tabs" id="accthist-tabs">
+            <button type="button" class="ah-tab on" data-tab="change">Change</button>
+            <button type="button" class="ah-tab" data-tab="login">Login</button>
+            <button type="button" class="ah-tab" data-tab="usage">Usage</button>
         </div>
         <div class="accthist-range" id="accthist-range">
             <button type="button" class="ah-btn on" data-days="30">30d</button>
@@ -685,7 +696,7 @@ function render_account_history_modal() {
             <button type="button" class="accthist-apply" id="accthist-apply">Apply</button>
         </div>
         <div id="accthist-body"></div>
-        <p class="accthist-note">&#9432; Account modification log (times in UTC) &mdash; password / usage resets, create / delete / modify, top-up, description &amp; schedule changes.</p>
+        <p class="accthist-note" id="accthist-note">&#9432; Account modification log (times in UTC) &mdash; password / usage resets, create / delete / modify, top-up, description &amp; schedule changes.</p>
     </div>
 </div>
 <script>
@@ -697,10 +708,14 @@ function render_account_history_modal() {
     var fromI  = document.getElementById("accthist-from");
     var toI    = document.getElementById("accthist-to");
     var userEl = document.getElementById("accthist-user");
+    var noteEl = document.getElementById("accthist-note");
     var pills  = document.getElementById("accthist-range").querySelectorAll(".ah-btn[data-days], .ah-btn[data-custom]");
+    var tabBtns = document.getElementById("accthist-tabs").querySelectorAll(".ah-tab");
     var expB   = document.getElementById("accthist-export");
     var curUser = "";
+    var curTab  = "change";
     var lastRows = [];
+    var lastRangeParams = { mode:"days", days:"30" };
     var PAGE_SIZE = 10;
     var curPage = 1;
 
@@ -711,11 +726,33 @@ function render_account_history_modal() {
         user_modify:      ["#1769aa","#e7f1fb"], description_change:["#5b6573","#eef1f5"],
         schedule_change:  ["#5b6573","#eef1f5"]
     };
+    // #54: Login 탭 이벤트 배지 (login=녹색, logout=파랑)
+    var EVENT_CHIP = { login: ["#0f7b46","#e6f7ee"], logout: ["#1769aa","#e7f1fb"] };
+
     function esc(s){
         return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     }
     function prettyType(t){
         return String(t==null?"":t).replace(/_/g," ").replace(/\b\w/g,function(c){return c.toUpperCase();});
+    }
+    // #54: 사람이 읽기 좋은 바이트/기간 포맷 (외부 의존 없음, 위젯 내 self-contained)
+    function formatBytes(n){
+        n = Number(n) || 0;
+        var units = ["B","KB","MB","GB","TB"];
+        var i = 0;
+        while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+        return n.toFixed(i === 0 ? 0 : 1) + " " + units[i];
+    }
+    function formatDuration(s){
+        s = Math.max(0, Math.floor(Number(s) || 0));
+        var h = Math.floor(s / 3600);
+        var m = Math.floor((s % 3600) / 60);
+        var sec = s % 60;
+        var parts = [];
+        if (h > 0) { parts.push(h + "h"); }
+        if (h > 0 || m > 0) { parts.push(m + "m"); }
+        parts.push(sec + "s");
+        return parts.join(" ");
     }
     function csrf(){
         // pfSense csrf-magic 전역 우선, 없으면 페이지 폼의 hidden 사용
@@ -723,15 +760,64 @@ function render_account_history_modal() {
         var el = document.querySelector("input[name=__csrf_magic]");
         return el ? { name: "__csrf_magic", val: el.value } : null;
     }
+    function emptyMsg(){
+        if (curTab === "login") { return "No login/logout events recorded for this account in this period."; }
+        if (curTab === "usage") { return "No completed sessions recorded for this account in this period."; }
+        return "No changes recorded for this account in this period.";
+    }
+    function noteText(){
+        if (curTab === "login") { return "&#9432; Login / logout history (times in UTC) &mdash; captive portal session start and end events."; }
+        if (curTab === "usage") { return "&#9432; Per-session data usage (times in UTC) &mdash; completed sessions only; duration &amp; bytes captured at logout."; }
+        return "&#9432; Account modification log (times in UTC) &mdash; password / usage resets, create / delete / modify, top-up, description &amp; schedule changes.";
+    }
     function render(rows){
         lastRows = rows || [];
         if (expB) { expB.disabled = (lastRows.length === 0); }
         if (!lastRows.length) {
-            body.innerHTML = "<p class=\"accthist-msg\">No changes recorded for this account in this period.</p>";
+            body.innerHTML = "<p class=\"accthist-msg\">"+emptyMsg()+"</p>";
             return;
         }
         curPage = 1;      // 새 결과는 항상 1페이지부터
         renderPage();
+    }
+    // #54: 탭별 컬럼 세트로 표 본문 구성
+    function buildRows(slice){
+        var i, r, h = "";
+        if (curTab === "login") {
+            for (i=0;i<slice.length;i++){
+                r = slice[i];
+                var ec = EVENT_CHIP[r.change_type] || ["#5b6573","#eef1f5"];
+                h += "<tr><td class=\"ah-time\">"+esc(r.timestamp)+"</td>"
+                   + "<td><span class=\"ah-chip\" style=\"color:"+ec[0]+";background:"+ec[1]+";\">"+esc(prettyType(r.change_type))+"</span></td>"
+                   + "<td>"+esc(r.client_ip)+"</td><td>"+esc(r.client_mac)+"</td>"
+                   + "<td class=\"ah-desc\">"+esc(r.change_description)+"</td></tr>";
+            }
+        } else if (curTab === "usage") {
+            for (i=0;i<slice.length;i++){
+                r = slice[i];
+                var tot = (Number(r.input_octets)||0) + (Number(r.output_octets)||0);
+                h += "<tr><td class=\"ah-time\">"+esc(r.timestamp)+"</td>"
+                   + "<td class=\"ah-num\">"+esc(formatDuration(r.session_duration))+"</td>"
+                   + "<td class=\"ah-num\">"+esc(formatBytes(r.input_octets))+"</td>"
+                   + "<td class=\"ah-num\">"+esc(formatBytes(r.output_octets))+"</td>"
+                   + "<td class=\"ah-num\">"+esc(formatBytes(tot))+"</td>"
+                   + "<td>"+esc(r.client_ip)+"</td></tr>";
+            }
+        } else {
+            for (i=0;i<slice.length;i++){
+                r = slice[i];
+                var c = CHIP[r.change_type] || ["#5b6573","#eef1f5"];
+                h += "<tr><td class=\"ah-time\">"+esc(r.timestamp)+"</td>"
+                   + "<td><span class=\"ah-chip\" style=\"color:"+c[0]+";background:"+c[1]+";\">"+esc(prettyType(r.change_type))+"</span></td>"
+                   + "<td class=\"ah-desc\">"+esc(r.change_description)+"</td></tr>";
+            }
+        }
+        return h;
+    }
+    function tableHead(){
+        if (curTab === "login") { return "<tr><th>Time (UTC)</th><th>Event</th><th>IP</th><th>MAC</th><th>Description</th></tr>"; }
+        if (curTab === "usage") { return "<tr><th>Time (UTC)</th><th>Duration</th><th>Data In</th><th>Data Out</th><th>Total</th><th>IP</th></tr>"; }
+        return "<tr><th>Time (UTC)</th><th>Type</th><th>Description</th></tr>";
     }
     // 10개 단위 클라이언트 페이지네이션 (lastRows = 전체 결과)
     function renderPage(){
@@ -742,15 +828,7 @@ function render_account_history_modal() {
         var start = (curPage - 1) * PAGE_SIZE;
         var slice = lastRows.slice(start, start + PAGE_SIZE);
 
-        var h = "<table class=\"accthist-tbl\"><thead><tr><th>Time (UTC)</th><th>Type</th><th>Description</th></tr></thead><tbody>";
-        for (var i=0;i<slice.length;i++){
-            var r = slice[i];
-            var c = CHIP[r.change_type] || ["#5b6573","#eef1f5"];
-            h += "<tr><td class=\"ah-time\">"+esc(r.timestamp)+"</td>"
-               + "<td><span class=\"ah-chip\" style=\"color:"+c[0]+";background:"+c[1]+";\">"+esc(prettyType(r.change_type))+"</span></td>"
-               + "<td class=\"ah-desc\">"+esc(r.change_description)+"</td></tr>";
-        }
-        h += "</tbody></table>";
+        var h = "<table class=\"accthist-tbl\"><thead>"+tableHead()+"</thead><tbody>"+buildRows(slice)+"</tbody></table>";
 
         if (pages > 1) {
             h += "<div class=\"accthist-pager\">"
@@ -766,10 +844,13 @@ function render_account_history_modal() {
         if (pv) { pv.addEventListener("click", function(){ if (curPage > 1)     { curPage--; renderPage(); } }); }
         if (nx) { nx.addEventListener("click", function(){ if (curPage < pages) { curPage++; renderPage(); } }); }
     }
-    function load(params){
+    function load(rangeParams){
+        lastRangeParams = rangeParams;   // 탭 전환 시 재사용
         body.innerHTML = "<p class=\"accthist-msg\">Loading&hellip;</p>";
         lastRows = []; if (expB) { expB.disabled = true; }
-        params.username = curUser;
+        var params = { mode: rangeParams.mode, tab: curTab, username: curUser };
+        if (rangeParams.mode === "custom") { params.from = rangeParams.from; params.to = rangeParams.to; }
+        else { params.days = rangeParams.days; }
         var tok = csrf();
         if (tok) { params[tok.name] = tok.val; }
         var q = [];
@@ -804,21 +885,51 @@ function render_account_history_modal() {
             load({ mode:"custom", from:fromI.value, to:toI.value });
         });
     }
+    // #54: 탭 전환 — 현재 선택된 기간(lastRangeParams)을 유지한 채 재조회
+    function setTabOn(b){ for (var i=0;i<tabBtns.length;i++){ tabBtns[i].classList.remove("on"); } b.classList.add("on"); }
+    for (var i=0;i<tabBtns.length;i++){
+        (function(b){
+            b.addEventListener("click", function(){
+                var t = b.getAttribute("data-tab");
+                if (t === curTab) { return; }
+                curTab = t;
+                setTabOn(b);
+                if (noteEl) { noteEl.innerHTML = noteText(); }
+                load(lastRangeParams);
+            });
+        })(tabBtns[i]);
+    }
     function csvField(v){ v=String(v==null?"":v); return (/[",\r\n]/.test(v)) ? "\""+v.replace(/"/g,"\"\"")+"\"" : v; }
     if (expB) {
         expB.addEventListener("click", function(){
             if (!lastRows.length) { return; }
-            var lines = ["id,timestamp_utc,username,change_type,change_description"];
-            for (var i=0;i<lastRows.length;i++){
-                var r = lastRows[i];
-                lines.push([r.id,r.timestamp,curUser,r.change_type,r.change_description].map(csvField).join(","));
+            var i, r, lines;
+            if (curTab === "login") {
+                lines = ["id,timestamp_utc,username,event,ip,mac,session_id,description"];
+                for (i=0;i<lastRows.length;i++){
+                    r = lastRows[i];
+                    lines.push([r.id,r.timestamp,curUser,r.change_type,r.client_ip,r.client_mac,r.session_id,r.change_description].map(csvField).join(","));
+                }
+            } else if (curTab === "usage") {
+                lines = ["id,timestamp_utc,username,ip,mac,duration_sec,data_in_bytes,data_out_bytes,total_bytes"];
+                for (i=0;i<lastRows.length;i++){
+                    r = lastRows[i];
+                    var tot = (Number(r.input_octets)||0) + (Number(r.output_octets)||0);
+                    lines.push([r.id,r.timestamp,curUser,r.client_ip,r.client_mac,r.session_duration,r.input_octets,r.output_octets,tot].map(csvField).join(","));
+                }
+            } else {
+                lines = ["id,timestamp_utc,username,change_type,change_description"];
+                for (i=0;i<lastRows.length;i++){
+                    r = lastRows[i];
+                    lines.push([r.id,r.timestamp,curUser,r.change_type,r.change_description].map(csvField).join(","));
+                }
             }
             var csv = "\uFEFF"+lines.join("\r\n")+"\r\n";
             var blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
             var a = document.createElement("a");
             var ts = new Date().toISOString().replace(/[-:]/g,"").replace("T","_").slice(0,15);
             a.href = URL.createObjectURL(blob);
-            a.download = "account_history_"+curUser.replace(/[^A-Za-z0-9._-]/g,"_")+"_"+ts+".csv";
+            a.download = "account_"+curTab+"_"+curUser.replace(/[^A-Za-z0-9._-]/g,"_")+"_"+ts+".csv";
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
             setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
         });
@@ -836,6 +947,9 @@ function render_account_history_modal() {
         if (fromI && !fromI.value) { fromI.value = today; }
         if (toI && !toI.value)     { toI.value = today; }
         setOn(pills[0]);                 // 기본 30d
+        curTab = "change";
+        setTabOn(tabBtns[0]);             // 기본 Change 탭
+        if (noteEl) { noteEl.innerHTML = noteText(); }
         custom.style.display = "none";
         ov.classList.add("on");
         load({ mode:"days", days:"30" });

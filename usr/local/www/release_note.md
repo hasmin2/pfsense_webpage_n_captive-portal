@@ -2,6 +2,18 @@ BlueWave Link — Release Notes
 
 Developed by SynerSAT Korea
 
+2026-07-06 Update
+
+- NEW: Account history now has Login and Usage tabs. The per-account "History"
+  view on the Crew Accounts page has three tabs — Change, Login and Usage — all
+  using the same date-range picker (1 / 7 / 30 days, all time, or a custom
+  range). Login lists every login and logout for that account, with the IP,
+  MAC address and the reason for each logout (idle timeout, session timeout,
+  quota exceeded, admin action, etc). Usage lists the data used in each
+  completed session — duration, data in, data out and total — once the
+  session has ended. Both tabs support the same paging and CSV export as the
+  Change tab.
+
 2026-07-03 Update
 Beta 1.1.53-Beta · Stable: 1.1.4-Stable
 

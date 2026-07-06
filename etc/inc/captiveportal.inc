@@ -943,7 +943,8 @@ function captiveportal_prune_old() {
         }
 
         if ($timedout) {
-            captiveportal_disconnect($cpentry, $term_cause, $stop_time);
+            // #54: $logout_cause 를 그대로 이력 사유로 전달(예: "QUOTA EXHAUSTED: used=...MB max=...MB").
+            captiveportal_disconnect($cpentry, $term_cause, $stop_time, false, $logout_cause);
             cp_wireless_auth($cpentry[4], $cpentry[3], $cpentry[2], $logout_cause);
             $unsetindexes[] = $cpentry[5];
         }
@@ -1152,7 +1153,7 @@ function captiveportal_prune_old_automac() {
 }
 
 /* remove a single client according to the DB entry */
-function captiveportal_disconnect($dbent, $term_cause = 1, $stop_time = null, $carp_loop = false) {
+function captiveportal_disconnect($dbent, $term_cause = 1, $stop_time = null, $carp_loop = false, $reason = null) {
     global $g, $config, $cpzone, $cpzoneid;
 
     $stop_time = (empty($stop_time)) ? time() : $stop_time;
@@ -1185,6 +1186,10 @@ function captiveportal_disconnect($dbent, $term_cause = 1, $stop_time = null, $c
             $stop_time, // stop time
             $term_cause); // Acct-Terminate-Cause
     }
+
+    // #54: 로그인/로그아웃 + 세션 사용량 이력 (radacct_changehistory). ipfw auth 테이블이
+    // 아직 살아있는 이 시점(아래 XDEL 이전)에 getVolume() 으로 세션 바이트를 읽는다.
+    cp_log_account_logout($dbent, $term_cause, $stop_time, $reason);
 
     if (is_ipaddr($dbent[2])) {
         /*
@@ -1368,6 +1373,9 @@ function captiveportal_radius_stop_all($term_cause = 6, $logoutReason = "DISCONN
                 $term_cause
             );
         }
+        // #54: 대량 disconnect_all 경로도 개별 disconnect() 와 동일하게 기록(뒤이은
+        // captiveportal_init_rules() 의 테이블 wipe 이전이라 getVolume() 이 아직 유효).
+        cp_log_account_logout($cpentry, $term_cause, $stop_time, $logoutReason);
         captiveportal_logportalauth($cpentry[4], $cpentry[3], $cpentry[2], $logoutReason);
     }
     unset($cpdb);
@@ -1742,6 +1750,82 @@ function captiveportal_logportalauth($user, $mac, $ip, $status, $message = null)
     }
     captiveportal_syslog($message);
 }
+/* #54: term_cause(숫자) → 사람이 읽는 로그아웃 사유. 코드베이스가 이미 몇몇 호출부에서
+ * (Usage-Exceed/No-Gateway 등) 문자열을 term_cause 슬롯에 그대로 넘기는 관행이 있어,
+ * cp_log_account_logout() 은 숫자가 아니면 이 맵을 거치지 않고 그 문자열을 그대로 사유로 쓴다. */
+function cp_term_cause_label($code) {
+    $map = array(
+        1  => 'LOGOUT',
+        4  => 'IDLE TIMEOUT',
+        5  => 'SESSION TIMEOUT',
+        6  => 'ADMIN RESET',
+        10 => 'QUOTA EXHAUSTED',
+        13 => 'CONCURRENT LOGIN',
+        17 => 'REAUTH FAILED',
+    );
+    $code = (int)$code;
+    return isset($map[$code]) ? $map[$code] : ('TERM-' . $code);
+}
+
+/* #54: 로그인 이력 기록 (crew_account.php History 모달 Login 탭, radacct_changehistory 공용테이블).
+ * portal_allow() 의 "진짜 신규 세션 생성" 지점에서만 호출됨 — 동시로그인 재사용 경로는 자동 제외.
+ * 게스트 passthrough('unauthenticated') 는 계정이 없어 기록 대상에서 제외. 버전섞임 안전(lazy require). */
+function cp_log_account_login($username, $clientip, $clientmac, $sessionid, $authmethod) {
+    if ($username === '' || strcasecmp((string)$username, 'unauthenticated') === 0) {
+        return;
+    }
+    if (!function_exists('cp_account_history_record_event') && file_exists('/etc/inc/cp_account_history.inc')) {
+        require_once('/etc/inc/cp_account_history.inc');
+    }
+    if (!function_exists('cp_account_history_record_event')) {
+        return;
+    }
+    $tag = function_exists('cp_account_history_tag') ? cp_account_history_tag($username) : '';
+    $desc = "Logged in via " . ($authmethod !== '' ? $authmethod : 'unknown') . $tag;
+    cp_account_history_record_event('login', $username, (string)$clientip, (string)$clientmac,
+        (string)$sessionid, 0, 0, 0, $desc);
+}
+
+/* #54: 로그아웃 + 세션 사용량 이력 기록. $dbent: [0]=allow_time [1]=ruleno [2]=ip [3]=mac
+ * [4]=username [5]=sessionid (captiveportal DB 행 형식, captiveportal_disconnect()/
+ * captiveportal_radius_stop_all() 공용). getVolume() 은 ipfw 테이블이 아직 살아있는 동안
+ * (auth 테이블 XDEL 이전/init_rules 이전) 호출해야 정확한 세션 바이트를 얻는다.
+ * $reason 을 명시하면 term_cause 매핑보다 우선한다(quota 초과 등 상세 문구 보존용). */
+function cp_log_account_logout($dbent, $term_cause, $stop_time, $reason = null) {
+    $username = isset($dbent[4]) ? $dbent[4] : '';
+    if ($username === '' || strcasecmp((string)$username, 'unauthenticated') === 0) {
+        return;
+    }
+    if (!function_exists('cp_account_history_record_event') && file_exists('/etc/inc/cp_account_history.inc')) {
+        require_once('/etc/inc/cp_account_history.inc');
+    }
+    if (!function_exists('cp_account_history_record_event')) {
+        return;
+    }
+    $ip  = isset($dbent[2]) ? $dbent[2] : '';
+    $mac = isset($dbent[3]) ? $dbent[3] : '';
+    $sid = isset($dbent[5]) ? $dbent[5] : '';
+    $start = isset($dbent[0]) ? (int)$dbent[0] : 0;
+    $duration = ($start > 0) ? max(0, (int)$stop_time - $start) : 0;
+
+    $vol = function_exists('getVolume') ? getVolume($ip) : array();
+    $bytesIn  = isset($vol['input_bytes'])  ? (int)$vol['input_bytes']  : 0;
+    $bytesOut = isset($vol['output_bytes']) ? (int)$vol['output_bytes'] : 0;
+
+    if ($reason !== null && trim((string)$reason) !== '') {
+        $label = trim((string)$reason);
+    } elseif (!is_numeric($term_cause) && trim((string)$term_cause) !== '') {
+        $label = trim((string)$term_cause);
+    } else {
+        $label = cp_term_cause_label($term_cause);
+    }
+
+    $tag = function_exists('cp_account_history_tag') ? cp_account_history_tag($username) : '';
+    $desc = "Logged out ({$label})" . $tag;
+    cp_account_history_record_event('logout', $username, (string)$ip, (string)$mac, (string)$sid,
+        $duration, $bytesIn, $bytesOut, $desc);
+}
+
 function cp_wireless_auth($user, $mac, $ip, $status, $message = null): bool {
     $user   = trim((string)$user);
     $mac    = trim((string)$mac);
@@ -3612,6 +3696,11 @@ function portal_allow($clientip, $clientmac, $username, $password = null, $redir
 
             unlock($cpdblck);
             unset($insertquery, $bpassword);
+
+            // #54: 로그인 이력 (radacct_changehistory). 여기는 "진짜 신규 세션 생성" 지점뿐이라
+            // 동시로그인 재사용(위 $sessionid 이미 세팅된 경로)에서는 자동으로 호출되지 않는다.
+            cp_log_account_login($username, $clientip, $clientmac, $sessionid, $authmethod);
+
             $radacct = isset($config['captiveportal'][$cpzone]['radacct_enable']) ? true : false;
             if ($authmethod === 'radius' && $radacct) {
                 captiveportal_send_server_accounting('start',
