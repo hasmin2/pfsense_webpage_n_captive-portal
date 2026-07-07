@@ -1739,8 +1739,35 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   기존 `formatBytes()` 재사용. DOM 하네스 9종(전체 합산·in/out 분리·session count·단복수 문구·
   탭/range 전환 시 즉시 숨김·빈결과 숨김) 포함 33/33 통과.
 
+### 55. crew_account.php — "Export Credentials CSV" 버튼 (ID/할당량/비밀번호 CSV) (develop 미커밋)
+- **요구**: crew_account.php 상단에 현재 CREW 의 ID/할당량/비밀번호를 CSV 로 뽑는 버튼 추가.
+- **구현**: 기존 "Export CSV"(`export_wifi_csv()`, ID/Description/Type/Update/Used/Quota/Online)
+  버튼 바로 옆에 **"Export Credentials CSV"** 버튼 신설. 신규 `export_wifi_credentials_csv($isPrepaid)`
+  (`manage_crew_wifi_account.inc`) — `build_wifi_rows()` 재사용해 **ID, Quota(MB), Password 3컬럼만**
+  CSV 로 출력(파일명 `{vessel}_credentials_{시각}.csv`, 기존 export 와 접미사로 구분해 오인 방지).
+  `build_wifi_rows()` 행에 `'Password' => $user['varuserspassword']` 1줄 추가(기존 draw_wifi_contents
+  는 명시적 키만 읽어 화면 테이블엔 영향 없음 확인).
+- **비밀번호 노출 근거**: crew wifi 계정 비밀번호는 애초에 `config.xml`(`varuserspassword`,
+  Cleartext-Password)에 평문 저장돼 있어(#10/#23 배경) 이 버튼이 새로운 노출면을 만드는 게
+  아니라 이미 서버에 있는 평문값을 관리자 편의상 다운로드하게 해주는 것 뿐.
+- **접근 제한**: 버튼은 admin/vesseladmin 역할에서만 노출(customer 는 없음, #53 과 동일 원칙).
+  **일반 Export CSV 와 달리 GET 핸들러 자체에도 역할 체크 추가**(`$adminlogin==='admin'||
+  'vesseladmin'`) — 일반 CSV 는 버튼 숨김과 무관하게 `?export=csv` 직접 접근이 항상 가능한
+  기존(무해한) 특성이 있는데, 이건 평문 비밀번호가 포함되므로 URL 직접 접근으로 customer 가
+  우회하지 못하도록 명시적으로 막음.
+- **검증**: php -l 2파일 통과. CSV 출력 하네스(`build_wifi_rows` 스텁 대체) 6/6 — BOM/헤더 정확히
+  3컬럼/따옴표 포함 비밀번호 CSV escape/Description·Used 등 다른 필드 미포함 확인.
+- **배포 정합성**: `crew_account.php` + `manage_crew_wifi_account.inc` 2파일 일괄.
+
 ## 다음 작업 대기 중
 
+- [ ] **#55 커밋 대기(미커밋)**: "Export Credentials CSV" 버튼 — ID/Quota(MB)/Password 3컬럼 CSV.
+  develop 커밋 필요(+ push 까지, [[feedback_push_required_for_deploy]]).
+- [ ] #55 검증(선상): admin/vesseladmin 로 crew_account.php 접속 → "Export Credentials CSV" 버튼
+  클릭 → CSV 다운로드에 ID/Quota(MB)/Password 3컬럼만 있는지 / customer 로그인 시 버튼 자체가
+  안 보이는지 + `crew_account.php?export=creds` 직접 접근 시도해도 다운로드 안 되는지(역할 체크) /
+  일반 "Export CSV" 버튼(기존 7컬럼)은 그대로 정상 동작하는지(회귀 없음) / 배포 정합성: `crew_account.php`
+  + `manage_crew_wifi_account.inc` 2파일 일괄.
 - [x] **#54 커밋 완료(develop, origin 에 push 완료 — 최종 커밋이 스키마확장/self-heal 시행착오를
   되돌린 상태)**: Account History 모달 Change/Login/Usage 3탭. **`radacct_changehistory` 는
   #49 원본 5컬럼 그대로**(신규 컬럼·self-heal 전부 제거됨, ALTER TABLE 불필요) — login/logout 은

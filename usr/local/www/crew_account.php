@@ -5,15 +5,23 @@ include_once("common_ui.inc");
 include_once("terminal_status.inc");
 include_once("manage_crew_wifi_account.inc");
 
+global $adminlogin;
+
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     export_wifi_csv("non-Prepaid");
 }
+// 비밀번호 평문이 포함되므로 일반 Export CSV 와 달리 admin/vesseladmin 만 허용
+// (버튼도 이 역할에서만 노출 — customer 가 URL 직접 접근으로 우회하는 것을 차단).
+if (isset($_GET['export']) && $_GET['export'] === 'creds'
+    && ($adminlogin === 'admin' || $adminlogin === 'vesseladmin')) {
+    export_wifi_credentials_csv("non-Prepaid");
+}
 
-global $adminlogin;
 $controldisplay="";
 $addbutton="";
 if($adminlogin==="admin"||$adminlogin==="vesseladmin") {
     $controldisplay = '<button class="btn md line-gray" onclick="confirm_exportCsv()"><i class="ic-reset gray"></i>Export CSV</button>
+                       <button class="btn md line-gray" onclick="confirm_exportCredsCsv()"><i class="ic-reset gray"></i>Export Credentials CSV</button>
                        <button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>
                        <button class="btn md line-gray" onclick="confirm_setRandomPw()"><i class="ic-reset gray"></i>SET RANDOM PW</button>
                        <button class="btn md line-gray" onclick="confirm_resetData()"><i class="ic-reset gray"></i>Reset Data</button>
@@ -967,6 +975,9 @@ if (function_exists('render_account_history_modal')) {
     }
     function confirm_exportCsv() {
         window.location.href = "crew_account.php?export=csv";
+    }
+    function confirm_exportCredsCsv() {
+        window.location.href = "crew_account.php?export=creds";
     }
     function refreshValue() {
         $.ajax({

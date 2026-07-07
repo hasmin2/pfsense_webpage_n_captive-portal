@@ -445,6 +445,7 @@ function build_wifi_rows(string $isPrepaid): array {
             'Used(MB)'    => $used_quota,
             'Quota(MB)'   => $maxtotal,
             'Online'      => $sessionId ? 'Y' : 'N',
+            'Password'    => (string)($user['varuserspassword'] ?? ''),
             'ScheduleRaw'  => $scheduleRaw,
             'ScheduleJson' => htmlspecialchars(
                 json_encode($scheduleRaw, JSON_UNESCAPED_UNICODE),
@@ -526,6 +527,41 @@ function export_wifi_csv($isPrepaid) {
         $totalQuota,
         '',
     ]);
+
+    fclose($out);
+    exit;
+}
+
+/**
+ * crew_account.php 상단 "Export Credentials CSV" 버튼용 — ID/할당량(Quota)/비밀번호 3컬럼만
+ * 담은 최소 CSV. 비밀번호는 config.xml 에 이미 평문 저장돼 있어(varuserspassword, Cleartext-
+ * Password) 새로운 노출면이 아니라 관리자 편의를 위한 다운로드 창구일 뿐. `export_wifi_csv()`
+ * 와 달리 파일명에 "_credentials" 접미사를 붙여 일반 Export CSV 와 구분(오인 방지).
+ */
+function export_wifi_credentials_csv($isPrepaid) {
+    $rows = build_wifi_rows($isPrepaid);
+    global $config;
+    $vesselname = $config['system']['vesselinfo']['vesselname'];
+    $filename = $vesselname . "_credentials_" . date("Ymd_His") . ".csv";
+
+    header("Content-Type: text/csv; charset=UTF-8");
+    header("Content-Disposition: attachment; filename=\"$filename\"");
+    header("Pragma: no-cache");
+    header("Expires: 0");
+
+    echo "\xEF\xBB\xBF";
+
+    $out = fopen("php://output", "w");
+
+    fputcsv($out, ['ID', 'Quota(MB)', 'Password']);
+
+    foreach ($rows as $r) {
+        fputcsv($out, [
+            $r['ID'] ?? '',
+            $r['Quota(MB)'] ?? '',
+            $r['Password'] ?? '',
+        ]);
+    }
 
     fclose($out);
     exit;

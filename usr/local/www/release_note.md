@@ -2,6 +2,13 @@ BlueWave Link — Release Notes
 
 Developed by SynerSAT Korea
 
+2026-07-07 Update
+
+- NEW: The Crew Accounts page now has an "Export Credentials CSV" button (next to
+  the existing Export CSV) that downloads a CSV with just each account's ID, data
+  quota and password — a quick reference sheet for admins. Only visible to
+  admin/vesseladmin logins.
+
 2026-07-06 Update
 
 - NEW: Account history now has Login and Usage tabs. The per-account "History"
