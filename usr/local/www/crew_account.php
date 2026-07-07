@@ -527,12 +527,12 @@ if ($_POST['dataamount']){
         <div class="contents">
             <div class="container">
                 <div class="manage-wrap">
-                    <div class="list-top" style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:nowrap; margin-bottom:14px;">
-                        <div class="search-area" style="display:flex; align-items:flex-end; justify-content:flex-start; flex:1 1 auto; min-width:0;">
+                    <div class="list-top" style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
+                        <div class="search-area" style="display:flex; align-items:flex-end; justify-content:flex-start;">
                             <?php echo draw_wifi_userid_search_box(); ?>
                         </div>
 
-                        <div class="btn-area" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; flex:0 0 auto; flex-wrap:nowrap;">
+                        <div class="btn-area" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:nowrap;">
                             <?= $controldisplay ?>
                         </div>
                     </div>

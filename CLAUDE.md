@@ -1768,8 +1768,16 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   보이던 것을, 신규 `.ic-doc`(서류 모양, 인라인 SVG data URI — 새 PNG 애셋 불필요) 로 교체해 두
   CSV 버튼만 시각적으로 구분(Reset PW/SET RANDOM PW/Reset Data 는 기존 `ic-reset` 유지, 요청
   범위 밖). SVG 2개(gray/disabled) DOMDocument 로 유효 XML 확인.
-  **주의**: 이 세션엔 실제 브라우저로 렌더링 확인이 불가(로컬 프리뷰 서버 없음, pfSense 박스 필요)
-  — 배포 후 실제 화면에서 겹침이 완전히 해소됐는지 확인 필요.
+  **선상 확인 완료(사용자 스크린샷)**: 버튼 겹침 해소 + 서류 아이콘 정상 표시.
+- **후속 수정 2 — 검색창 밀림(develop 미커밋)**: 위 버튼 겹침 수정(`flex:0 0 auto` 로 버튼 shrink
+  금지) 부작용으로, 같은 줄을 공유하던 검색창(`search-area`, `flex:1 1 auto; min-width:0`)이
+  늘어난 버튼 그룹에 밀려 폭 0에 가깝게 찌그러짐(스크린샷 확인 — 입력창이 커서만 보일 정도).
+  **검색창과 버튼 툴바를 아예 별도 줄로 분리**(`.list-top` 를 `flex-direction:column`으로 변경,
+  `search-area`/`btn-area` 각각 전체 폭 차지 — `justify-content:flex-start`/`flex-end` 로 좌/우
+  정렬 유지) — 폭 경쟁 자체를 없애 두 영역 모두 항상 충분한 공간 확보. `draw_wifi_userid_search_box()`
+  내부의 `max-width:420px` 제한 덕에 전체 폭을 줘도 검색창이 과도하게 늘어나지 않음.
+  **주의**: 이 변경도 이 세션엔 브라우저 렌더링 확인이 불가 — 배포 후 검색창이 정상 폭으로
+  표시되는지 확인 필요.
 
 ## 다음 작업 대기 중
 
