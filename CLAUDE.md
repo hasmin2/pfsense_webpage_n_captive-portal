@@ -1789,6 +1789,13 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   - **주의**: 이 세션엔 브라우저 렌더링 확인이 불가(로컬 프리뷰 서버 없음, pfSense 박스 필요) —
     배포 후 한 줄 배치·드롭다운 열림/닫힘·각 메뉴 항목 클릭 시 기존 동작(AJAX/네비게이션) 정상
     확인 필요.
+  - **버그 발견·수정(선상 확인)**: 드롭다운 메뉴 클릭해도 안 뜨는 문제 발생 — 원인은 이전 겹침
+    수정(`49e5607`)에서 `.list-top .btn-area` 에 넣은 `overflow-x:auto; overflow-y:hidden;` 이
+    범인. `.btn-dd-menu` 가 `position:absolute; top:100%` 로 버튼 아래로 펼쳐지는데, 조상인
+    `.btn-area` 의 `overflow-y:hidden` 이 이를 잘라서 안 보이게 만듦(CSS 스펙상 `overflow-x` 를
+    `visible` 아닌 값으로 두면 `overflow-y` 도 자동으로 `visible` 을 벗어나 `auto`/`hidden` 취급되는
+    것도 한몫). **수정**: 그 규칙 제거(`.list-top .btn-area .btn{flex:0 0 auto;white-space:nowrap;}`
+    만 유지) — 드롭다운 통합으로 버튼이 5슬롯으로 줄어 가로 스크롤 안전망 자체가 더 이상 필요 없음.
 
 ## 다음 작업 대기 중
 

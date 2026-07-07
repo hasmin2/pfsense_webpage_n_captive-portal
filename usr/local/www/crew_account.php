@@ -496,13 +496,11 @@ if ($_POST['dataamount']){
             border-color: #2ecc71 !important;
         }
 
-        /* 상단 툴바가 버튼 7개로 늘어나 좁은 화면(<=1440px, .list-top .btn-area 가 fixed 로
-           전환되는 구간)에서 버튼이 찌그러들며 텍스트가 겹치던 문제 — 버튼 폭 고정(shrink 금지)
-           + 줄바꿈 대신 가로 스크롤로 안전하게 대체 */
-        .list-top .btn-area {
-            overflow-x: auto;
-            overflow-y: hidden;
-        }
+        /* 상단 툴바 버튼이 좁은 화면에서 찌그러들며 텍스트가 겹치던 문제 — 버튼 폭 고정(shrink 금지).
+           주의: overflow-x:auto (구버전에 있었음)를 여기 넣으면 안 됨 — overflow-y 가 auto/hidden
+           으로 강제되면서(CSS 스펙상 x 를 visible 아닌 값으로 두면 y 도 visible 을 벗어남) 아래로
+           펼쳐지는 .btn-dd-menu 드롭다운이 잘려서 안 보이게 됨(실제로 겪은 버그). 버튼 5슬롯(드롭다운
+          2개로 통합 후)은 통상 폭에서 넘칠 일이 없어 안전망 없이 shrink 금지만으로 충분. */
         .list-top .btn-area .btn {
             flex: 0 0 auto;
             white-space: nowrap;
