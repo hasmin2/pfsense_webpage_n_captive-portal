@@ -1731,6 +1731,13 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   미포함) / 데이터리셋 로그아웃 사유가 "ADMIN RESET"으로 다소 뭉뚱그려짐(위 참고) / crew_account.php
   전용(#50 과 동일하게 prepaid_account.php 는 History 버튼 자체가 없어 미포함) / `radacct` 조회는
   해당 박스의 SQL accounting 활성 여부에 종속(위 참고).
+- **Usage 탭 기간 총합 표시(후속 추가)**: range pill 아래에 조회된 **전체 결과(lastRows, 현재
+  페이지 10개가 아니라 필터링된 전체)** 기준 합계 배너 추가 — "Total for this period: **98.0 GB**
+  (44.2 GB in / 53.8 GB out) across 627 sessions". Change/Login 탭이나 결과 없음(빈 배열)일 땐
+  숨김. 탭 전환·range 변경 시 `load()` 시작 지점에서 즉시 숨겼다가(로딩 중 이전 총합 flash 방지)
+  응답 도착 후 `render()`에서 재계산 — `noteEl` 갱신과 동일한 즉시성 패턴. 외부 라이브러리 없이
+  기존 `formatBytes()` 재사용. DOM 하네스 9종(전체 합산·in/out 분리·session count·단복수 문구·
+  탭/range 전환 시 즉시 숨김·빈결과 숨김) 포함 33/33 통과.
 
 ## 다음 작업 대기 중
 

@@ -656,6 +656,9 @@ function render_account_history_modal() {
 .accthist-custom input[type=date]{height:28px;padding:0 8px;border-radius:7px;background:#0a192f;border:1px solid #2c4363;color:#e7eefc;font-size:12px;color-scheme:dark;}
 .accthist-custom .ah-sep{color:#7e95b4;font-size:12px;}
 .accthist-apply{height:28px;padding:0 14px;border-radius:7px;font-size:12px;font-weight:700;background:#1976d2;border:1px solid #1976d2;color:#fff;cursor:pointer;}
+.accthist-usage-summary{display:none;margin-bottom:12px;padding:10px 14px;border-radius:8px;background:#0f2338;border:1px solid #234162;color:#cdd9ea;font-size:12.5px;}
+.accthist-usage-summary.on{display:block;}
+.accthist-usage-summary b{color:#7fd4ff;font-size:15px;font-weight:800;}
 .accthist-tbl{width:100%;border-collapse:collapse;font-size:12px;}
 .accthist-tbl th{color:#9fb6d4;text-align:left;font-weight:700;padding:6px 8px;border-bottom:1px solid #2c4363;white-space:nowrap;}
 .accthist-tbl td{color:#e7eefc;padding:6px 8px;border-bottom:1px solid #1a2c49;vertical-align:top;}
@@ -695,6 +698,7 @@ function render_account_history_modal() {
             <input type="date" id="accthist-from"> <span class="ah-sep">~</span> <input type="date" id="accthist-to">
             <button type="button" class="accthist-apply" id="accthist-apply">Apply</button>
         </div>
+        <div class="accthist-usage-summary" id="accthist-usage-summary"></div>
         <div id="accthist-body"></div>
         <p class="accthist-note" id="accthist-note">&#9432; Account modification log (times in UTC) &mdash; password / usage resets, create / delete / modify, top-up, description &amp; schedule changes.</p>
     </div>
@@ -709,6 +713,7 @@ function render_account_history_modal() {
     var toI    = document.getElementById("accthist-to");
     var userEl = document.getElementById("accthist-user");
     var noteEl = document.getElementById("accthist-note");
+    var summaryEl = document.getElementById("accthist-usage-summary");
     var pills  = document.getElementById("accthist-range").querySelectorAll(".ah-btn[data-days], .ah-btn[data-custom]");
     var tabBtns = document.getElementById("accthist-tabs").querySelectorAll(".ah-tab");
     var expB   = document.getElementById("accthist-export");
@@ -773,12 +778,34 @@ function render_account_history_modal() {
     function render(rows){
         lastRows = rows || [];
         if (expB) { expB.disabled = (lastRows.length === 0); }
+        updateUsageSummary();
         if (!lastRows.length) {
             body.innerHTML = "<p class=\"accthist-msg\">"+emptyMsg()+"</p>";
             return;
         }
         curPage = 1;      // 새 결과는 항상 1페이지부터
         renderPage();
+    }
+    // Usage 탭: 조회된 기간(lastRows = 전체 결과, 현재 페이지만이 아님) 전체의 데이터 사용량
+    // 총합을 range pill 아래 여백에 표시. Change/Login 탭이나 결과 없음일 땐 숨김.
+    function updateUsageSummary(){
+        if (!summaryEl) { return; }
+        if (curTab !== "usage" || !lastRows.length) {
+            summaryEl.classList.remove("on");
+            summaryEl.innerHTML = "";
+            return;
+        }
+        var totalIn = 0, totalOut = 0;
+        for (var i=0;i<lastRows.length;i++){
+            totalIn += Number(lastRows[i].input_octets) || 0;
+            totalOut += Number(lastRows[i].output_octets) || 0;
+        }
+        var total = totalIn + totalOut;
+        var sessionWord = (lastRows.length === 1) ? "session" : "sessions";
+        summaryEl.innerHTML = "Total for this period: <b>"+esc(formatBytes(total))+"</b> ("
+            + esc(formatBytes(totalIn)) + " in / " + esc(formatBytes(totalOut)) + " out) across "
+            + lastRows.length + " " + sessionWord;
+        summaryEl.classList.add("on");
     }
     // #54: 탭별 컬럼 세트로 표 본문 구성
     function buildRows(slice){
@@ -848,6 +875,7 @@ function render_account_history_modal() {
         lastRangeParams = rangeParams;   // 탭 전환 시 재사용
         body.innerHTML = "<p class=\"accthist-msg\">Loading&hellip;</p>";
         lastRows = []; if (expB) { expB.disabled = true; }
+        if (summaryEl) { summaryEl.classList.remove("on"); summaryEl.innerHTML = ""; }
         var params = { mode: rangeParams.mode, tab: curTab, username: curUser };
         if (rangeParams.mode === "custom") { params.from = rangeParams.from; params.to = rangeParams.to; }
         else { params.days = rangeParams.days; }
