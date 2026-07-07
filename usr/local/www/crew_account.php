@@ -20,8 +20,8 @@ if (isset($_GET['export']) && $_GET['export'] === 'creds'
 $controldisplay="";
 $addbutton="";
 if($adminlogin==="admin"||$adminlogin==="vesseladmin") {
-    $controldisplay = '<button class="btn md line-gray" onclick="confirm_exportCsv()"><i class="ic-reset gray"></i>Export CSV</button>
-                       <button class="btn md line-gray" onclick="confirm_exportCredsCsv()"><i class="ic-reset gray"></i>Export Credentials CSV</button>
+    $controldisplay = '<button class="btn md line-gray" onclick="confirm_exportCsv()"><i class="ic-doc gray"></i>Export CSV</button>
+                       <button class="btn md line-gray" onclick="confirm_exportCredsCsv()"><i class="ic-doc gray"></i>Export Credentials CSV</button>
                        <button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>
                        <button class="btn md line-gray" onclick="confirm_setRandomPw()"><i class="ic-reset gray"></i>SET RANDOM PW</button>
                        <button class="btn md line-gray" onclick="confirm_resetData()"><i class="ic-reset gray"></i>Reset Data</button>
@@ -484,6 +484,27 @@ if ($_POST['dataamount']){
             background: #d5f5e3 !important;
             color: #27ae60 !important;
             border-color: #2ecc71 !important;
+        }
+
+        /* 상단 툴바가 버튼 7개로 늘어나 좁은 화면(<=1440px, .list-top .btn-area 가 fixed 로
+           전환되는 구간)에서 버튼이 찌그러들며 텍스트가 겹치던 문제 — 버튼 폭 고정(shrink 금지)
+           + 줄바꿈 대신 가로 스크롤로 안전하게 대체 */
+        .list-top .btn-area {
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+        .list-top .btn-area .btn {
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+
+        /* CSV 내보내기 버튼 전용 "서류" 아이콘 (기존 ic-reset 과 시각적으로 구분) */
+        .ic-doc { width: 16px; height: 16px; }
+        .ic-doc.gray {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 1.5h5.5L12 4v9.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z' fill='none' stroke='%23868E96' stroke-width='1.1'/%3E%3Cpath d='M9.5 1.5V4a.6.6 0 0 0 .6.6H12' fill='none' stroke='%23868E96' stroke-width='1.1'/%3E%3Cpath d='M4.8 8h5.4M4.8 10h5.4M4.8 6h3' stroke='%23868E96' stroke-width='1'/%3E%3C/svg%3E");
+        }
+        .btn:disabled .ic-doc.gray {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 1.5h5.5L12 4v9.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z' fill='none' stroke='%23CED4DA' stroke-width='1.1'/%3E%3Cpath d='M9.5 1.5V4a.6.6 0 0 0 .6.6H12' fill='none' stroke='%23CED4DA' stroke-width='1.1'/%3E%3Cpath d='M4.8 8h5.4M4.8 10h5.4M4.8 6h3' stroke='%23CED4DA' stroke-width='1'/%3E%3C/svg%3E");
         }
     </style>
 </head>

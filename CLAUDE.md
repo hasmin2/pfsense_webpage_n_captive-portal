@@ -1758,6 +1758,18 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **검증**: php -l 2파일 통과. CSV 출력 하네스(`build_wifi_rows` 스텁 대체) 6/6 — BOM/헤더 정확히
   3컬럼/따옴표 포함 비밀번호 CSV escape/Description·Used 등 다른 필드 미포함 확인.
 - **배포 정합성**: `crew_account.php` + `manage_crew_wifi_account.inc` 2파일 일괄.
+- **후속 수정 — 버튼 겹침 + 아이콘 구분(develop 미커밋)**: 버튼이 6개→7개로 늘면서 좁은 화면
+  (`.list-top .btn-area` 가 `position:fixed` 로 전환되는 `@media (max-width:1440px)` 구간,
+  `components.css`/`common.css` 공용 규칙)에서 버튼이 찌그러들며 텍스트가 옆 버튼과 겹치는 현상
+  발생(스크린샷으로 확인). **crew_account.php 전용 인라인 `<style>`** (공유 CSS 파일은 다른 페이지도
+  쓰므로 미수정)에 `.list-top .btn-area{overflow-x:auto}` + `.btn-area .btn{flex:0 0 auto;
+  white-space:nowrap}` 추가 — 버튼이 축소/줄바꿈되지 않고 필요 시 가로 스크롤로 대체(겹침 원천 차단).
+  또한 Export CSV/Export Credentials CSV 아이콘이 Reset PW 등과 동일한 `ic-reset` 이라 전부 같아
+  보이던 것을, 신규 `.ic-doc`(서류 모양, 인라인 SVG data URI — 새 PNG 애셋 불필요) 로 교체해 두
+  CSV 버튼만 시각적으로 구분(Reset PW/SET RANDOM PW/Reset Data 는 기존 `ic-reset` 유지, 요청
+  범위 밖). SVG 2개(gray/disabled) DOMDocument 로 유효 XML 확인.
+  **주의**: 이 세션엔 실제 브라우저로 렌더링 확인이 불가(로컬 프리뷰 서버 없음, pfSense 박스 필요)
+  — 배포 후 실제 화면에서 겹침이 완전히 해소됐는지 확인 필요.
 
 ## 다음 작업 대기 중
 
@@ -1766,8 +1778,11 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - [ ] #55 검증(선상): admin/vesseladmin 로 crew_account.php 접속 → "Export Credentials CSV" 버튼
   클릭 → CSV 다운로드에 ID/Quota(MB)/Password 3컬럼만 있는지 / customer 로그인 시 버튼 자체가
   안 보이는지 + `crew_account.php?export=creds` 직접 접근 시도해도 다운로드 안 되는지(역할 체크) /
-  일반 "Export CSV" 버튼(기존 7컬럼)은 그대로 정상 동작하는지(회귀 없음) / 배포 정합성: `crew_account.php`
-  + `manage_crew_wifi_account.inc` 2파일 일괄.
+  일반 "Export CSV" 버튼(기존 7컬럼)은 그대로 정상 동작하는지(회귀 없음) / **버튼 7개 툴바가 좁은
+  화면에서도 겹치지 않는지**(가로 스크롤로 대체됐는지) / **Export CSV·Export Credentials CSV 에
+  서류 아이콘(`ic-doc`)이 정상 표시되는지**(다른 버튼들의 `ic-reset` 과 구분되는지) — 이 두 항목은
+  이번 세션에 브라우저 실측이 불가해 코드 리뷰만 마친 상태, 선상 확인 필수 / 배포 정합성:
+  `crew_account.php` + `manage_crew_wifi_account.inc` 2파일 일괄.
 - [x] **#54 커밋 완료(develop, origin 에 push 완료 — 최종 커밋이 스키마확장/self-heal 시행착오를
   되돌린 상태)**: Account History 모달 Change/Login/Usage 3탭. **`radacct_changehistory` 는
   #49 원본 5컬럼 그대로**(신규 컬럼·self-heal 전부 제거됨, ALTER TABLE 불필요) — login/logout 은
