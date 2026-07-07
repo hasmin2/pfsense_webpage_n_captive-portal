@@ -20,10 +20,20 @@ if (isset($_GET['export']) && $_GET['export'] === 'creds'
 $controldisplay="";
 $addbutton="";
 if($adminlogin==="admin"||$adminlogin==="vesseladmin") {
-    $controldisplay = '<button class="btn md line-gray" onclick="confirm_exportCsv()"><i class="ic-doc gray"></i>Export CSV</button>
-                       <button class="btn md line-gray" onclick="confirm_exportCredsCsv()"><i class="ic-doc gray"></i>Export Credentials CSV</button>
-                       <button class="btn md line-gray" onclick="confirm_resetPw()"><i class="ic-reset gray"></i>Reset PW</button>
-                       <button class="btn md line-gray" onclick="confirm_setRandomPw()"><i class="ic-reset gray"></i>SET RANDOM PW</button>
+    $controldisplay = '<div class="btn-dd">
+                           <button type="button" class="btn md line-gray" onclick="toggleBtnDd(this)"><i class="ic-doc gray"></i>Export<span class="dd-caret">&#9662;</span></button>
+                           <div class="btn-dd-menu">
+                               <a onclick="confirm_exportCsv()">Export CSV</a>
+                               <a onclick="confirm_exportCredsCsv()">Export Credentials CSV</a>
+                           </div>
+                       </div>
+                       <div class="btn-dd">
+                           <button type="button" class="btn md line-gray" onclick="toggleBtnDd(this)"><i class="ic-reset gray"></i>Manage PW<span class="dd-caret">&#9662;</span></button>
+                           <div class="btn-dd-menu">
+                               <a onclick="confirm_setRandomPw()">Reset Random PW</a>
+                               <a onclick="confirm_resetPw()">Reset Initial PW</a>
+                           </div>
+                       </div>
                        <button class="btn md line-gray" onclick="confirm_resetData()"><i class="ic-reset gray"></i>Reset Data</button>
                             <button class="btn md line-gray" onclick="confirm_checkPw()"><i class="ic-check gray"></i>Check PW</button>
                             <button class="btn md line-gray" onclick="confirm_delUser()"><i class="ic-delete gray"></i>Delete</button></>';
@@ -506,6 +516,34 @@ if ($_POST['dataamount']){
         .btn:disabled .ic-doc.gray {
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 1.5h5.5L12 4v9.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z' fill='none' stroke='%23CED4DA' stroke-width='1.1'/%3E%3Cpath d='M9.5 1.5V4a.6.6 0 0 0 .6.6H12' fill='none' stroke='%23CED4DA' stroke-width='1.1'/%3E%3Cpath d='M4.8 8h5.4M4.8 10h5.4M4.8 6h3' stroke='%23CED4DA' stroke-width='1'/%3E%3C/svg%3E");
         }
+
+        /* Export / Manage PW 드롭다운 (버튼 개수 축소용 — 서로 관련된 액션을 한 버튼 아래로 묶음) */
+        .btn-dd { position: relative; display: inline-block; flex: 0 0 auto; }
+        .dd-caret { margin-left: 6px; font-size: 10px; color: #868E96; }
+        .btn-dd-menu {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 4px;
+            background: #ffffff;
+            border: 1px solid #CED4DA;
+            border-radius: 6px;
+            min-width: 200px;
+            box-shadow: 0 6px 16px rgba(0,0,0,.15);
+            z-index: 20;
+            overflow: hidden;
+        }
+        .btn-dd.open .btn-dd-menu { display: block; }
+        .btn-dd-menu a {
+            display: block;
+            padding: 9px 14px;
+            color: #495057;
+            font-size: 13px;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        .btn-dd-menu a:hover { background: #f1f3f5; }
     </style>
 </head>
 <body>
@@ -527,12 +565,12 @@ if ($_POST['dataamount']){
         <div class="contents">
             <div class="container">
                 <div class="manage-wrap">
-                    <div class="list-top" style="display:flex; flex-direction:column; gap:10px; margin-bottom:14px;">
-                        <div class="search-area" style="display:flex; align-items:flex-end; justify-content:flex-start;">
+                    <div class="list-top" style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:nowrap; margin-bottom:14px;">
+                        <div class="search-area" style="display:flex; align-items:flex-end; justify-content:flex-start; flex:0 0 auto;">
                             <?php echo draw_wifi_userid_search_box(); ?>
                         </div>
 
-                        <div class="btn-area" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:nowrap;">
+                        <div class="btn-area" style="display:flex; align-items:center; justify-content:flex-end; gap:8px; flex:1 1 auto; min-width:0; flex-wrap:nowrap;">
                             <?= $controldisplay ?>
                         </div>
                     </div>
@@ -1000,6 +1038,18 @@ if (function_exists('render_account_history_modal')) {
     function confirm_exportCredsCsv() {
         window.location.href = "crew_account.php?export=creds";
     }
+    // Export / Manage PW 드롭다운 토글 — 한 번에 하나만 열림, 바깥 클릭 시 닫힘
+    function toggleBtnDd(btn) {
+        var wrap = btn.closest('.btn-dd');
+        var wasOpen = wrap.classList.contains('open');
+        document.querySelectorAll('.btn-dd.open').forEach(function (el) { el.classList.remove('open'); });
+        if (!wasOpen) { wrap.classList.add('open'); }
+    }
+    document.addEventListener('click', function (ev) {
+        if (!ev.target.closest('.btn-dd')) {
+            document.querySelectorAll('.btn-dd.open').forEach(function (el) { el.classList.remove('open'); });
+        }
+    });
     function refreshValue() {
         $.ajax({
             url: "./crew_account.php",

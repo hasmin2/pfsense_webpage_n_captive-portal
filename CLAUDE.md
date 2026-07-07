@@ -1769,28 +1769,41 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   CSV 버튼만 시각적으로 구분(Reset PW/SET RANDOM PW/Reset Data 는 기존 `ic-reset` 유지, 요청
   범위 밖). SVG 2개(gray/disabled) DOMDocument 로 유효 XML 확인.
   **선상 확인 완료(사용자 스크린샷)**: 버튼 겹침 해소 + 서류 아이콘 정상 표시.
-- **후속 수정 2 — 검색창 밀림(develop 미커밋)**: 위 버튼 겹침 수정(`flex:0 0 auto` 로 버튼 shrink
-  금지) 부작용으로, 같은 줄을 공유하던 검색창(`search-area`, `flex:1 1 auto; min-width:0`)이
-  늘어난 버튼 그룹에 밀려 폭 0에 가깝게 찌그러짐(스크린샷 확인 — 입력창이 커서만 보일 정도).
-  **검색창과 버튼 툴바를 아예 별도 줄로 분리**(`.list-top` 를 `flex-direction:column`으로 변경,
-  `search-area`/`btn-area` 각각 전체 폭 차지 — `justify-content:flex-start`/`flex-end` 로 좌/우
-  정렬 유지) — 폭 경쟁 자체를 없애 두 영역 모두 항상 충분한 공간 확보. `draw_wifi_userid_search_box()`
-  내부의 `max-width:420px` 제한 덕에 전체 폭을 줘도 검색창이 과도하게 늘어나지 않음.
-  **주의**: 이 변경도 이 세션엔 브라우저 렌더링 확인이 불가 — 배포 후 검색창이 정상 폭으로
-  표시되는지 확인 필요.
+- **후속 수정 2 — 검색창 밀림 → 2줄 분리 → 드롭다운 통합으로 최종 정리(develop 미커밋)**: 버튼
+  겹침 수정(`flex:0 0 auto` 로 버튼 shrink 금지) 부작용으로, 같은 줄을 공유하던 검색창이 늘어난
+  버튼 그룹에 밀려 폭 0에 가깝게 찌그러짐(스크린샷 확인). **1차**: 검색창/버튼 툴바를 별도 줄로
+  분리(`.list-top`을 `flex-direction:column`)했으나, 사용자가 "원래는 한 줄이었다"며 한 줄 유지를
+  요청 → **최종**: 관련 액션을 드롭다운으로 묶어 **버튼 개수 자체를 7개→5개로 축소**하고 다시
+  한 줄 레이아웃(`.list-top` row, `search-area flex:0 0 auto` 로 검색창 폭 고정 + `btn-area
+  flex:1 1 auto; min-width:0` 로 남은 공간을 버튼 그룹이 차지, 필요 시 위 겹침수정의 가로 스크롤이
+  안전망)으로 복귀.
+  - **Export 드롭다운**: 트리거 버튼 "Export ▾"(서류 아이콘) 아래 Export CSV / Export Credentials
+    CSV 2개 메뉴.
+  - **Manage PW 드롭다운**: 트리거 버튼 "Manage PW ▾"(reset 아이콘) 아래 **Reset Random PW**(기존
+    SET RANDOM PW, `confirm_setRandomPw()`) / **Reset Initial PW**(기존 Reset PW="1111"로 리셋,
+    `confirm_resetPw()`) 2개 메뉴로 재명명.
+  - Reset Data / Check PW / Delete 는 기존대로 단독 버튼 유지(병합 대상 아님).
+  - 구현: 프레임워크 의존 없는 **순수 CSS/JS 드롭다운**(`.btn-dd`/`.btn-dd-menu`, `toggleBtnDd()` +
+    바깥 클릭 시 전체 닫힘 `document` 클릭 리스너) — pfSense 스톡 UI(Bootstrap `dropdown-toggle`)
+    와 무관한 이 페이지 전용 미니멀 버튼 프레임워크에 맞춤.
+  - **주의**: 이 세션엔 브라우저 렌더링 확인이 불가(로컬 프리뷰 서버 없음, pfSense 박스 필요) —
+    배포 후 한 줄 배치·드롭다운 열림/닫힘·각 메뉴 항목 클릭 시 기존 동작(AJAX/네비게이션) 정상
+    확인 필요.
 
 ## 다음 작업 대기 중
 
 - [ ] **#55 커밋 대기(미커밋)**: "Export Credentials CSV" 버튼 — ID/Quota(MB)/Password 3컬럼 CSV.
   develop 커밋 필요(+ push 까지, [[feedback_push_required_for_deploy]]).
-- [ ] #55 검증(선상): admin/vesseladmin 로 crew_account.php 접속 → "Export Credentials CSV" 버튼
-  클릭 → CSV 다운로드에 ID/Quota(MB)/Password 3컬럼만 있는지 / customer 로그인 시 버튼 자체가
-  안 보이는지 + `crew_account.php?export=creds` 직접 접근 시도해도 다운로드 안 되는지(역할 체크) /
-  일반 "Export CSV" 버튼(기존 7컬럼)은 그대로 정상 동작하는지(회귀 없음) / **버튼 7개 툴바가 좁은
-  화면에서도 겹치지 않는지**(가로 스크롤로 대체됐는지) / **Export CSV·Export Credentials CSV 에
-  서류 아이콘(`ic-doc`)이 정상 표시되는지**(다른 버튼들의 `ic-reset` 과 구분되는지) — 이 두 항목은
-  이번 세션에 브라우저 실측이 불가해 코드 리뷰만 마친 상태, 선상 확인 필수 / 배포 정합성:
-  `crew_account.php` + `manage_crew_wifi_account.inc` 2파일 일괄.
+- [ ] #55 검증(선상): admin/vesseladmin 로 crew_account.php 접속 → **Export ▾ 드롭다운**(Export
+  CSV / Export Credentials CSV 2메뉴) · **Manage PW ▾ 드롭다운**(Reset Random PW / Reset Initial
+  PW 2메뉴) 정상 열림·닫힘(다른 드롭다운 열면 이전 것 자동 닫힘, 바깥 클릭 시 닫힘) / 각 메뉴 클릭
+  시 기존 동작(CSV 다운로드, AJAX PW 변경) 그대로 수행되는지 / **Export CSV 다운로드에 ID/Description
+  /Type/Update/Used/Quota/Online, Export Credentials CSV 에 ID/Quota(MB)/Password 만** 있는지 /
+  customer 로그인 시 두 드롭다운 모두 안 보이는지(Reset PW 단독 버튼만 노출) + `crew_account.php
+  ?export=creds` 직접 접근 시도해도 다운로드 안 되는지(역할 체크) / **검색창(왼쪽)+버튼 5슬롯
+  (오른쪽)이 한 줄에 겹침·찌그러짐 없이 배치되는지** / Export 버튼들에 서류 아이콘(`ic-doc`)이
+  Reset 계열과 구분되게 표시되는지 — 이번 세션엔 브라우저 실측이 불가해 코드 리뷰만 마친 상태,
+  선상 확인 필수 / 배포 정합성: `crew_account.php` + `manage_crew_wifi_account.inc` 2파일 일괄.
 - [x] **#54 커밋 완료(develop, origin 에 push 완료 — 최종 커밋이 스키마확장/self-heal 시행착오를
   되돌린 상태)**: Account History 모달 Change/Login/Usage 3탭. **`radacct_changehistory` 는
   #49 원본 5컬럼 그대로**(신규 컬럼·self-heal 전부 제거됨, ALTER TABLE 불필요) — login/logout 은
