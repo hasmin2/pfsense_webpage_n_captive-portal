@@ -1634,6 +1634,11 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   ([:162])도 **역할 게이트 없음**(Reset PW 와 동일) → customer 에서 버튼→AJAX→백엔드 end-to-end 정상.
 - **범위**: crew 전용(prepaid_account.php 는 customer 브랜치·SET RANDOM PW 자체가 없어 무관). `crew_account.php` 단일 파일.
 - **검증**: php -l 통과.
+- **되돌림(develop 미커밋)**: 사용자 지시로 customer 역할의 SET RANDOM PW 버튼을 다시 숨김 —
+  `customer` 브랜치 `$controldisplay` 를 Reset PW 버튼만 남기고 원복(#53 이전 상태로 복귀).
+  **주의**: #53 은 이미 `main`(`d8165bf`)·`prod`(`59b6594`) 까지 병합돼 있어, 이 되돌림을 develop
+  에만 커밋하면 **customer 의 SET RANDOM PW 노출 여부가 develop 과 main/prod 사이에서 달라짐**
+  (develop=숨김, main/prod=노출 유지) — main/prod 도 되돌리려면 별도 명시적 지시 필요.
 
 ### 54. Account History 모달 — Login/Logout + Session Usage 탭 추가 (Change | Login | Usage) (develop 미커밋)
 - **요구**: crew_account.php per-user History 모달(#50, `radacct_changehistory` 단일 조회)에
