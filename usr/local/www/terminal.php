@@ -95,13 +95,13 @@ if ($_POST['data_update']) {
                         <form action="/terminal.php" method="post" id="cutoff_form">
                         <table>
                             <colgroup>
-                                <col style="width: 16%;">
-                                <col style="width: 16%;">
-                                <col style="width: 16%;">
-                                <col style="width: 13%;">
-                                <col style="width: 13%;">
+                                <col style="width: 17%;">
+                                <col style="width: 17%;">
+                                <col style="width: 17%;">
                                 <col style="width: 14%;">
-                                <col style="width: 12%;">
+                                <col style="width: 14%;">
+                                <col style="width: 11%;">
+                                <col style="width: 10%;">
                             </colgroup>
                             <thead>
                             <tr>
@@ -142,8 +142,8 @@ if ($_POST['data_update']) {
                                     <td data-th="Cutoff" data-th-width="100" data-width="100">
                                         <div class="check v1">
                                             <input type="checkbox" name="cutoff_enable[<?php echo($gid); ?>]" id="cutoff_<?php echo($gid); ?>" value="1" <?php echo(!empty($gateway['cutoff_enable']) ? 'checked' : ''); ?>>
-                                            <label for="cutoff_<?php echo($gid); ?>">
-                                                <p>Cutoff when exceeded</p>
+                                            <label for="cutoff_<?php echo($gid); ?>" style="white-space: nowrap;">
+                                                <p>Enabled</p>
                                             </label>
                                         </div>
                                     </td>
