@@ -1848,6 +1848,15 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
     pfSense 게이트웨이명은 `is_validaliasname()` 로 영문/숫자/언더스코어만 허용되어 따옴표 등
     선택자를 깨는 문자가 들어올 수 없음을 전제로 함(다른 경로로 이례적 이름이 생겼다면 위험 —
     현재 코드베이스 다른 곳(라디오버튼 id 등)도 동일 전제로 이스케이프 없이 써 왔음).
+- **F5 재제출 경고 제거(Post/Redirect/Get)**: APPLY 로 폼을 제출하면 마지막 브라우저 히스토리
+  항목이 POST 응답이 되어, 그 상태에서 F5 를 누르면 "양식 다시 제출 확인" 경고가 뜬다(사용자 스크린샷
+  으로 재현 확인). 수정: `routing_radiobutton`/`allowance` 처리 후 302 없이 `<script>
+  location.replace("processing.php?to=terminal.php");</script>` 를 출력하고 `exit`
+  — **`processing.php`(기존 파일, `network_control.php` 가 이미 쓰는 관례)** 를 그대로 재사용한
+  스플래시 경유 리다이렉트. `location.replace` 는 현재 히스토리 항목을 **대체**(추가 아님)하므로
+  POST 응답 자체가 히스토리에서 사라지고, processing.php 도 자신의 `location.replace` 로 다시
+  대체 → 최종적으로 히스토리 맨 위는 GET terminal.php 뿐이라 F5 시 경고가 뜨지 않는다. `data_update`
+  (10초 AJAX 폴링)는 별도 POST 라 이 분기와 무관(정상 동작 유지).
 - **적용 효과**: 저장 즉시 `cp_shutdown_gateways` 를 건드리지 않음(system_gateways_edit.php 저장과
   동일) — 다음 `network_usage_timeperiod_check.php` 크론 주기에 새 allowance/cutoff_enable 값을
   읽어 자동 반영. 별도 filter_configure/재시작 불필요.
@@ -1874,7 +1883,10 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   타이밍이 겹쳐도 값이 리셋되지 않는지(Info 안의 usage 숫자·GW/Net/Ext-Net 상태만 갱신되고 나머지는
   그대로인지) / allowance 가 공란/vsat_sec 인 게이트웨이는 usage 표시가 계속 비어있는지(기존 로직
   보존 확인) / 이 페이지 전용 인라인 `<style>`(allowance 입력 소형화)이 다른 페이지에 영향 없는지 /
-  **배포 정합성: terminal.php + terminal_status.inc 2파일 일괄**.
+  **APPLY 클릭 후 F5 를 눌러도 "양식 다시 제출 확인" 브라우저 경고가 뜨지 않는지**(processing.php
+  스플래시가 잠깐 보인 후 terminal.php 로 돌아오는지) / Manual Override(라우팅) 를 Apply 한 뒤에도
+  동일하게 F5 경고 없는지 / **배포 정합성: terminal.php + terminal_status.inc 2파일 일괄**
+  (processing.php 는 기존 파일 재사용이라 추가 배포 불필요).
 - [ ] **#55 커밋 대기(미커밋)**: "Export Credentials CSV" 버튼 — ID/Quota(MB)/Password 3컬럼 CSV.
   develop 커밋 필요(+ push 까지, [[feedback_push_required_for_deploy]]).
 - [ ] #55 검증(선상): admin/vesseladmin 로 crew_account.php 접속 → **Export ▾ 드롭다운**(Export

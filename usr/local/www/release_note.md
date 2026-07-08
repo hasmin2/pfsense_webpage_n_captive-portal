@@ -10,6 +10,9 @@ Developed by SynerSAT Korea
   the existing Info column ("usage / allowance GB") instead of a separate
   column, so nothing is duplicated; Cutoff has its own column. No popup
   needed — set and apply right from the status table.
+- FIXED: Terminal Status — pressing F5 (or any browser refresh) after
+  clicking APPLY (Data Cutoff or Manual Override) no longer shows the
+  browser's "Confirm Form Resubmission" warning.
 
 2026-07-07 Update
 

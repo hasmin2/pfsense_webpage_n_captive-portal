@@ -4,11 +4,26 @@ require_once("terminal_status.inc");
 require_once('guiconfig.inc');
 global $config, $g;
 $vesselinfo = $config['system']['vesselinfo'];
-if($_POST['routing_radiobutton']){
+/*
+ * 폼 제출(Manual Override 의 routing_radiobutton 또는 Data Cutoff 의 allowance)을 처리한
+ * 뒤에는 같은 URL 로 302 가 아니라 JS location.replace 로 리다이렉트한다(Post/Redirect/Get).
+ * 안 그러면 브라우저 히스토리 맨 위가 POST 응답으로 남아 F5 시 "양식 다시 제출 확인" 경고가
+ * 뜬다. network_control.php 가 이미 쓰는 관례(processing.php 스플래시 경유, location.replace
+ * 는 히스토리 항목을 대체 — POST 가 히스토리에서 사라짐)를 그대로 재사용.
+ * data_update(10초 폴링) 는 별도 AJAX 호출이라 이 분기와 무관.
+ */
+$didProcessPost = false;
+if ($_POST['routing_radiobutton']) {
     set_routing($_POST['routing_radiobutton'], $_POST['routeduration']);
+    $didProcessPost = true;
 }
 if (isset($_POST['allowance']) && is_array($_POST['allowance'])) {
     cp_apply_gateway_cutoff_settings($_POST['allowance'], isset($_POST['cutoff_enable']) ? $_POST['cutoff_enable'] : array());
+    $didProcessPost = true;
+}
+if ($didProcessPost) {
+    echo '<script>location.replace("processing.php?to=terminal.php");</script>';
+    exit;
 }
 
 $gateways = return_gateways_array();
