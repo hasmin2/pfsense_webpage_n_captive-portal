@@ -1871,6 +1871,13 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   없음) — 선상 확인 필요.
 - **배포 정합성**: `terminal.php` + `terminal_status.inc` **같은 리비전 일괄 배포**(가드 없음 —
   terminal_status.inc 미배포 시 `cp_apply_gateway_cutoff_settings` undefined fatal).
+- **후속 수정 — HISTORY/APPLY 버튼 수직 적체(#58 스크린샷으로 발견)**: 카드 하단
+  `<div class="btn-area mt20" style="text-align: right;">` 가 `.list-top .btn-area`(다른
+  페이지의 flex 레이아웃)와 이름만 같을 뿐 그 셀렉터 대상이 아니었음 — `.btn` 자체가
+  `display:flex`(components.css, 블록 레벨)라 부모가 플렉스 컨테이너가 아니면 각 버튼이
+  자기 줄을 차지하며 세로로 쌓인다(`text-align:right` 는 블록 자식엔 무효). 수정: 인라인
+  스타일을 `display:flex; justify-content:space-between; align-items:center;` 로 교체해
+  HISTORY 는 왼쪽 끝, APPLY 는 오른쪽 끝에 배치.
 
 ### 57. terminal.php 변경 이력 → MariaDB `radius.terminal_status_history` 기록 + HISTORY 버튼 (develop 반영)
 - **요구**: Terminal Status(#56, Manual Override 라우팅 변경 + Data Cutoff allowance/cutoff 변경)

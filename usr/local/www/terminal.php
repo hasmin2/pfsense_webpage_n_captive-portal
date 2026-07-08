@@ -190,7 +190,7 @@ if ($_POST['data_update']) {
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
-                        <div class="btn-area mt20" style="text-align: right;">
+                        <div class="btn-area mt20" style="display: flex; justify-content: space-between; align-items: center;">
                             <button type="button" class="btn md fill-dark" id="termhist-btn"><i class="ic-reset"></i>HISTORY</button>
                             <button type="submit" class="btn md fill-mint"><i class="ic-submit"></i>APPLY</button>
                         </div>
