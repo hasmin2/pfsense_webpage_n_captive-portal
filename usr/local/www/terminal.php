@@ -107,6 +107,59 @@ if($_POST['data_update']){
                         </table>
                     </div>
                 </div>
+                <div class="terminal-wrap mt30">
+                    <div class="list-wrap v1">
+                        <div class="sort-area">
+                            <div class="inner">
+                                <p class="tit v1">Data Cutoff</p>
+                            </div>
+                        </div>
+                        <form action="/terminal.php" method="post" id="cutoff_form">
+                            <table>
+                                <colgroup>
+                                    <col style="width: 34%;">
+                                    <col style="width: 33%;">
+                                    <col style="width: 33%;">
+                                </colgroup>
+                                <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Monthly Allowance (GB)</th>
+                                    <th>Cutoff</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                <?php
+                                foreach ($gateways as $gname => $gateway):
+                                    if (!startswith($gateway['terminal_type'], 'vpn')):
+                                        $gid = htmlspecialchars($gname);
+                                        ?>
+                                        <tr>
+                                            <td data-th="Name" data-th-width="100" data-width="100"><?php echo($gid); ?></td>
+                                            <td data-th="Monthly Allowance (GB)" data-th-width="100" data-width="100">
+                                                <input type="text" name="allowance[<?php echo($gid); ?>]" value="<?php echo(htmlspecialchars($gateway['allowance'] ?? '')); ?>" placeholder="Blank = unlimited">
+                                            </td>
+                                            <td data-th="Cutoff" data-th-width="100" data-width="100">
+                                                <div class="check v1">
+                                                    <input type="checkbox" name="cutoff_enable[<?php echo($gid); ?>]" id="cutoff_<?php echo($gid); ?>" value="1" <?php echo(!empty($gateway['cutoff_enable']) ? 'checked' : ''); ?>>
+                                                    <label for="cutoff_<?php echo($gid); ?>">
+                                                        <p>Cutoff when exceeded</p>
+                                                    </label>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php
+                                    endif;
+                                endforeach;
+                                ?>
+                                </tbody>
+                            </table>
+                            <div class="btn-area mt20" style="text-align: right;">
+                                <button type="submit" class="btn md fill-mint"><i class="ic-submit"></i>APPLY</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -159,39 +212,6 @@ if($_POST['data_update']){
             <option value="86400">1 day</option>
             <option value="864000000">Permanent</option>
         </select>
-
-        <hr class="line v1 mt30">
-
-        <p class="tit v1 mt30">Data Cutoff</p>
-        <div class="override-list scroll-y">
-            <ul>
-                <?php
-                foreach ($gateways as $gname => $gateway):
-                    if (!startswith($gateway['terminal_type'], 'vpn')):
-                        $gid = htmlspecialchars($gname);
-                        ?>
-                        <li>
-                            <div class="form">
-                                <div class="form-tit">
-                                    <p class="tit"><?php echo($gid); ?></p>
-                                </div>
-                                <div class="form-cont">
-                                    <input type="text" name="allowance[<?php echo($gid); ?>]" value="<?php echo(htmlspecialchars($gateway['allowance'] ?? '')); ?>" placeholder="Monthly allowance (GB), blank = unlimited">
-                                </div>
-                            </div>
-                            <div class="check v1 mt10">
-                                <input type="checkbox" name="cutoff_enable[<?php echo($gid); ?>]" id="cutoff_<?php echo($gid); ?>" value="1" <?php echo(!empty($gateway['cutoff_enable']) ? 'checked' : ''); ?>>
-                                <label for="cutoff_<?php echo($gid); ?>">
-                                    <p>Cutoff when allowance exceeded</p>
-                                </label>
-                            </div>
-                        </li>
-                    <?php
-                    endif;
-                endforeach;
-                ?>
-            </ul>
-        </div>
     </div>
     <div class="pop-foot">
         <button type="submit" class="btn md fill-mint" onclick="popClose('pop-set-terminal')"><i class="ic-submit"></i>APPLY</button>

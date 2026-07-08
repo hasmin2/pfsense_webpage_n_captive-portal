@@ -1811,15 +1811,18 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   나머지 필드가 날아간다 — 대신 `lock('freeradius_user_config')` + `parse_config(true)` 로 최신본을
   다시 읽어 델타만 재적용하는 기존 lost-update 패턴(#10/#22/#30/#47)을 그대로 재사용. 체크되지 않은
   체크박스는 HTML 폼 특성상 POST 자체에서 빠지므로, `$cutoff_map` 에 키가 없으면 off 로 취급.
-- **수정 (`usr/local/www/terminal.php`)**: "Terminal Setting" 팝업(기존 Manual Override + Time
-  duration 섹션이 있는 그 폼)에 "Data Cutoff" 섹션 추가 — VPN 이 아닌 게이트웨이마다 Allowance
-  텍스트 입력(`.form`/`.form-tit`/`.form-cont`, 기존 로그인 팝업과 동일 마크업 관례) + Cutoff
-  체크박스(`.check.v1`, crew_account.php 의 "Generate random password?" 와 동일 관례)를 렌더.
-  **자동갱신 테이블(`#all_terminal_status`, 10초 AJAX 폴링) 밖의 팝업에 배치** — 상태 테이블 안에
-  넣었다면 입력 도중 10초마다 값이 리셋됐을 것. 폼 제출 시 `$_POST['allowance']` 존재 여부로
-  게이트웨이 편집(#22 lost-update 회피)과 라우팅 라디오버튼 변경(`set_routing()`)을 독립적으로
-  처리 — 한쪽만 바뀌어도 다른 쪽에 영향 없음. Allowance 는 system_gateways_edit.php 와 동일하게
-  공란(=무제한)/숫자만 허용.
+- **수정 (`usr/local/www/terminal.php`)**: **1차로 "Terminal Setting" 팝업 안에 넣었다가, 사용자
+  피드백("이 변경 창에 넣지 말고 밖에서 바로 세팅되게")에 따라 팝업 밖으로 이동** — 메인 콘텐츠
+  영역(`.container`)에 기존 안테나 상태 테이블 바로 아래 **독립된 "Data Cutoff" 테이블 섹션**을
+  신설(`Setting` 버튼/팝업을 열 필요 없이 페이지 진입 즉시 보이고 바로 편집 가능). 안테나 상태
+  테이블과 동일한 `.list-wrap.v1 > table` 마크업 관례를 재사용해 시각적으로 통일. VPN 이 아닌
+  게이트웨이마다 행 하나 — Name / Allowance 텍스트 입력 / Cutoff 체크박스(`.check.v1`, 기존
+  crew_account.php "Generate random password?" 와 동일 관례) + 하단 APPLY 버튼(별도 폼
+  `#cutoff_form`, `/terminal.php` 로 POST). **자동갱신 테이블(`#all_terminal_status`, 10초 AJAX
+  폴링) 는 이 섹션과 완전히 분리된 별도 `<table>`이라 폴링이 입력값을 건드리지 않음.** 폼 제출 시
+  `$_POST['allowance']` 존재 여부로 게이트웨이 편집(#22 lost-update 회피)과 Manual Override 팝업의
+  라우팅 라디오버튼 변경(`set_routing()`)을 독립적으로 처리 — 한쪽만 제출해도 다른 쪽에 영향 없음.
+  Allowance 는 system_gateways_edit.php 와 동일하게 공란(=무제한)/숫자만 허용.
 - **적용 효과**: 저장 즉시 `cp_shutdown_gateways` 를 건드리지 않음(system_gateways_edit.php 저장과
   동일) — 다음 `network_usage_timeperiod_check.php` 크론 주기에 새 allowance/cutoff_enable 값을
   읽어 자동 반영. 별도 filter_configure/재시작 불필요.
@@ -1831,12 +1834,15 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 ## 다음 작업 대기 중
 
 - [ ] **#56 커밋 완료(develop)**: terminal.php Cutoff 체크박스 + Allowance 입력 (system_gateways_edit.php
-  와 동일 효과). 패치노트 기록 완료(`2026-07-08 Update`). (main/prod 미반영)
-- [ ] #56 검증(선상): Terminal Status → Setting 팝업 → **Data Cutoff** 섹션에 안테나별 Allowance/Cutoff
-  표시 및 저장 정상 / system_gateways_edit.php 에서 수정 후 terminal.php 팝업 재오픈 시 최신값 표시
-  (반대 방향도 동일) / 저장 후 다음 `network_usage_timeperiod_check.php` 크론 주기에 새 값으로
-  shutdown 판정 반영 / Manual Override(라우팅) 변경과 독립적으로 동작(한쪽만 제출해도 다른 쪽 영향
-  없음) / **배포 정합성: terminal.php + terminal_status.inc 2파일 일괄**.
+  와 동일 효과) — 페이지 하단 독립 "Data Cutoff" 테이블(팝업 아님, Setting 버튼 클릭 불필요). 패치노트
+  기록 완료(`2026-07-08 Update`). (main/prod 미반영)
+- [ ] #56 검증(선상): Terminal Status 페이지 진입 시 상태 테이블 바로 아래 **Data Cutoff** 섹션이
+  팝업 없이 즉시 보이고 안테나별 Allowance/Cutoff 표시·APPLY 저장 정상 / system_gateways_edit.php 에서
+  수정 후 terminal.php 재방문 시 최신값 표시(반대 방향도 동일) / 저장 후 다음
+  `network_usage_timeperiod_check.php` 크론 주기에 새 값으로 shutdown 판정 반영 / Manual Override
+  (Setting 팝업의 라우팅) 변경과 독립적으로 동작(한쪽만 제출해도 다른 쪽 영향 없음) / 10초 상태
+  자동갱신(AJAX)이 Data Cutoff 입력값을 건드리지 않는지 / **배포 정합성: terminal.php +
+  terminal_status.inc 2파일 일괄**.
 - [ ] **#55 커밋 대기(미커밋)**: "Export Credentials CSV" 버튼 — ID/Quota(MB)/Password 3컬럼 CSV.
   develop 커밋 필요(+ push 까지, [[feedback_push_required_for_deploy]]).
 - [ ] #55 검증(선상): admin/vesseladmin 로 crew_account.php 접속 → **Export ▾ 드롭다운**(Export
