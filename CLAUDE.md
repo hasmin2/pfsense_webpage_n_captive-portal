@@ -1840,10 +1840,15 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   - 폼 제출 시 `$_POST['allowance']` 존재 여부로 게이트웨이 편집(#22 lost-update 회피)과 Manual
     Override 팝업의 라우팅 라디오버튼 변경(`set_routing()`)을 독립적으로 처리 — 한쪽만 제출해도
     다른 쪽에 영향 없음. Allowance 는 system_gateways_edit.php 와 동일하게 공란(=무제한)/숫자만 허용.
-  - usage 표시는 기존 로직 그대로 유지(변경 없음) — allowance 가 공란/"0"이거나 terminal_type 이
-    `vsat_sec` 면 `get_datausage_from_db()`(InfluxDB 호출, 초당 타임아웃) 자체를 호출하지 않고
-    빈 문자열([`""`])만 표시. 매 요청/매 폴링마다 불필요한 외부 호출을 피하기 위한 기존 최적화를
-    그대로 보존.
+  - **usage 표시 조건 수정(사용자 지적으로 후속 변경)**: 최초 병합 시엔 옛 Info 로직(allowance 공란/
+    "0" 이거나 terminal_type 이 `vsat_sec` 면 `get_datausage_from_db()` 자체를 호출하지 않고 완전히
+    숨김)을 그대로 보존했으나, 사용자가 스크린샷(FX_CREW=vsat_sec 행에 usage 숫자가 안 보임)으로
+    지적 → 코드 대조 결과 **`usr/local/www/index.php`(Main Panel)의 동일 로직은 애초에 usage 를
+    숨기지 않음**(allowance 없으면 "/allowance" 접미사만 생략하고 usage 숫자는 항상 표시)이 드러나,
+    terminal.php 쪽이 Main Panel과 어긋난 구현이었던 것으로 판단 — **usage 는 allowance 설정 여부·
+    terminal_type(vsat_sec 포함)과 무관하게 항상 표시**하도록 수정(Main Panel과 정책 통일).
+    `get_datausage_from_db()` 실패(InfluxDB 타임아웃 등) 시 `false` 반환 → `strval()` 로 빈 문자열
+    표시(fatal 없음, 기존과 동일한 degrade).
   - **게이트웨이 이름을 jQuery 선택자 문자열에 그대로 이어붙임(`tr[data-gw='" + gwname + "']`)**:
     pfSense 게이트웨이명은 `is_validaliasname()` 로 영문/숫자/언더스코어만 허용되어 따옴표 등
     선택자를 깨는 문자가 들어올 수 없음을 전제로 함(다른 경로로 이례적 이름이 생겼다면 위험 —
@@ -1881,8 +1886,9 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   Override(Setting 팝업의 라우팅) 변경과 독립적으로 동작(한쪽만 제출해도 다른 쪽 영향 없음) /
   **핵심**: Allowance 입력창에 타이핑 중이거나 Cutoff 체크박스를 막 클릭한 상태에서 10초 자동갱신
   타이밍이 겹쳐도 값이 리셋되지 않는지(Info 안의 usage 숫자·GW/Net/Ext-Net 상태만 갱신되고 나머지는
-  그대로인지) / allowance 가 공란/vsat_sec 인 게이트웨이는 usage 표시가 계속 비어있는지(기존 로직
-  보존 확인) / 이 페이지 전용 인라인 `<style>`(allowance 입력 소형화)이 다른 페이지에 영향 없는지 /
+  그대로인지) / **allowance 가 공란이거나 terminal_type 이 vsat_sec(예: FX_CREW)인 게이트웨이도
+  usage 숫자가 정상 표시되는지**(Main Panel index.php 와 동일하게 항상 표시로 변경됨) / 이 페이지
+  전용 인라인 `<style>`(allowance 입력 소형화)이 다른 페이지에 영향 없는지 /
   **APPLY 클릭 후 F5 를 눌러도 "양식 다시 제출 확인" 브라우저 경고가 뜨지 않는지**(processing.php
   스플래시가 잠깐 보인 후 terminal.php 로 돌아오는지) / Manual Override(라우팅) 를 Apply 한 뒤에도
   동일하게 F5 경고 없는지 / **배포 정합성: terminal.php + terminal_status.inc 2파일 일괄**

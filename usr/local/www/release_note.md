@@ -13,6 +13,9 @@ Developed by SynerSAT Korea
 - FIXED: Terminal Status — pressing F5 (or any browser refresh) after
   clicking APPLY (Data Cutoff or Manual Override) no longer shows the
   browser's "Confirm Form Resubmission" warning.
+- FIXED: Terminal Status — the usage number in the Info column now always
+  shows, even when no Monthly Allowance is set or for the secondary VSAT
+  antenna, matching the Main Panel's display.
 
 2026-07-07 Update
 

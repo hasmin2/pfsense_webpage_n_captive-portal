@@ -45,10 +45,10 @@ foreach ($gateways as $gname => $gateway) {
         if ($gateways[$gname]['interface'] !== $ifcfg['if']) {
             continue;
         }
-        $usageText = '';
-        if (!($gateway['allowance']=="" || $gateway['allowance']=="0" || $gateway['terminal_type']==='vsat_sec')) {
-            $usageText = strval(get_datausage_from_db($ifcfg['if']));
-        }
+        // 사용량은 allowance 설정/terminal_type 과 무관하게 항상 표시(Main Panel index.php 와
+        // 동일 정책 — 그쪽은 allowance 없어도 usage 숫자는 항상 보여주고 "/allowance" 만 조건부).
+        // get_datausage_from_db() 실패(InfluxDB 타임아웃 등) 시 false 반환 → strval 로 빈 문자열.
+        $usageText = strval(get_datausage_from_db($ifcfg['if']));
         $netStatus = get_net_status($gateways_status[$gname]);
         $extnetStatus = get_extnet_status($gateways_status[$gname]);
         $rowData[$gname] = array(
