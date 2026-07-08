@@ -4,6 +4,10 @@ require_once("terminal_status.inc");
 require_once('guiconfig.inc');
 global $config, $g;
 $vesselinfo = $config['system']['vesselinfo'];
+// #57 변경 이력(radius.terminal_status_history) — 버전섞임 가드(미배포 시 record()가 조용히 skip)
+if (!function_exists('cp_terminal_history_record') && file_exists('/etc/inc/cp_terminal_history.inc')) {
+    require_once('/etc/inc/cp_terminal_history.inc');
+}
 /*
  * 폼 제출(Manual Override 의 routing_radiobutton 또는 Data Cutoff 의 allowance)을 처리한
  * 뒤에는 같은 URL 로 302 가 아니라 JS location.replace 로 리다이렉트한다(Post/Redirect/Get).
@@ -13,15 +17,27 @@ $vesselinfo = $config['system']['vesselinfo'];
  * data_update(10초 폴링) 는 별도 AJAX 호출이라 이 분기와 무관.
  */
 $didProcessPost = false;
+$historyDescs = array();
 if ($_POST['routing_radiobutton']) {
     set_routing($_POST['routing_radiobutton'], $_POST['routeduration']);
     $didProcessPost = true;
+    $historyDescs[] = ($_POST['routing_radiobutton'] === 'automatic')
+        ? 'Manual Override: routing set to Automatic'
+        : 'Manual Override: routing set to ' . $_POST['routing_radiobutton']
+            . ' (duration=' . $_POST['routeduration'] . 'm)';
 }
 if (isset($_POST['allowance']) && is_array($_POST['allowance'])) {
-    cp_apply_gateway_cutoff_settings($_POST['allowance'], isset($_POST['cutoff_enable']) ? $_POST['cutoff_enable'] : array());
+    $cutoffChangeLog = array();
+    cp_apply_gateway_cutoff_settings($_POST['allowance'], isset($_POST['cutoff_enable']) ? $_POST['cutoff_enable'] : array(), $cutoffChangeLog);
     $didProcessPost = true;
+    if (!empty($cutoffChangeLog)) {
+        $historyDescs[] = 'Data Cutoff: ' . implode(' | ', $cutoffChangeLog);
+    }
 }
 if ($didProcessPost) {
+    if (!empty($historyDescs) && function_exists('cp_terminal_history_record')) {
+        cp_terminal_history_record(implode(' / ', $historyDescs));
+    }
     echo '<script>location.replace("processing.php?to=terminal.php");</script>';
     exit;
 }
@@ -175,6 +191,7 @@ if ($_POST['data_update']) {
                             </tbody>
                         </table>
                         <div class="btn-area mt20" style="text-align: right;">
+                            <button type="button" class="btn md fill-dark" id="termhist-btn"><i class="ic-reset"></i>HISTORY</button>
                             <button type="submit" class="btn md fill-mint"><i class="ic-submit"></i>APPLY</button>
                         </div>
                         </form>
@@ -269,6 +286,61 @@ if ($_POST['data_update']) {
     </div>
 </div>
 <!--// 20241223 수정 -->
+
+<!-- ---- Terminal Status 변경 이력 모달 (#57, radius.terminal_status_history) ----
+     GMT 변경 이력 모달(common_ui.inc, gmthist-*)과 동일 계열 스타일(다크 카드 + pill 버튼) —
+     자체 색 고정이라 라이트/다크 테마 모두 무관. ID/클래스는 termhist-* 로 격리(gmthist-* 와 충돌 없음). -->
+<style>
+#termhist-ov{position:fixed;inset:0;background:rgba(8,12,20,.74);z-index:10001;display:none;align-items:center;justify-content:center;}
+#termhist-ov.on{display:flex;}
+.termhist-modal{width:min(820px,96vw);max-height:88vh;overflow:auto;background:#0d1726;border:1px solid #24405f;border-radius:14px;padding:18px 20px;box-shadow:0 18px 60px rgba(0,0,0,.55);}
+.termhist-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.termhist-head h3{margin:0;font-size:16px;font-weight:800;color:#f2f7ff;}
+.termhist-x{background:none;border:0;color:#8ca6c6;font-size:22px;line-height:1;cursor:pointer;padding:0 2px;}
+.termhist-x:hover{color:#fff;}
+.termhist-range{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.termhist-range .th-btn{height:28px;padding:0 12px;border-radius:7px;font-size:12px;font-weight:700;background:#152238;border:1px solid #2c4363;color:#b9cbe4;cursor:pointer;}
+.termhist-range .th-btn.on{background:#1976d2;border-color:#1976d2;color:#fff;}
+.termhist-range .th-export{margin-left:auto;background:#12301f;border-color:#2f6b4f;color:#9fe0bd;}
+.termhist-range .th-export:disabled{opacity:.45;cursor:default;}
+.termhist-custom{display:none;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
+.termhist-custom input[type=date]{height:28px;padding:0 8px;border-radius:7px;background:#0a192f;border:1px solid #2c4363;color:#e7eefc;font-size:12px;color-scheme:dark;}
+.termhist-custom .th-sep{color:#7e95b4;font-size:12px;}
+.termhist-apply{height:28px;padding:0 14px;border-radius:7px;font-size:12px;font-weight:700;background:#1976d2;border:1px solid #1976d2;color:#fff;cursor:pointer;}
+.termhist-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.termhist-tbl th{color:#9fb6d4;text-align:left;font-weight:700;padding:6px 8px;border-bottom:1px solid #2c4363;}
+.termhist-tbl td{color:#e7eefc;padding:6px 8px;border-bottom:1px solid #1a2c49;}
+.termhist-tbl td.th-desc{color:#b9cbe4;}
+.termhist-tbl td.th-id, .termhist-tbl td.th-ip{color:#9fb6d4;white-space:nowrap;}
+.termhist-msg{color:#cdd9ea;text-align:center;padding:32px 12px;font-size:13px;line-height:1.6;margin:0;}
+.termhist-note{margin:10px 0 0;font-size:11px;color:#7e95b4;}
+.termhist-pager{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:12px;}
+.termhist-pager .th-page{height:26px;padding:0 12px;border-radius:7px;font-size:12px;font-weight:700;background:#152238;border:1px solid #2c4363;color:#b9cbe4;cursor:pointer;}
+.termhist-pager .th-page:disabled{opacity:.4;cursor:default;}
+.termhist-pager .th-pageinfo{font-size:12px;color:#9fb6d4;white-space:nowrap;}
+</style>
+<div id="termhist-ov" role="dialog" aria-modal="true" aria-label="Terminal Status change history">
+    <div class="termhist-modal">
+        <div class="termhist-head">
+            <h3>Terminal Status change history</h3>
+            <button type="button" class="termhist-x" id="termhist-x" aria-label="Close">&times;</button>
+        </div>
+        <div class="termhist-range" id="termhist-range">
+            <button type="button" class="th-btn on" data-days="1">1d</button>
+            <button type="button" class="th-btn" data-days="7">7d</button>
+            <button type="button" class="th-btn" data-days="30">30d</button>
+            <button type="button" class="th-btn" data-custom="1">Custom</button>
+            <button type="button" class="th-btn th-export" id="termhist-export" disabled>Export CSV</button>
+        </div>
+        <div class="termhist-custom" id="termhist-custom">
+            <input type="date" id="termhist-from"> <span class="th-sep">~</span> <input type="date" id="termhist-to">
+            <button type="button" class="termhist-apply" id="termhist-apply">Apply</button>
+        </div>
+        <div id="termhist-body"></div>
+        <p class="termhist-note">&#9432; Manual Override / Data Cutoff change log (times in UTC).</p>
+    </div>
+</div>
+<!--// Terminal Status 변경 이력 모달 -->
 </body>
 <script>
     function refreshValue() {
@@ -292,5 +364,165 @@ if ($_POST['data_update']) {
             }})
     }
         setInterval(refreshValue, 10000); // 밀리초 단위이므로 5초는 5000밀리초
+</script>
+<script>
+    // Terminal Status 변경 이력 모달 (#57) — GMT 변경 이력 모달(common_ui.inc)과 동일 구조,
+    // termhist-* 네임스페이스로 격리. CSRF 토큰은 이 페이지의 #cutoff_form 에 자동 주입된
+    // __csrf_magic hidden 을 재사용(별도 폼 불필요).
+    (function(){
+        var btn = document.getElementById("termhist-btn");
+        var ov  = document.getElementById("termhist-ov");
+        if (!btn || !ov) { return; }
+        var body   = document.getElementById("termhist-body");
+        var custom = document.getElementById("termhist-custom");
+        var fromI  = document.getElementById("termhist-from");
+        var toI    = document.getElementById("termhist-to");
+        var pills  = document.getElementById("termhist-range").querySelectorAll(".th-btn[data-days], .th-btn[data-custom]");
+        var expB   = document.getElementById("termhist-export");
+        var lastRows = [];   // 현재 표시 중인 조회 결과(= CSV export 대상)
+        var PAGE_SIZE = 10;
+        var curPage = 1;
+
+        function esc(s){
+            return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+        }
+        function csrfToken(){
+            var el = document.querySelector("#cutoff_form input[name=__csrf_magic]");
+            return el ? el.value : "";
+        }
+        function render(rows){
+            lastRows = rows || [];
+            if (expB) { expB.disabled = (lastRows.length === 0); }
+            if (!lastRows.length) {
+                body.innerHTML = "<p class=\"termhist-msg\">No changes in this period.</p>";
+                return;
+            }
+            curPage = 1;
+            renderPage();
+        }
+        function renderPage(){
+            var total = lastRows.length;
+            var pages = Math.ceil(total / PAGE_SIZE) || 1;
+            if (curPage > pages) { curPage = pages; }
+            if (curPage < 1)     { curPage = 1; }
+            var start = (curPage - 1) * PAGE_SIZE;
+            var slice = lastRows.slice(start, start + PAGE_SIZE);
+
+            var h = "<table class=\"termhist-tbl\"><thead><tr><th>Time (UTC)</th><th>ID</th><th>IP</th><th>Description</th></tr></thead><tbody>";
+            for (var i = 0; i < slice.length; i++) {
+                var r = slice[i];
+                h += "<tr><td>" + esc(r.timestamp) + "</td>"
+                   + "<td class=\"th-id\">" + esc(r.admin_id == null || r.admin_id === "" ? "(unknown)" : r.admin_id) + "</td>"
+                   + "<td class=\"th-ip\">" + esc(r.client_ip == null || r.client_ip === "" ? "-" : r.client_ip) + "</td>"
+                   + "<td class=\"th-desc\">" + esc(r.description == null ? "" : r.description) + "</td></tr>";
+            }
+            h += "</tbody></table>";
+
+            if (pages > 1) {
+                h += "<div class=\"termhist-pager\">"
+                   + "<button type=\"button\" class=\"th-page\" id=\"termhist-prev\"" + (curPage <= 1 ? " disabled" : "") + ">&lsaquo; Prev</button>"
+                   + "<span class=\"th-pageinfo\">Page " + curPage + " / " + pages + " &middot; " + total + " total</span>"
+                   + "<button type=\"button\" class=\"th-page\" id=\"termhist-next\"" + (curPage >= pages ? " disabled" : "") + ">Next &rsaquo;</button>"
+                   + "</div>";
+            }
+            body.innerHTML = h;
+
+            var pv = document.getElementById("termhist-prev");
+            var nx = document.getElementById("termhist-next");
+            if (pv) { pv.addEventListener("click", function(){ if (curPage > 1)     { curPage--; renderPage(); } }); }
+            if (nx) { nx.addEventListener("click", function(){ if (curPage < pages) { curPage++; renderPage(); } }); }
+        }
+        function load(params){
+            body.innerHTML = "<p class=\"termhist-msg\">Loading&hellip;</p>";
+            lastRows = [];
+            if (expB) { expB.disabled = true; }
+            var tok = csrfToken();
+            if (tok) { params.__csrf_magic = tok; }
+            var q = [];
+            for (var k in params) { q.push(encodeURIComponent(k) + "=" + encodeURIComponent(params[k])); }
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "/terminal_history_data.php", true);
+            xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+            xhr.onreadystatechange = function(){
+                if (xhr.readyState !== 4) { return; }
+                var d = null;
+                try { d = JSON.parse(xhr.responseText); } catch(e) {}
+                if (!d || !d.ok) {
+                    body.innerHTML = "<p class=\"termhist-msg\">History unavailable (database unreachable).</p>";
+                    return;
+                }
+                render(d.rows);
+            };
+            xhr.send(q.join("&"));
+        }
+        function setOn(b){
+            for (var i = 0; i < pills.length; i++) { pills[i].classList.remove("on"); }
+            b.classList.add("on");
+        }
+        for (var i = 0; i < pills.length; i++) {
+            (function(b){
+                b.addEventListener("click", function(){
+                    setOn(b);
+                    if (b.getAttribute("data-custom")) { custom.style.display = "flex"; return; }
+                    custom.style.display = "none";
+                    load({ mode: "days", days: b.getAttribute("data-days") });
+                });
+            })(pills[i]);
+        }
+        var applyB = document.getElementById("termhist-apply");
+        if (applyB) {
+            applyB.addEventListener("click", function(){
+                if (!fromI.value || !toI.value) { return; }
+                load({ mode: "custom", from: fromI.value, to: toI.value });
+            });
+        }
+        // Export CSV — 현재 표시 중인 결과를 그대로 다운로드(클라이언트 생성, BOM = Excel 호환)
+        function csvField(v){
+            v = String(v == null ? "" : v);
+            return (/[",\r\n]/.test(v)) ? "\"" + v.replace(/"/g, "\"\"") + "\"" : v;
+        }
+        if (expB) {
+            expB.addEventListener("click", function(){
+                if (!lastRows.length) { return; }
+                var lines = ["id,timestamp_utc,admin_id,client_ip,description"];
+                for (var i = 0; i < lastRows.length; i++) {
+                    var r = lastRows[i];
+                    lines.push([r.id, r.timestamp,
+                        (r.admin_id == null ? "" : r.admin_id),
+                        (r.client_ip == null ? "" : r.client_ip),
+                        (r.description == null ? "" : r.description)].map(csvField).join(","));
+                }
+                var csv = String.fromCharCode(0xFEFF) + lines.join("\r\n") + "\r\n";
+                var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                var a = document.createElement("a");
+                var ts = new Date().toISOString().replace(/[-:]/g, "").replace("T", "_").slice(0, 15);
+                a.href = URL.createObjectURL(blob);
+                a.download = "terminal_history_" + ts + ".csv";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+            });
+        }
+        function openOv(){
+            var today = new Date().toISOString().slice(0, 10);
+            if (fromI && !fromI.value) { fromI.value = today; }
+            if (toI && !toI.value)     { toI.value = today; }
+            setOn(pills[0]);
+            custom.style.display = "none";
+            ov.classList.add("on");
+            load({ mode: "days", days: "1" });
+        }
+        function closeOv(){ ov.classList.remove("on"); }
+        btn.addEventListener("click", function(ev){
+            ev.preventDefault();
+            openOv();
+        });
+        document.getElementById("termhist-x").addEventListener("click", closeOv);
+        ov.addEventListener("click", function(ev){ if (ev.target === ov) { closeOv(); } });
+        document.addEventListener("keydown", function(ev){
+            if (ev.key === "Escape" && ov.classList.contains("on")) { closeOv(); }
+        });
+    })();
 </script>
 </html>

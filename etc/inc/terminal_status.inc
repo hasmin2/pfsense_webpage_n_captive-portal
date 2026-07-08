@@ -376,8 +376,12 @@ function set_routing($radiobutton, $routeduration){
  * 게이트웨이 항목에 두 필드만 병합 갱신한다(#10/#22/#30/#47 과 동일한 lost-update 패턴).
  * $allowance_map/$cutoff_map 은 게이트웨이 이름을 키로 하는 배열(체크되지 않은 체크박스는
  * HTML 폼 특성상 POST 에 아예 빠지므로 $cutoff_map 에 키가 없으면 off 로 취급).
+ *
+ * $changeLog 는 선택적 out-param(참조) — 실제로 값이 바뀐 게이트웨이마다 "GWNAME: allowance
+ * 'old'->'new'; cutoff old->new" 형태의 사람이 읽는 문자열을 채워 넣는다(변경 이력 기록용,
+ * #57). 값이 그대로면 아무것도 추가하지 않아 무의미한 이력이 쌓이지 않는다.
  */
-function cp_apply_gateway_cutoff_settings($allowance_map, $cutoff_map) {
+function cp_apply_gateway_cutoff_settings($allowance_map, $cutoff_map, &$changeLog = null) {
     global $config;
     if (!is_array($allowance_map) || empty($allowance_map)) {
         return false;
@@ -399,14 +403,24 @@ function cp_apply_gateway_cutoff_settings($allowance_map, $cutoff_map) {
             $rawAllowance = trim(strval($allowance_map[$gname]));
             $newAllowance = ($rawAllowance === '' || !is_numeric($rawAllowance)) ? '' : $rawAllowance;
             $newCutoff = isset($cutoff_map[$gname]) ? 'yes' : '';
+            $oldAllowance = $item['allowance'] ?? '';
+            $oldCutoff = !empty($item['cutoff_enable']) ? 'yes' : '';
 
-            if (($item['allowance'] ?? '') !== $newAllowance) {
+            $rowChanged = array();
+            if ($oldAllowance !== $newAllowance) {
                 $item['allowance'] = $newAllowance;
                 $changed = true;
+                $rowChanged[] = 'allowance ' . ($oldAllowance === '' ? '(unset)' : $oldAllowance)
+                    . ' -> ' . ($newAllowance === '' ? '(unset)' : $newAllowance) . 'GB';
             }
-            if ((!empty($item['cutoff_enable']) ? 'yes' : '') !== $newCutoff) {
+            if ($oldCutoff !== $newCutoff) {
                 $item['cutoff_enable'] = $newCutoff;
                 $changed = true;
+                $rowChanged[] = 'cutoff ' . ($oldCutoff === 'yes' ? 'on' : 'off')
+                    . ' -> ' . ($newCutoff === 'yes' ? 'on' : 'off');
+            }
+            if (!empty($rowChanged) && is_array($changeLog)) {
+                $changeLog[] = $gname . ': ' . implode('; ', $rowChanged);
             }
         }
         unset($item);

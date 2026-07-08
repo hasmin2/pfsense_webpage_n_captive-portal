@@ -16,6 +16,10 @@ Developed by SynerSAT Korea
 - FIXED: Terminal Status — the usage number in the Info column now always
   shows, even when no Monthly Allowance is set or for the secondary VSAT
   antenna, matching the Main Panel's display.
+- NEW: Terminal Status changes (Manual Override routing, Data Cutoff
+  Allowance/Cutoff) are now logged to the database — who made the change,
+  from what IP, and what changed. A new HISTORY button next to APPLY opens
+  a log viewer with date-range filtering and CSV export.
 
 2026-07-07 Update
 

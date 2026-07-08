@@ -57,6 +57,8 @@
 | `etc/inc/cp_gmt_history.inc` | GMT time_offset 변경 이력 → MariaDB `radius.gmt_history` 기록 헬퍼 (#48) |
 | `etc/inc/cp_account_history.inc` | crew 계정 변경 이력 → MariaDB `radius.radacct_changehistory` 기록/조회 헬퍼 (#49/#50) |
 | `usr/local/www/crew_account_history_data.php` | per-user 계정 변경 이력 조회 JSON 엔드포인트 (#50) |
+| `etc/inc/cp_terminal_history.inc` | Terminal Status(Manual Override/Data Cutoff) 변경 이력 → MariaDB `radius.terminal_status_history` 기록/조회 헬퍼 (#57) |
+| `usr/local/www/terminal_history_data.php` | Terminal Status 변경 이력 조회 JSON 엔드포인트 (#57) |
 
 > **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` /
 > `freeradius_datacounter_auth_resync()` 함수가 `datacounter_acct.sh` /
@@ -1870,8 +1872,66 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **배포 정합성**: `terminal.php` + `terminal_status.inc` **같은 리비전 일괄 배포**(가드 없음 —
   terminal_status.inc 미배포 시 `cp_apply_gateway_cutoff_settings` undefined fatal).
 
+### 57. terminal.php 변경 이력 → MariaDB `radius.terminal_status_history` 기록 + HISTORY 버튼 (develop 반영)
+- **요구**: Terminal Status(#56, Manual Override 라우팅 변경 + Data Cutoff allowance/cutoff 변경)
+  에 대한 변경사항을 **이전에 DB 에 저장하던 형식**(#48 GMT 이력, #49 계정 이력과 동일한 mariadb://
+  192.168.209.210:3306, radius/radius)으로 기록. 테이블은 `id`(auto increment) / `timestamp` /
+  변경 당시의 ID / IP / 변경내역을 모두 기록. APPLY 옆에 HISTORY 버튼을 추가해 조회 가능하게.
+- **신규 `etc/inc/cp_terminal_history.inc`**: 테이블 `radius.terminal_status_history`
+  (`id` INT AUTO_INCREMENT PK / `timestamp` DATETIME / `admin_id` VARCHAR(64) / `client_ip`
+  VARCHAR(45) / `description` VARCHAR(1024)) — 없으면 자동 생성(#48/#49 와 동일 멱등 패턴).
+  **실행부는 `cp_gmt_history.inc`(#48)의 mysql CLI 헬퍼(`cp_gmt_history_exec_sql`/`_sql_str`)를
+  재사용**(#49 가 이미 쓰는 관례) — 동일 DB/자격증명, defaults-extra-file(비번 argv 미노출) +
+  connect-timeout + timeout 바운드, self-contained. `cp_terminal_history_record($description)` /
+  `cp_terminal_history_fetch($from,$to,$limit)`. 실패해도 throw 없이 false + log_error(터미널
+  설정 저장 흐름 불가침).
+  - **"변경 당시의 ID"**: `$adminlogin`(common_ui.inc) 은 role 카테고리(admin/customer/
+    vesseladmin)일 뿐 "누구"인지 특정 못 함 — 대신 pfSense 세션의 실제 webConfigurator 계정명
+    `get_config_user()` 를 사용(세션 없으면 `$_SESSION['Username']` → 빈 문자열 폴백).
+  - **IP**: `$_SERVER['REMOTE_ADDR']`.
+- **호출처(`usr/local/www/terminal.php`)**: POST 처리 블록에서 실제로 뭔가 바뀐 경우에만 1행 기록.
+  - Manual Override: `set_routing()` 호출 시 "Manual Override: routing set to {게이트웨이명}
+    (duration={분}m)" 또는 "...set to Automatic".
+  - Data Cutoff: `cp_apply_gateway_cutoff_settings()` 에 새 3번째 참조 인자 `&$changeLog` 추가
+    (`etc/inc/terminal_status.inc`) — 실제로 값이 바뀐 게이트웨이만 "GWNAME: allowance
+    (unset)->100GB; cutoff off->on" 형태로 채워 넣음(변경 없는 게이트웨이는 로그에 안 남아
+    노이즈 없음). 두 소스의 설명을 합쳐 `cp_terminal_history_record()` 1회 호출.
+  - PRG 리다이렉트(#56 F5 경고 수정) 직전에 기록 — `exit` 이후에는 실행되지 않으므로 반드시
+    `echo '<script>location.replace(...)'` 보다 먼저 호출.
+- **HISTORY 버튼 + 모달**: APPLY 버튼 옆에 `HISTORY`(다크 버튼) 추가. 모달은 GMT 변경 이력 모달
+  (common_ui.inc, `gmthist-*`)과 동일 계열 스타일(다크 카드 + pill 버튼 + 10개 클라이언트
+  페이지네이션 + Export CSV)이나 **`termhist-*` 네임스페이스로 완전 격리**(같은 페이지에
+  `gmthist-*` 가 없어 충돌 소지는 없지만 관례상 접두사 분리). 컬럼 = Time (UTC) / ID / IP /
+  Description(4컬럼, GMT 이력의 GPS 컬럼 대신 ID+IP). 범위 1d(기본)/7d/30d/Custom. CSRF 토큰은
+  이 페이지의 `#cutoff_form` 에 자동 주입된 `__csrf_magic` hidden 을 재사용(별도 hidden form
+  불필요, GMT 모달의 `#gmtForm` 재사용과 동일 관례).
+- **신규 엔드포인트 `usr/local/www/terminal_history_data.php`**: `gmt_history_data.php` 와 동일
+  구조(guiconfig.inc 인증 경유 JSON, `mode=days&days=N` 또는 `mode=custom&from/to`).
+- **검증**: php -l 4파일 전부 통과. `cp_terminal_history.inc` 스텁 하네스(실제 mysql 없이
+  `cp_gmt_history_exec_sql`/`_sql_str` 스텁으로 SQL 캡처) 21/21 — CREATE TABLE/INSERT 구조,
+  1024자 클램프, 개행/탭 제거, 따옴표 escape, 빈 설명 시 미전송, fetch 파싱·잘못된 날짜 거부·
+  limit 5000 클램프. `cp_apply_gateway_cutoff_settings()` changeLog 스텁 하네스(가짜 config +
+  lock/write_config 스텁) 12/12 — 실제 변경분만 로그, no-op 시 write_config 미호출, cutoff
+  off 케이스, changeLog 인자 생략 시 무해. node --check 로 3개 `<script>` 블록(PRG 리다이렉트/
+  refreshValue/HISTORY 모달) 문법 검증 통과.
+- **배포 정합성**: `cp_terminal_history.inc` + `terminal_status.inc` + `terminal.php` +
+  `terminal_history_data.php` **4파일 일괄**(가드 있어 fatal 없음 — cp_terminal_history.inc
+  미배포 시 기록만 skip, terminal_history_data.php 없으면 HISTORY 모달이 "unavailable" 표시).
+
 ## 다음 작업 대기 중
 
+- [ ] **#57 커밋 완료(develop)**: terminal.php 변경 이력 → MariaDB `radius.terminal_status_history`
+  기록(신규 `cp_terminal_history.inc`, #48 실행부 재사용) + APPLY 옆 HISTORY 버튼/모달 +
+  `terminal_history_data.php` 조회 엔드포인트. (main/prod 미반영)
+- [ ] #57 검증(선상): Manual Override 라우팅 변경 → HISTORY 모달에 "Manual Override: routing set
+  to {게이트웨이} (duration=Nm)" 행 생성(ID=로그인 관리자 계정명, IP=요청자 IP) / Data Cutoff
+  Allowance·Cutoff 저장 → 실제로 바뀐 게이트웨이만 "GWNAME: allowance ...; cutoff ..." 행 생성
+  (값이 그대로면 기록 안 됨, no-op 확인) / `SELECT * FROM radius.terminal_status_history ORDER BY
+  id DESC LIMIT 20;` 로 DB 직접 확인 / HISTORY 버튼 클릭 → 1d/7d/30d/Custom 조회·Export CSV·
+  10개 페이지네이션 정상(GMT 이력 모달과 동일 UX) / DB 불통 시에도 Terminal Status 저장 자체는
+  정상 동작(fatal 없음) + `clog /var/log/system.log | grep "TERMINAL HISTORY"` / **배포 정합성:
+  cp_terminal_history.inc + terminal_status.inc + terminal.php + terminal_history_data.php
+  4파일 일괄**.
 - [ ] **#56 커밋 완료(develop)**: terminal.php Cutoff 체크박스 + Allowance 입력 (system_gateways_edit.php
   와 동일 효과) — **최종적으로 Monthly Allowance 를 별도 컬럼이 아니라 Info 컬럼 안에 "usage /
   [입력창] GB" 형태로 합침**(중복 표시 제거, 사용자 지적 반영), Cutoff 는 별도 컬럼 유지 —
