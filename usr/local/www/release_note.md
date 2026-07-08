@@ -4,10 +4,12 @@ Developed by SynerSAT Korea
 
 2026-07-08 Update
 
-- NEW: The Terminal Status table now includes Monthly Allowance (GB) and
-  Cutoff columns for every antenna — the same fields available on the
-  System > Gateways edit page — so a monthly data cap or cutoff toggle can
-  be set and applied right from the status table, no popup needed.
+- NEW: The Terminal Status table now lets you set a Monthly Allowance (GB)
+  and a Cutoff toggle for every antenna — the same fields available on the
+  System > Gateways edit page. The allowance field is merged right into
+  the existing Info column ("usage / allowance GB") instead of a separate
+  column, so nothing is duplicated; Cutoff has its own column. No popup
+  needed — set and apply right from the status table.
 
 2026-07-07 Update
 

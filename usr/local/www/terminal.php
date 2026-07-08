@@ -30,16 +30,16 @@ foreach ($gateways as $gname => $gateway) {
         if ($gateways[$gname]['interface'] !== $ifcfg['if']) {
             continue;
         }
-        $infoHtml = '';
+        $usageText = '';
         if (!($gateway['allowance']=="" || $gateway['allowance']=="0" || $gateway['terminal_type']==='vsat_sec')) {
-            $infoHtml = "<br>".get_datausage_from_db($ifcfg['if']).'/'.$gateway['allowance']."GB";
+            $usageText = strval(get_datausage_from_db($ifcfg['if']));
         }
         $netStatus = get_net_status($gateways_status[$gname]);
         $extnetStatus = get_extnet_status($gateways_status[$gname]);
         $rowData[$gname] = array(
             'row_on'       => ($defaultgw==1),
             'monitor'      => $gateway['monitor'],
-            'info_html'    => $infoHtml,
+            'usage_text'   => $usageText,
             'gw_html'      => ($defaultgw ? get_routingduration() : '').'<br><span>'.get_speed_from_db($ifcfg['if']).'</span>',
             'net_class'    => $netStatus[0],
             'net_text'     => $netStatus[1],
@@ -59,6 +59,19 @@ if ($_POST['data_update']) {
 <html lang="ko">
 <head>
     <?php echo print_css_n_head(); ?>
+    <style>
+        /* Info 셀의 "usage / allowance" 를 한 줄로 붙여 보여주기 위해 이 페이지에서만
+           allowance 입력을 전역 input[type=text] 의 block/100% 폭에서 인라인 소형 박스로
+           덮어씀(전역 style.css 무수정 — 다른 페이지 영향 없음). */
+        #all_terminal_status input[name^="allowance"] {
+            display: inline-block;
+            width: 80px;
+            height: 26px;
+            padding: 0 6px;
+            text-align: center;
+            vertical-align: middle;
+        }
+    </style>
 </head>
 <body>
 <div id="wrapper">
@@ -86,7 +99,6 @@ if ($_POST['data_update']) {
                                     <option value="">GW</option>
                                     <option value="">Net</option>
                                     <option value="">Ext-Net</option>
-                                    <option value="">Monthly Allowance (GB)</option>
                                     <option value="">Cutoff</option>
                                 </select>
                                 <button class="btn-ic btn-sort"></button>
@@ -96,21 +108,19 @@ if ($_POST['data_update']) {
                         <table>
                             <colgroup>
                                 <col style="width: 17%;">
+                                <col style="width: 30%;">
                                 <col style="width: 17%;">
-                                <col style="width: 17%;">
-                                <col style="width: 14%;">
-                                <col style="width: 14%;">
-                                <col style="width: 11%;">
+                                <col style="width: 13%;">
+                                <col style="width: 13%;">
                                 <col style="width: 10%;">
                             </colgroup>
                             <thead>
                             <tr>
                                 <th>Name<button class="btn-ic btn-sort"></button></th>
-                                <th>Info<button class="btn-ic btn-sort"></button></th>
+                                <th>Info (Usage / Monthly Allowance GB)<button class="btn-ic btn-sort"></button></th>
                                 <th>GW<button class="btn-ic btn-sort"></button></th>
                                 <th>Net<button class="btn-ic btn-sort"></button></th>
                                 <th>Ext-Net<button class="btn-ic btn-sort"></button></th>
-                                <th>Monthly Allowance (GB)</th>
                                 <th>Cutoff</th>
                             </tr>
                             </thead>
@@ -124,8 +134,9 @@ if ($_POST['data_update']) {
                                         <?php echo($gid); ?><br>
                                         <span><?php echo(htmlspecialchars($d['monitor'])); ?></span>
                                     </td>
-                                    <td data-th="Info" data-th-width="100" data-width="100" class="cell-info">
-                                        <?php echo($d['info_html']); ?>
+                                    <td data-th="Info" data-th-width="100" data-width="100">
+                                        <span class="cell-info-usage"><?php echo(htmlspecialchars($d['usage_text'])); ?></span> /
+                                        <input type="text" name="allowance[<?php echo($gid); ?>]" value="<?php echo(htmlspecialchars($gateway['allowance'] ?? '')); ?>" placeholder="Blank = unlimited"> GB
                                     </td>
                                     <td data-th="GW" data-th-width="100" data-width="100" class="cell-gw">
                                         <?php echo($d['gw_html']); ?>
@@ -135,9 +146,6 @@ if ($_POST['data_update']) {
                                     </td>
                                     <td data-th="Ext-Net" data-th-width="100" data-width="100" class="cell-extnet">
                                         <p class="<?php echo($d['extnet_class']); ?>"><?php echo($d['extnet_text']); ?></p>
-                                    </td>
-                                    <td data-th="Monthly Allowance (GB)" data-th-width="100" data-width="100">
-                                        <input type="text" name="allowance[<?php echo($gid); ?>]" value="<?php echo(htmlspecialchars($gateway['allowance'] ?? '')); ?>" placeholder="Blank = unlimited">
                                     </td>
                                     <td data-th="Cutoff" data-th-width="100" data-width="100">
                                         <div class="check v1">
@@ -261,7 +269,7 @@ if ($_POST['data_update']) {
                         return;
                     }
                     $row.toggleClass('on', !!d.row_on);
-                    $row.find('.cell-info').html(d.info_html);
+                    $row.find('.cell-info-usage').text(d.usage_text);
                     $row.find('.cell-gw').html(d.gw_html);
                     $row.find('.cell-net p').attr('class', d.net_class).text(d.net_text);
                     $row.find('.cell-extnet p').attr('class', d.extnet_class).text(d.extnet_text);
