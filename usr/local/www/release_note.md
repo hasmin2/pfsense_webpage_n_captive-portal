@@ -4,10 +4,12 @@ Developed by SynerSAT Korea
 
 2026-07-07 Update
 
-- NEW: The Crew Accounts page now has an "Export Credentials CSV" button (next to
-  the existing Export CSV) that downloads a CSV with just each account's ID, data
-  quota and password — a quick reference sheet for admins. Only visible to
-  admin/vesseladmin logins.
+- NEW: The Crew Accounts page toolbar now has two dropdown buttons for
+  admin/vesseladmin logins. "Export" contains Export CSV plus the new Export
+  Credentials CSV, which downloads a CSV with just each account's ID, data
+  quota and password — a quick reference sheet for admins. "Manage PW" combines
+  what used to be two separate buttons into Reset Random PW and Reset Initial
+  PW. Customer logins still see a single Reset PW button, unchanged.
 
 2026-07-06 Update
 
