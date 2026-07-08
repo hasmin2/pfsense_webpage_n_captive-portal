@@ -95,13 +95,13 @@ if ($_POST['data_update']) {
                         <form action="/terminal.php" method="post" id="cutoff_form">
                         <table>
                             <colgroup>
-                                <col style="width: 14%;">
-                                <col style="width: 14%;">
-                                <col style="width: 14%;">
-                                <col style="width: 11%;">
-                                <col style="width: 11%;">
-                                <col style="width: 20%;">
                                 <col style="width: 16%;">
+                                <col style="width: 16%;">
+                                <col style="width: 16%;">
+                                <col style="width: 13%;">
+                                <col style="width: 13%;">
+                                <col style="width: 14%;">
+                                <col style="width: 12%;">
                             </colgroup>
                             <thead>
                             <tr>
