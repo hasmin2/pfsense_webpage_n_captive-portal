@@ -7,6 +7,9 @@ $vesselinfo = $config['system']['vesselinfo'];
 if($_POST['routing_radiobutton']){
     set_routing($_POST['routing_radiobutton'], $_POST['routeduration']);
 }
+if (isset($_POST['allowance']) && is_array($_POST['allowance'])) {
+    cp_apply_gateway_cutoff_settings($_POST['allowance'], isset($_POST['cutoff_enable']) ? $_POST['cutoff_enable'] : array());
+}
 
 $gateways = return_gateways_array();
 $gateways_status = return_gateways_status(true);
@@ -156,6 +159,39 @@ if($_POST['data_update']){
             <option value="86400">1 day</option>
             <option value="864000000">Permanent</option>
         </select>
+
+        <hr class="line v1 mt30">
+
+        <p class="tit v1 mt30">Data Cutoff</p>
+        <div class="override-list scroll-y">
+            <ul>
+                <?php
+                foreach ($gateways as $gname => $gateway):
+                    if (!startswith($gateway['terminal_type'], 'vpn')):
+                        $gid = htmlspecialchars($gname);
+                        ?>
+                        <li>
+                            <div class="form">
+                                <div class="form-tit">
+                                    <p class="tit"><?php echo($gid); ?></p>
+                                </div>
+                                <div class="form-cont">
+                                    <input type="text" name="allowance[<?php echo($gid); ?>]" value="<?php echo(htmlspecialchars($gateway['allowance'] ?? '')); ?>" placeholder="Monthly allowance (GB), blank = unlimited">
+                                </div>
+                            </div>
+                            <div class="check v1 mt10">
+                                <input type="checkbox" name="cutoff_enable[<?php echo($gid); ?>]" id="cutoff_<?php echo($gid); ?>" value="1" <?php echo(!empty($gateway['cutoff_enable']) ? 'checked' : ''); ?>>
+                                <label for="cutoff_<?php echo($gid); ?>">
+                                    <p>Cutoff when allowance exceeded</p>
+                                </label>
+                            </div>
+                        </li>
+                    <?php
+                    endif;
+                endforeach;
+                ?>
+            </ul>
+        </div>
     </div>
     <div class="pop-foot">
         <button type="submit" class="btn md fill-mint" onclick="popClose('pop-set-terminal')"><i class="ic-submit"></i>APPLY</button>

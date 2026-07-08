@@ -2,6 +2,14 @@ BlueWave Link — Release Notes
 
 Developed by SynerSAT Korea
 
+2026-07-08 Update
+
+- NEW: Terminal Status page's Settings popup now has a Data Cutoff section.
+  Each antenna (gateway) gets its own Monthly Allowance (GB) field and a
+  Cutoff checkbox — the same fields available on the System > Gateways edit
+  page — so a monthly data cap or cutoff toggle can be set right from
+  Terminal Status without opening Gateway settings.
+
 2026-07-07 Update
 
 - NEW: The Crew Accounts page toolbar now has two dropdown buttons for
