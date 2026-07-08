@@ -1811,18 +1811,31 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   나머지 필드가 날아간다 — 대신 `lock('freeradius_user_config')` + `parse_config(true)` 로 최신본을
   다시 읽어 델타만 재적용하는 기존 lost-update 패턴(#10/#22/#30/#47)을 그대로 재사용. 체크되지 않은
   체크박스는 HTML 폼 특성상 POST 자체에서 빠지므로, `$cutoff_map` 에 키가 없으면 off 로 취급.
-- **수정 (`usr/local/www/terminal.php`)**: **1차로 "Terminal Setting" 팝업 안에 넣었다가, 사용자
-  피드백("이 변경 창에 넣지 말고 밖에서 바로 세팅되게")에 따라 팝업 밖으로 이동** — 메인 콘텐츠
-  영역(`.container`)에 기존 안테나 상태 테이블 바로 아래 **독립된 "Data Cutoff" 테이블 섹션**을
-  신설(`Setting` 버튼/팝업을 열 필요 없이 페이지 진입 즉시 보이고 바로 편집 가능). 안테나 상태
-  테이블과 동일한 `.list-wrap.v1 > table` 마크업 관례를 재사용해 시각적으로 통일. VPN 이 아닌
-  게이트웨이마다 행 하나 — Name / Allowance 텍스트 입력 / Cutoff 체크박스(`.check.v1`, 기존
-  crew_account.php "Generate random password?" 와 동일 관례) + 하단 APPLY 버튼(별도 폼
-  `#cutoff_form`, `/terminal.php` 로 POST). **자동갱신 테이블(`#all_terminal_status`, 10초 AJAX
-  폴링) 는 이 섹션과 완전히 분리된 별도 `<table>`이라 폴링이 입력값을 건드리지 않음.** 폼 제출 시
-  `$_POST['allowance']` 존재 여부로 게이트웨이 편집(#22 lost-update 회피)과 Manual Override 팝업의
-  라우팅 라디오버튼 변경(`set_routing()`)을 독립적으로 처리 — 한쪽만 제출해도 다른 쪽에 영향 없음.
-  Allowance 는 system_gateways_edit.php 와 동일하게 공란(=무제한)/숫자만 허용.
+- **수정 (`usr/local/www/terminal.php`)**: **UI 반복 3단계** — ① "Terminal Setting" 팝업 안에 넣음 →
+  ② 사용자 피드백("이 변경 창에 넣지 말고 밖에서 바로 세팅되게")에 따라 팝업 밖, 상태 테이블 아래
+  별도 테이블로 분리 → ③ 사용자 요청("한 테이블로 합쳐서 구현 가능?")에 따라 **기존 안테나 상태
+  테이블(Name/Info/GW/Net/Ext-Net)에 Monthly Allowance (GB)/Cutoff 두 컬럼을 그대로 추가해 한
+  테이블로 최종 병합**. VPN 이 아닌 게이트웨이마다 한 행에 상태 5컬럼 + Allowance 텍스트 입력 +
+  Cutoff 체크박스(`.check.v1`)가 모두 존재, 테이블 하단 APPLY 버튼(`#cutoff_form`, `/terminal.php`
+  로 POST). Setting 버튼/팝업 없이 페이지 진입 즉시 보이고 바로 편집 가능.
+  - **핵심 문제(10초 AJAX 폴링과 입력 중인 값의 충돌)**: 기존 `#all_terminal_status` tbody 는 10초
+    마다 서버가 만든 HTML 문자열로 **통째로 교체**됐다. Allowance/Cutoff 를 같은 tbody 행에 합치면
+    관리자가 값을 입력하거나 체크하는 도중 폴링이 오면 그 입력이 사라진다.
+  - **해결 = "상태만 부분 갱신"으로 폴링 방식 자체를 재설계**: 서버(`data_update` POST 핸들러)가
+    더 이상 HTML 문자열을 반환하지 않고, 게이트웨이 이름을 키로 하는 **구조화 JSON**
+    (`{rows: {GWNAME: {row_on, info_html, gw_html, net_class, net_text, extnet_class, extnet_text}}}`)
+    을 반환. 클라이언트(`refreshValue()`)는 `tr[data-gw='GWNAME']` 로 행을 찾아 `.cell-info`/
+    `.cell-gw`/`.cell-net p`/`.cell-extnet p` 만 `.html()`/`.attr('class')`/`.text()` 로 갱신하고
+    **Name/Allowance 입력/Cutoff 체크박스 셀은 아예 건드리지 않는다** — 입력 중 포커스·값·체크
+    상태가 폴링에 영향받지 않음. PHP 측도 초기 렌더와 AJAX 응답이 **같은 `$rowData` 배열**에서
+    나오므로 최초 로드와 이후 갱신이 항상 일관.
+  - 폼 제출 시 `$_POST['allowance']` 존재 여부로 게이트웨이 편집(#22 lost-update 회피)과 Manual
+    Override 팝업의 라우팅 라디오버튼 변경(`set_routing()`)을 독립적으로 처리 — 한쪽만 제출해도
+    다른 쪽에 영향 없음. Allowance 는 system_gateways_edit.php 와 동일하게 공란(=무제한)/숫자만 허용.
+  - **게이트웨이 이름을 jQuery 선택자 문자열에 그대로 이어붙임(`tr[data-gw='" + gwname + "']`)**:
+    pfSense 게이트웨이명은 `is_validaliasname()` 로 영문/숫자/언더스코어만 허용되어 따옴표 등
+    선택자를 깨는 문자가 들어올 수 없음을 전제로 함(다른 경로로 이례적 이름이 생겼다면 위험 —
+    현재 코드베이스 다른 곳(라디오버튼 id 등)도 동일 전제로 이스케이프 없이 써 왔음).
 - **적용 효과**: 저장 즉시 `cp_shutdown_gateways` 를 건드리지 않음(system_gateways_edit.php 저장과
   동일) — 다음 `network_usage_timeperiod_check.php` 크론 주기에 새 allowance/cutoff_enable 값을
   읽어 자동 반영. 별도 filter_configure/재시작 불필요.
@@ -1834,15 +1847,18 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 ## 다음 작업 대기 중
 
 - [ ] **#56 커밋 완료(develop)**: terminal.php Cutoff 체크박스 + Allowance 입력 (system_gateways_edit.php
-  와 동일 효과) — 페이지 하단 독립 "Data Cutoff" 테이블(팝업 아님, Setting 버튼 클릭 불필요). 패치노트
-  기록 완료(`2026-07-08 Update`). (main/prod 미반영)
-- [ ] #56 검증(선상): Terminal Status 페이지 진입 시 상태 테이블 바로 아래 **Data Cutoff** 섹션이
-  팝업 없이 즉시 보이고 안테나별 Allowance/Cutoff 표시·APPLY 저장 정상 / system_gateways_edit.php 에서
-  수정 후 terminal.php 재방문 시 최신값 표시(반대 방향도 동일) / 저장 후 다음
-  `network_usage_timeperiod_check.php` 크론 주기에 새 값으로 shutdown 판정 반영 / Manual Override
-  (Setting 팝업의 라우팅) 변경과 독립적으로 동작(한쪽만 제출해도 다른 쪽 영향 없음) / 10초 상태
-  자동갱신(AJAX)이 Data Cutoff 입력값을 건드리지 않는지 / **배포 정합성: terminal.php +
-  terminal_status.inc 2파일 일괄**.
+  와 동일 효과) — **최종적으로 기존 안테나 상태 테이블에 Monthly Allowance (GB)/Cutoff 두 컬럼을
+  합쳐 한 테이블로 병합**(팝업 아님, Setting 버튼 클릭 불필요). 10초 AJAX 폴링을 tbody 전체 교체
+  방식에서 게이트웨이별 상태 셀만 부분 갱신하는 구조화 JSON 방식으로 재설계(입력 중인 Allowance/
+  Cutoff 값이 폴링에 의해 리셋되지 않도록). 패치노트 기록 완료(`2026-07-08 Update`). (main/prod 미반영)
+- [ ] #56 검증(선상): Terminal Status 페이지 진입 시 **한 테이블**에 Name/Info/GW/Net/Ext-Net/Monthly
+  Allowance (GB)/Cutoff 7컬럼이 모두 보이고 안테나별 Allowance/Cutoff 표시·APPLY 저장 정상 /
+  system_gateways_edit.php 에서 수정 후 terminal.php 재방문 시 최신값 표시(반대 방향도 동일) / 저장
+  후 다음 `network_usage_timeperiod_check.php` 크론 주기에 새 값으로 shutdown 판정 반영 / Manual
+  Override(Setting 팝업의 라우팅) 변경과 독립적으로 동작(한쪽만 제출해도 다른 쪽 영향 없음) /
+  **핵심**: Allowance 입력창에 타이핑 중이거나 Cutoff 체크박스를 막 클릭한 상태에서 10초 자동갱신
+  타이밍이 겹쳐도 값이 리셋되지 않는지(Info/GW/Net/Ext-Net 상태만 갱신되고 나머지는 그대로인지) /
+  **배포 정합성: terminal.php + terminal_status.inc 2파일 일괄**.
 - [ ] **#55 커밋 대기(미커밋)**: "Export Credentials CSV" 버튼 — ID/Quota(MB)/Password 3컬럼 CSV.
   develop 커밋 필요(+ push 까지, [[feedback_push_required_for_deploy]]).
 - [ ] #55 검증(선상): admin/vesseladmin 로 crew_account.php 접속 → **Export ▾ 드롭다운**(Export

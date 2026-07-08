@@ -13,39 +13,45 @@ if (isset($_POST['allowance']) && is_array($_POST['allowance'])) {
 
 $gateways = return_gateways_array();
 $gateways_status = return_gateways_status(true);
-$rtnstr = '';
-
-foreach ($gateways as $gname => $gateway){
+/*
+ * 게이트웨이(안테나)별 상태 셀 데이터. 예전에는 tbody 전체를 HTML 문자열로 만들어
+ * 10초마다 통째로 덮어썼는데, Allowance 입력/Cutoff 체크박스를 같은 행에 합치면서
+ * 그 방식으로는 편집 중인 값이 폴링마다 리셋된다. 그래서 상태가 바뀌는 셀(Info/GW/
+ * Net/Ext-Net)만 게이트웨이 이름으로 식별해 부분 갱신하도록 구조화했다 — Name/
+ * Allowance/Cutoff 셀은 애초에 건드리지 않는다.
+ */
+$rowData = array();
+foreach ($gateways as $gname => $gateway) {
+    if (startswith($gateway['terminal_type'], 'vpn')) {
+        continue;
+    }
     $defaultgw = get_defaultgw($gateway);
-    if (!startswith($gateway['terminal_type'], 'vpn')){
-        if($defaultgw==1){$rtnstr .= '<tr class="on">';}
-        else{ $rtnstr .= '<tr>';}
-        foreach ($config['interfaces'] as $ifname => $ifcfg) {
-            if ($gateways[$gname]['interface']===$ifcfg['if']) {
-                $rtnstr .='<td data-th="Name" data-th-width="100" data-width="100">';
-                $rtnstr .=$gname.'<br>';
-                $rtnstr .='<span>'.$gateway['monitor'].'</span></td>';
-                $rtnstr .='<td data-th="Info" data-th-width="100" data-width="100">';
-                if($gateway['allowance']=="" || $gateway['allowance']=="0"||$gateway['terminal_type']==='vsat_sec') $rtnstr .= "";
-                else $rtnstr .= "<br>".get_datausage_from_db($ifcfg['if']).'/'.$gateway['allowance']."GB";
-                $rtnstr .='<td data-th="GW" data-th-width="100" data-width="100">';
-                $rtnstr .=($defaultgw ? get_routingduration() : '').'<br>';
-                //$rtnstr .='<span>'.get_speed($gateway).'</span></td>';
-                $rtnstr .='<span>'.get_speed_from_db($ifcfg['if']).'</span></td>';
-                $rtnstr .='<td data-th="Net" data-th-width="100" data-width="100">';
-                $rtnstr .='<p class='.get_net_status($gateways_status[$gname])[0].'>';
-                $rtnstr .=get_net_status($gateways_status[$gname])[1].'</p></td>';
-                $rtnstr .='<td data-th="Ext-Net" data-th-width="100" data-width="100">';
-                $rtnstr .='<p class='.get_extnet_status($gateways_status[$gname])[0].'>';
-                $rtnstr .=get_extnet_status($gateways_status[$gname])[1].'</p></td>';
-                $rtnstr .='</tr>';
-                break;
-            }
+    foreach ($config['interfaces'] as $ifname => $ifcfg) {
+        if ($gateways[$gname]['interface'] !== $ifcfg['if']) {
+            continue;
         }
+        $infoHtml = '';
+        if (!($gateway['allowance']=="" || $gateway['allowance']=="0" || $gateway['terminal_type']==='vsat_sec')) {
+            $infoHtml = "<br>".get_datausage_from_db($ifcfg['if']).'/'.$gateway['allowance']."GB";
+        }
+        $netStatus = get_net_status($gateways_status[$gname]);
+        $extnetStatus = get_extnet_status($gateways_status[$gname]);
+        $rowData[$gname] = array(
+            'row_on'       => ($defaultgw==1),
+            'monitor'      => $gateway['monitor'],
+            'info_html'    => $infoHtml,
+            'gw_html'      => ($defaultgw ? get_routingduration() : '').'<br><span>'.get_speed_from_db($ifcfg['if']).'</span>',
+            'net_class'    => $netStatus[0],
+            'net_text'     => $netStatus[1],
+            'extnet_class' => $extnetStatus[0],
+            'extnet_text'  => $extnetStatus[1],
+        );
+        break;
     }
 }
-if($_POST['data_update']){
-    echo json_encode(array('return_str' => $rtnstr));
+
+if ($_POST['data_update']) {
+    echo json_encode(array('rows' => $rowData));
     exit(0);
 }
 ?>
@@ -80,17 +86,22 @@ if($_POST['data_update']){
                                     <option value="">GW</option>
                                     <option value="">Net</option>
                                     <option value="">Ext-Net</option>
+                                    <option value="">Monthly Allowance (GB)</option>
+                                    <option value="">Cutoff</option>
                                 </select>
                                 <button class="btn-ic btn-sort"></button>
                             </div>
                         </div>
+                        <form action="/terminal.php" method="post" id="cutoff_form">
                         <table>
                             <colgroup>
+                                <col style="width: 14%;">
+                                <col style="width: 14%;">
+                                <col style="width: 14%;">
+                                <col style="width: 11%;">
+                                <col style="width: 11%;">
                                 <col style="width: 20%;">
-                                <col style="width: 20%;">
-                                <col style="width: 20%;">
-                                <col style="width: 20%;">
-                                <col style="width: 20%;">
+                                <col style="width: 16%;">
                             </colgroup>
                             <thead>
                             <tr>
@@ -99,64 +110,50 @@ if($_POST['data_update']){
                                 <th>GW<button class="btn-ic btn-sort"></button></th>
                                 <th>Net<button class="btn-ic btn-sort"></button></th>
                                 <th>Ext-Net<button class="btn-ic btn-sort"></button></th>
+                                <th>Monthly Allowance (GB)</th>
+                                <th>Cutoff</th>
                             </tr>
                             </thead>
                             <tbody id="all_terminal_status">
-                                <?= $rtnstr;?>
+                                <?php foreach ($rowData as $gname => $d):
+                                    $gid = htmlspecialchars($gname);
+                                    $gateway = $gateways[$gname];
+                                    ?>
+                                <tr data-gw="<?php echo($gid); ?>" class="<?php echo($d['row_on'] ? 'on' : ''); ?>">
+                                    <td data-th="Name" data-th-width="100" data-width="100">
+                                        <?php echo($gid); ?><br>
+                                        <span><?php echo(htmlspecialchars($d['monitor'])); ?></span>
+                                    </td>
+                                    <td data-th="Info" data-th-width="100" data-width="100" class="cell-info">
+                                        <?php echo($d['info_html']); ?>
+                                    </td>
+                                    <td data-th="GW" data-th-width="100" data-width="100" class="cell-gw">
+                                        <?php echo($d['gw_html']); ?>
+                                    </td>
+                                    <td data-th="Net" data-th-width="100" data-width="100" class="cell-net">
+                                        <p class="<?php echo($d['net_class']); ?>"><?php echo($d['net_text']); ?></p>
+                                    </td>
+                                    <td data-th="Ext-Net" data-th-width="100" data-width="100" class="cell-extnet">
+                                        <p class="<?php echo($d['extnet_class']); ?>"><?php echo($d['extnet_text']); ?></p>
+                                    </td>
+                                    <td data-th="Monthly Allowance (GB)" data-th-width="100" data-width="100">
+                                        <input type="text" name="allowance[<?php echo($gid); ?>]" value="<?php echo(htmlspecialchars($gateway['allowance'] ?? '')); ?>" placeholder="Blank = unlimited">
+                                    </td>
+                                    <td data-th="Cutoff" data-th-width="100" data-width="100">
+                                        <div class="check v1">
+                                            <input type="checkbox" name="cutoff_enable[<?php echo($gid); ?>]" id="cutoff_<?php echo($gid); ?>" value="1" <?php echo(!empty($gateway['cutoff_enable']) ? 'checked' : ''); ?>>
+                                            <label for="cutoff_<?php echo($gid); ?>">
+                                                <p>Cutoff when exceeded</p>
+                                            </label>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
                             </tbody>
                         </table>
-                    </div>
-                </div>
-                <div class="terminal-wrap mt30">
-                    <div class="list-wrap v1">
-                        <div class="sort-area">
-                            <div class="inner">
-                                <p class="tit v1">Data Cutoff</p>
-                            </div>
+                        <div class="btn-area mt20" style="text-align: right;">
+                            <button type="submit" class="btn md fill-mint"><i class="ic-submit"></i>APPLY</button>
                         </div>
-                        <form action="/terminal.php" method="post" id="cutoff_form">
-                            <table>
-                                <colgroup>
-                                    <col style="width: 34%;">
-                                    <col style="width: 33%;">
-                                    <col style="width: 33%;">
-                                </colgroup>
-                                <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Monthly Allowance (GB)</th>
-                                    <th>Cutoff</th>
-                                </tr>
-                                </thead>
-                                <tbody>
-                                <?php
-                                foreach ($gateways as $gname => $gateway):
-                                    if (!startswith($gateway['terminal_type'], 'vpn')):
-                                        $gid = htmlspecialchars($gname);
-                                        ?>
-                                        <tr>
-                                            <td data-th="Name" data-th-width="100" data-width="100"><?php echo($gid); ?></td>
-                                            <td data-th="Monthly Allowance (GB)" data-th-width="100" data-width="100">
-                                                <input type="text" name="allowance[<?php echo($gid); ?>]" value="<?php echo(htmlspecialchars($gateway['allowance'] ?? '')); ?>" placeholder="Blank = unlimited">
-                                            </td>
-                                            <td data-th="Cutoff" data-th-width="100" data-width="100">
-                                                <div class="check v1">
-                                                    <input type="checkbox" name="cutoff_enable[<?php echo($gid); ?>]" id="cutoff_<?php echo($gid); ?>" value="1" <?php echo(!empty($gateway['cutoff_enable']) ? 'checked' : ''); ?>>
-                                                    <label for="cutoff_<?php echo($gid); ?>">
-                                                        <p>Cutoff when exceeded</p>
-                                                    </label>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    <?php
-                                    endif;
-                                endforeach;
-                                ?>
-                                </tbody>
-                            </table>
-                            <div class="btn-area mt20" style="text-align: right;">
-                                <button type="submit" class="btn md fill-mint"><i class="ic-submit"></i>APPLY</button>
-                            </div>
                         </form>
                     </div>
                 </div>
@@ -258,7 +255,17 @@ if($_POST['data_update']){
             type: 'POST',
             dataType: 'json',
             success: function (result) {
-                $("#all_terminal_status").html(result.return_str)
+                $.each(result.rows, function (gwname, d) {
+                    var $row = $("#all_terminal_status tr[data-gw='" + gwname + "']");
+                    if ($row.length === 0) {
+                        return;
+                    }
+                    $row.toggleClass('on', !!d.row_on);
+                    $row.find('.cell-info').html(d.info_html);
+                    $row.find('.cell-gw').html(d.gw_html);
+                    $row.find('.cell-net p').attr('class', d.net_class).text(d.net_text);
+                    $row.find('.cell-extnet p').attr('class', d.extnet_class).text(d.extnet_text);
+                });
             }})
     }
         setInterval(refreshValue, 10000); // 밀리초 단위이므로 5초는 5000밀리초
