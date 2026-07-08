@@ -16,6 +16,14 @@ Developed by SynerSAT Korea
 - FIXED: Terminal Status — the usage number in the Info column now always
   shows, even when no Monthly Allowance is set or for the secondary VSAT
   antenna, matching the Main Panel's display.
+- NEW: A refreshed look across the whole console — sidebar, tables, buttons,
+  forms and popups on every page now share a single light/dark color system
+  instead of scattered hardcoded colors. Status (Online/Offline/etc.) now
+  reads as a colored badge instead of a small icon, form fields show a
+  focus ring, and cards/buttons use soft rounded corners and shadows
+  instead of flat squared panels. The existing System/GPS/Light/Dark
+  toggle in the sidebar switches between the two themes as before — this
+  is a visual refresh only, no font or icon downloads added.
 - NEW: Terminal Status changes (Manual Override routing, Data Cutoff
   Allowance/Cutoff) are now logged to the database — who made the change,
   from what IP, and what changed. A new HISTORY button next to APPLY opens

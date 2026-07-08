@@ -1918,8 +1918,108 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `terminal_history_data.php` **4파일 일괄**(가드 있어 fatal 없음 — cp_terminal_history.inc
   미배포 시 기록만 skip, terminal_history_data.php 없으면 HISTORY 모달이 "unavailable" 표시).
 
+### 58. 전 관리 콘솔 라이트/다크 테마 리디자인 — CSS 변수 토큰 시스템 도입 (develop 반영)
+- **요구**: "usr/local/www 내의 전반적으로 모든 CSS 가 촌스럽다, 최신 트렌드를 반영해서
+  LIGHT/DARK 두 가지의 테마를 반영해보라" → 승인 과정: ① `terminal.php` 하나로 프로토타입
+  (Artifact 로 라이트/다크 토글 가능한 정적 목업 제작·시각 검토) → ② "좋다 모두 적용하라.
+  필요시에는 가용한 자원 모두 사용해서라도 최상의 결과를 도출하라. 온라인에서 데이터를
+  가져오는 CSS/FONT/STYLE 등은 배제" → 승인 후 9개 커스텀 콘솔 페이지 전체 롤아웃.
+- **핵심 설계 결정 = CSS 커스텀 프로퍼티(변수) 토큰화**: 기존 6개 CSS 파일(1,536줄)은 색이
+  전부 하드코딩 헥스라, #41 다크모드 도입 때 `dark.css` 가 **셀렉터마다** 색을 일일이
+  재지정해야 했다(108줄, 유지보수 포인트 分散). 이번에 `:root` 에 `--ink`/`--surface-*`/
+  `--accent`/`--info`/`--ok`/`--warn`/`--crit`/`--radius-*`/`--shadow-*`/`--nav-*` 등 디자인
+  토큰을 정의하고, 모든 컴포넌트 규칙이 `var(--x)` 를 참조하도록 새로 작성 → **다크모드는
+  `html.dark { --x: 다른값; }` 로 변수만 재정의**하면 그 위의 모든 컴포넌트 규칙이 자동으로
+  다크에 맞춰짐(유지보수 포인트가 여러 셀렉터에서 변수 한 곳으로 축소, 향후 테마 조정이 훨씬
+  쉬워짐 — CLAUDE.md #41 항목이 남긴 "색이 CSS 변수로 안 되어 있어" 라는 근본 페인포인트를
+  이번에 해소).
+- **팔레트(브랜드 유지, 재정의 아님)**: "촌스럽다"는 지적이었지 브랜드를 바꾸라는 요청이
+  아니었으므로, 기존에 섞여 쓰이던 두 민트(버튼 `#12B886` / 사이드바 `#38D9A9`)를 **하나의
+  시그널 틸 액센트**(`--accent`)로 통일하고, 순수 회색 대신 브랜드 틸 쪽으로 살짝 치우친
+  쿨톤 뉴트럴(라이트=블루그레이 `#EEF3F6`, 다크=네이비 `#0A131C`)을 새로 정의. 보조 액센트로
+  "딥씨 블루"(`--info`, 기존 이력 모달들이 이미 쓰던 `#1976d2` 계열과 결이 맞음)를 추가하고,
+  상태색(ok/warn/crit)은 액센트와 별개 축으로 분리(디자인 스킬 가이드 원칙 — semantic color
+  는 accent 로 세면 안 됨). 사이드바는 브랜드 앵커라 **라이트/다크 무관 고정 네이비**(원래도
+  그랬음, #41 원칙 유지). 폰트는 기존 셀프호스팅 Pretendard 그대로(교체 불필요 — 이미
+  한국어 시장 대상 SaaS 에 적절한 선택이었음).
+- **"온라인 리소스 배제" 요구 충족**: 새로 추가한 CSS/폰트/아이콘 전부 로컬 — 외부 CDN
+  `@import`/`url()`/웹폰트 링크 **0건**. 체크박스 체크마크만 인라인 data-URI SVG(로컬 인코딩
+  문자열, 네트워크 요청 없음)로 그리고, 나머지는 기존 로컬 PNG 아이콘 재사용 또는 CSS 로만
+  드로잉(라디오/체크박스/스위치 — 아래 참고).
+- **신규 `usr/local/www/css/theme.css`**: `:root` 토큰 정의 + 공통 컴포넌트 모던 리스킨.
+  `style.css`/`components.css`/`common.css`/`reset.css`/`utility.css` **는 건드리지 않고**,
+  그 위에 얹는 오버라이드 레이어로 구현(기존 셀렉터와 동일하거나 더 높은 명시도를 그대로
+  써서 뒤에 로드되는 이점으로 이김 — 레이아웃/구조 리스크 최소화, 순수 시각 속성만 교체).
+  다룬 범위: 사이드바(브랜드/메뉴/GMT/다크토글 버튼) · 헤드라인 바 · 타일 카드
+  (Private Internet Control 등) · 팝업/모달 공통(팝업 헤더를 사이드바와 통일된 네이비로) ·
+  버튼(fill-mint/fill-dark/line-*) · **`.list-wrap.v1` 테이블**(헤더를 진회색 바→연한
+  대문자 라벨로, 선택행을 진한 단색 채움→은은한 액센트 틴트로) · **상태 텍스트를 필(pill)
+  뱃지로 전환**(`.txt-online/.txt-offline/.txt-warning/.txt-noconn/.txt-na` — 배경 PNG
+  아이콘 대신 색 점 + 필 배경, `terminal_status.inc` 의 `get_net_status()`/`get_extnet_status()`
+  가 만드는 클래스라 **모든 페이지에 자동 적용**) · 섹션 라벨(대문자 트래킹 이버로우 스타일)
+  · 폼 요소(입력창에 **포커스 링 신규 추가** — 기존엔 focus 상태 자체가 없었음) ·
+  **라디오/체크박스를 PNG 아이콘 대신 CSS 로 직접 드로잉**(그래야 테마 전환에 자동 대응 —
+  래스터 아이콘은 색을 못 바꿈) · 스위치/스피너. `prefers-reduced-motion` 가드 안에서만
+  전환 애니메이션 적용(접근성 기본 원칙 준수).
+- **`dark.css` 전면 재작성**: 108줄의 셀렉터별 재지정 → **48줄의 변수 재정의**로 축소.
+  `html.dark { --ink: ...; --surface-1: ...; ... }` 한 블록이면 theme.css 의 모든 컴포넌트
+  규칙이 자동으로 다크 팔레트를 따라간다. 예외 1건만 셀렉터 오버라이드 유지: `index.php`
+  의 `.daily-usage-btn` 이 **페이지 자체 인라인 `<style>`** 에서 라이트 색을 완전히
+  재정의(동일 명시도, 더 늦게 로드 — theme.css 의 라이트 규칙은 이 버튼에 한해 무력화됨,
+  의도된 것으로 확인·주석 처리)하므로, 다크에서 되돌리려면 `html.dark .daily-usage-btn`
+  (더 높은 명시도)가 여전히 필요.
+  - **회귀 방지 전수 대조**: 새 dark.css 작성 전 **구 dark.css 의 모든 규칙 24개 항목을
+    하나씩 새 구현과 대조**하여 색상 커버리지 누락이 없는지 확인. 이 과정에서 실제 버그
+    1건 발견·수정 — `.theme-toggle`/`.theme-toggle-li`/`.theme-toggle .tt-ic` 는 구
+    dark.css 가 **유일하게** display/size/padding 등 레이아웃 전체를 전담하던 곳이었는데
+    (다른 어느 공유 CSS 파일에도 정의 없음), 처음 이관 시 색상만 옮기고 레이아웃
+    프로퍼티(`display:flex` 등)를 빠뜨려 버튼이 찌그러질 뻔한 것을 코드 대조로 발견해
+    수정. 이 사례가 "전수 대조" 검증 단계의 필요성을 보여줌.
+  - **의도된 동작 변경 1건**: 헤드라인 바의 모바일 전용 `box-shadow`(`0px 4px 4px #00000026`,
+    구 dark.css 는 다크에서만 제거)를 신 theme.css 에서는 **라이트/다크·모바일/데스크톱
+    무관하게 전부 제거**하고 대신 `border-bottom` 로 대체 — 얇은 경계선이 새 "부드러운
+    elevation" 디자인 언어와 일관되므로 의도적으로 통일(회귀 아님, 결정 사항).
+- **`etc/inc/common_ui.inc` `print_css_n_head()`**: `<link href="css/style.css">` 와
+  `<link href="css/dark.css">` 사이에 `<link href="css/theme.css">` 삽입(로드 순서:
+  reset→fonts→utility→common→components→style→**theme**→dark — theme 이 style 위에 얹히고,
+  dark 가 theme 의 변수를 재정의).
+- **적용 범위/한계(의도적 제외)**: `print_css_n_head`+`print_sidebar` 를 쓰는 9개 페이지의
+  **공유 컴포넌트**(사이드바/헤드라인/테이블/버튼/폼/팝업)만 대상. 페이지별 인라인
+  `<style>` 블록(예: index.php 의 3D 스카이돔·커버리지맵·일별사용량 차트·항구 미니맵,
+  crew_account.php/prepaid_account.php 의 스케줄러 팝업·Export/Manage PW 드롭다운,
+  release_note.php 의 버전 카드, terminal.php/GMT/계정 이력 모달들)는 **이미 자체
+  완결된 배색**(대부분 이미 다크 고정 또는 라이트/다크 대응 완료)이라 **손대지 않음** —
+  필요시 후속으로 이 팔레트에 맞춰 개별 조정 가능. stock pfSense·캡티브포털 페이지도
+  기존 #41 원칙과 동일하게 범위 밖.
+- **검증**: 이 개발 환경에 pfSense 런타임이 없어 **실제 브라우저 렌더링 확인은 불가** —
+  대신 ① 새 CSS 파일 2개 중괄호/주석 짝 검증(균형 확인) ② `.check.v1` 체크 상태
+  `background` 축약형이 `background-image`/`repeat`/`position` 을 초기화해버리는 실수를
+  발견해 롱핸드로 수정 ③ 9개 페이지 전수 grep 으로 각 셀렉터(`.tile-area`/`.daily-usage-btn`/
+  `.select.v1`/`.btn-login` 등)의 실사용처와 명시도 충돌 여부 확인(인라인 `<style>` 블록과의
+  프로퍼티 중복 여부까지) ④ 구 dark.css 24개 규칙 전수 대조. `php -l` 로 `common_ui.inc`
+  통과. **선상/스테이징 박스에서 실제 렌더링 확인 필수**(특히: 사이드바 메뉴 hover/active,
+  헤드라인 바, 상태 필 뱃지, 라디오/체크박스 CSS 드로잉, 팝업 헤더 네이비 통일, 다크토글
+  전환 애니메이션, 포커스 링).
+- **배포 정합성**: `theme.css`(신규) + `dark.css`(전면 재작성) + `common_ui.inc` **3파일
+  일괄 배포 필수** — `common_ui.inc` 만 배포되고 `theme.css` 가 없으면 404(그래도 다른 CSS
+  는 정상 로드되어 fatal 없음, 단 새 디자인 미적용) / `theme.css` 만 배포되고 `common_ui.inc`
+  미갱신이면 `<link>` 자체가 없어 새 파일이 로드 안 됨.
+
 ## 다음 작업 대기 중
 
+- [ ] **#58 커밋 완료(develop)**: 전 관리 콘솔(9페이지) 라이트/다크 테마 리디자인 —
+  `theme.css`(신규, CSS 변수 토큰) + `dark.css`(전면 재작성, 108줄→48줄) + `common_ui.inc`
+  (`<link>` 1줄 추가). 온라인 리소스 0건(폰트/아이콘 전부 로컬). (main/prod 미반영)
+- [ ] #58 검증(선상, **브라우저 실측 필수** — 이 세션은 코드 대조만 가능): 9페이지
+  (index/crew_account/prepaid_account/network_control/terminal/lan_svrstatus/crew_status/
+  download_center/release_note) 전부에서 사이드바(고정 네이비, 메뉴 hover/active 그라디언트)·
+  헤드라인 바·팝업(네이비 헤더)·`.list-wrap.v1` 테이블(연한 헤더+선택행 틴트)·상태 필 뱃지
+  (Online/Offline/등)·버튼(fill-mint/line-*)·입력창 포커스 링·라디오/체크박스(CSS 드로잉,
+  체크마크 SVG 표시 확인)·스위치(Private Internet Control)가 라이트/다크 양쪽에서 정상
+  렌더링되는지 / 사이드바 "Dark mode" 토글 4단계(System/GPS/Light/Dark) 전환 시 깨짐 없는지
+  / index.php 의 3D 돔·커버리지맵·일별사용량·항구 미니맵과 crew_account.php 의 스케줄러
+  팝업·드롭다운이 새 팔레트와 과하게 부딪히지 않는지(의도적으로 무수정 — 이미 자체 배색) /
+  **배포 정합성: theme.css + dark.css + common_ui.inc 3파일 일괄**.
 - [ ] **#57 커밋 완료(develop)**: terminal.php 변경 이력 → MariaDB `radius.terminal_status_history`
   기록(신규 `cp_terminal_history.inc`, #48 실행부 재사용) + APPLY 옆 HISTORY 버튼/모달 +
   `terminal_history_data.php` 조회 엔드포인트. (main/prod 미반영)
