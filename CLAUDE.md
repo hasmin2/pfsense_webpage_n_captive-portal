@@ -792,6 +792,10 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `etc/inc/terminal_status.inc` + `usr/local/www/widgets/widgets/manage_server_module.widget.php`
 - **검증**: php -l 전부 통과 / FBB 이름 매핑 10케이스·satlon 포맷 14케이스·look-angle 5시나리오(반구
   플립 포함) 단위테스트 통과 / 브라우저 하네스(리포 실 CSS)로 4상태·이중니들·로테이션·높이 실측.
+- **후속(2026-07-08, 이 레포 밖 변경)**: acureader(IntellianACUReader.java, **별도 프로젝트** — 이
+  레포에는 코드 없음) 의 GPS 데이터 조회 타임아웃을 60000ms 로 상향해 GPS 데이터가 안정적으로
+  수신되도록 수정 완료(사용자 확인, ACUReader 프로젝트 측 커밋). pfSense 측(이 레포) 코드 변경
+  없음 — release_note.md 2026-07-08 Update 에 FIXED 로만 기록.
 
 ### 28. 항구 미니맵 — WoW 풍 원형 미니맵 + 최근접 3개 항구 방위/거리 화살표 (통합 완료)
 - **요구**: GPS 판넬(Position 타일) 아래 원형 미니맵. 오프라인용 경량 지도 사전 저장, 전세계 주요 항구
@@ -1433,8 +1437,24 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
     `GMT HISTORY:` 시스템 로그(빈도 낮아 스팸 없음; source 는 로그 가시화용 — 테이블 컬럼 아님).
   - 호출측 3곳 모두 `file_exists`+`function_exists` 가드 → **버전 섞임(inc 미배포) 시 fatal 없이 skip**.
     구 inc(3인자 record)에 신 호출(5인자)이 와도 PHP 는 초과 인자 무시 → **양방향 버전섞임 안전**.
-- **주의(수용)**: `gmtcheck`(수동모드 토글) 자체는 오프셋 변경이 아니라 미기록. DB 접속정보는 코드 상수
-  (기존 influx/mysql 하드코딩 관례 — 보안 후속 항목과 동일 범주).
+- **주의(수용)**: DB 접속정보는 코드 상수(기존 influx/mysql 하드코딩 관례 — 보안 후속 항목과 동일 범주).
+- **#48b 변경주체 명시화 + gmtcheck 토글 기록(develop 미커밋)**: "수동 변경만 기록되는 것으로 보인다"는
+  관측 → **원래부터 3경로(manual-web/auto-gps/api-push) 전부 record 호출**하고 있었음을 확인(버그 아님 —
+  auto-gps 는 실제 타임존 경계 통과 시에만, api-push 는 중앙서버 푸시 시에만 값이 바뀌어 기록되므로
+  정박 중엔 manual 이 유일한 빈발 이벤트라 그렇게 보였을 뿐). 사용자 결정 = **스키마 무변경(description
+  유지)** + gmtcheck 토글도 기록:
+  - **변경주체를 description 앞에 `[source]` 태그로 저장**(`cp_gmt_history_record` 가 자동 prepend,
+    이미 `[` 로 시작하면 중복 태깅 안 함) → 스키마 ALTER 없이 뷰어 Description 컬럼에서 manual-web/
+    auto-gps/api-push 즉시 구분(기존엔 source 가 시스템 로그에만 남고 컬럼 미저장이었음).
+  - **`cp_gmt_history_actor()` 신규**(get_config_user()→$_SESSION['Username']→'' 폴백, #57 규약) →
+    manual 경로 description 을 "Manual change by {계정} ({IP})" 로 변경(변경주체=로그인 관리자 계정+IP).
+  - **gmtcheck(Manual Timezone Enable/Disable) 토글 기록**(index.php): `!empty()` truthy 전환 시에만
+    "[manual-web] Manual timezone mode ENABLED/DISABLED by {계정} ({IP})" 1행(오프셋 값은 안 바뀌므로
+    timefrom=timeto=현재오프셋 → Change 컬럼 무변화, 모드 전환은 description 에). auto-gps/api-push 는
+    prepend 만으로 변경주체 노출(호출 인자 무변경).
+  - **호환**: record() 시그니처·컬럼 불변 → 구버전 호출/뷰어와 완전 호환. 수정 = `cp_gmt_history.inc`
+    (actor 헬퍼 + prepend) + `index.php`(manual 액터 + gmtcheck 훅) **2파일**. 검증: php -l 통과 +
+    태그/클램프/중복태그방지/토글전환 하네스 11/11.
 - **이력 뷰어(사이드바 history 버튼 + 모달)**:
   - **버튼**: 사이드바 "GMT n"(`common_ui.inc print_sidebar` `#gmt-modify`) 옆 소형 `history` 버튼.
     클릭 버블은 JS `stopPropagation` 으로 차단(부모 클릭 = 타임존 설정 팝업 pop-gmt 와 분리).
@@ -2011,9 +2031,62 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   일괄 배포 필수** — `common_ui.inc` 만 배포되고 `theme.css` 가 없으면 404(그래도 다른 CSS
   는 정상 로드되어 fatal 없음, 단 새 디자인 미적용) / `theme.css` 만 배포되고 `common_ui.inc`
   미갱신이면 `<link>` 자체가 없어 새 파일이 로드 안 됨.
+- **선상 리포트(미해결, 후속 세션 확인 필요)**: 배포 후 다크모드로 Main Panel(index.php) 확인 시
+  사용자가 스크린샷으로 "배경 색이 이상하다" 보고 — 사이드바·Satellite/Position/Internet usage/
+  LAN usage 4개 카드는 다크로 정상 렌더되는데, `.contents` 바깥 배경과 하단 **Server Status**
+  테이블(`.list-wrap.v1`, 헤더 "CORE/VERSION | NOC | ...")이 라이트 모드 색(연한 배경)처럼
+  보임. 코드 검토로는 `html.dark` 토글 스크립트(common_ui.inc, 이번 세션 무수정)·CSS 명시도
+  모두 정상으로 보여 **브라우저 캐시(Ctrl+F5 미실시)가 원인일 가능성이 가장 높다고 판단**
+  — 이 세션 종료 시점까지 사용자가 강제 새로고침 재확인 결과를 주지 않아 **미해결 상태로 남음**.
+  후속 세션 확인 순서: ① Ctrl+F5 후에도 재현되면 실제 CSS 버그로 보고 재조사(4개 카드는
+  index.php 자체 인라인 `<style>` 의 다크 고정 배색이라 `html.dark` 여부와 무관하게 항상
+  다크로 보임 — 이것이 "다른 요소는 다크인데 배경만 안 됨"처럼 보이는 착시일 수 있음에 유의)
+  ② `document.documentElement.className` 콘솔 출력으로 `dark` 클래스 실제 존재 여부 확인
+  ③ Network 탭에서 `theme.css`/`dark.css` 실제 로드 여부·내용(304 캐시 재사용 포함) 확인.
+
+### 59. PHP ERROR "Cannot declare class APIRoutingGatewayDetailRead" — 진단(코드 수정 없음, 미해결)
+- **증상(선상 로그, 수 시간 간격 반복)**: `PHP ERROR: Type: 64, File:
+  /etc/inc/api/endpoints/APIRoutingGatewayDetailRead.inc, Line: 19, Message: Cannot declare
+  class APIRoutingGatewayDetailRead, because the name is already in use` — 하루 사이 3회 재현
+  (06:16/08:23/08:49), E_COMPILE_ERROR(fatal, 파일 파싱 단계에서 발생).
+- **진단(리포 전수 검색으로 확인)**: 이 **리포에는 원인 파일이 존재하지 않는다**.
+  - `etc/inc/api/models/APIRoutingGatewayDetailRead.inc` (모델, `class APIRoutingGatewayDetailRead
+    extends APIModel`, Jared Hendrickson 저작권 — pfSense-API 패키지 스톡 코드)만 리포에 있고,
+    `etc/inc/api/endpoints/APIRoutingGatewayDetailRead.inc`(에러가 가리키는 파일)는 리포에 **없음**.
+  - 우리 웹루트 로더 `usr/local/www/api/v1/routing/gateway/detail/index.php`(2026-06-18 커밋,
+    이후 무변경)가 실제 요구하는 엔드포인트 파일명은 `APIRoutingGatewayDetail.inc`(**"Read" 없음**)
+    — 에러가 가리키는 파일명과 **다르다**. 이 파일도 리포엔 없음(박스에만 존재하는 것으로 추정).
+  - 리포 전체 grep 결과 `APIRoutingGatewayDetailRead` 클래스는 위 모델 파일 자기 자신 안에서만
+    선언·참조됨 — 리포 코드 안에 이 클래스를 이중으로 include 하는 경로가 전혀 없음.
+  - **결론**: 이 리포에 커밋된 코드 자체에는 문제가 없다. 박스 파일시스템에 "Read" 접미사가 붙은
+    엔드포인트 파일이 (pfSense-API 패키지 재설치 잔재 또는 과거 수동 작업의 고아 파일로 추정)
+    남아있고, 그 파일의 클래스명이 우리 모델 파일과 우연히 동일해서, 같은 요청 내에서 프레임워크가
+    (아마 모델 클래스명 오토로드 + 엔드포인트 디렉터리 스캔 양쪽 경로로) 두 파일을 모두 로드하며
+    충돌하는 것으로 추정(프레임워크 `api/framework/*` 는 박스 전용이라 이 세션에서 정확한 오토로드
+    메커니즘 확인 불가).
+- **미해결 — 다음 세션에서 아래 3개 커맨드 결과를 받아 정확한 조치 결정 필요** (파일 삭제는
+  되돌리기 어려운 작업이라 내용 확인 없이 삭제를 권하지 않음):
+  ```sh
+  cat /etc/inc/api/endpoints/APIRoutingGatewayDetailRead.inc
+  ls -la /etc/inc/api/endpoints/ | grep -i routinggateway
+  ls -la /etc/inc/api/endpoints/APIRoutingGatewayDetail.inc
+  ```
+  세 번째 명령으로 우리가 실제로 필요로 하는 `APIRoutingGatewayDetail.inc`(Read 없음)가 박스에
+  존재하는지, 존재한다면 정상 동작하는지도 함께 확인 필요(존재하지 않으면 `/api/v1/routing/
+  gateway/detail` 라우트 자체가 별도로 깨져 있다는 뜻이라 그것도 조치 대상).
+- **작업 상태**: 코드 변경 없음. 커밋 없음. 사용자가 이 대화 컨텍스트를 종료할 예정이라 진단
+  내용만 기록.
 
 ## 다음 작업 대기 중
 
+- [ ] **#59 미해결(진단만 완료, 코드 수정 없음)**: 선상 PHP fatal "Cannot declare class
+  APIRoutingGatewayDetailRead" 반복 발생 — 리포 코드엔 원인 없음(박스 전용 고아 파일로 추정).
+  다음 세션에서 `cat /etc/inc/api/endpoints/APIRoutingGatewayDetailRead.inc` 등 3개 명령 결과를
+  받아 정확한 조치(파일 삭제/이름변경 등) 결정 필요. 상세는 #59 항목 참고.
+- [ ] **#58 미해결 리포트**: 다크모드에서 Main Panel 배경/Server Status 테이블이 라이트 모드
+  색으로 보인다는 사용자 스크린샷 — 브라우저 캐시(Ctrl+F5 미실시)가 원인일 가능성이 높다고
+  판단했으나 재확인 결과를 받지 못한 채 세션 종료. 다음 세션에서 강제 새로고침 후에도 재현되는지
+  확인 필요. 상세는 #58 "선상 리포트(미해결)" 참고.
 - [ ] **#58 커밋 완료(develop)**: 전 관리 콘솔(9페이지) 라이트/다크 테마 리디자인 —
   `theme.css`(신규, CSS 변수 토큰) + `dark.css`(전면 재작성, 108줄→48줄) + `common_ui.inc`
   (`<link>` 1줄 추가). 온라인 리소스 0건(폰트/아이콘 전부 로컬). (main/prod 미반영)

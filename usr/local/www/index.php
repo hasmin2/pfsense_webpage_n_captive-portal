@@ -69,7 +69,10 @@ if(isset($_POST['gmt'])){
             }
             if (function_exists('cp_gmt_history_record')) {
                 $gmt_ip = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'unknown';
-                cp_gmt_history_record($gmt_prev, $gv, 'manual-web', 'Manual change from ' . $gmt_ip);
+                // 변경주체 = 로그인 관리자 계정명(+요청 IP)
+                $gmt_actor = function_exists('cp_gmt_history_actor') ? cp_gmt_history_actor() : '';
+                $gmt_who = ($gmt_actor !== '' ? $gmt_actor . ' ' : '') . '(' . $gmt_ip . ')';
+                cp_gmt_history_record($gmt_prev, $gv, 'manual-web', 'Manual change by ' . $gmt_who);
             }
         }
         echo '<script> location.replace("processing.php?to=index.php");</script>';
@@ -77,8 +80,27 @@ if(isset($_POST['gmt'])){
     }
 }
 if(isset($_POST['gmtcheck'])){
+    // 수동 타임존 모드(Manual Timezone Enable) 토글 — 오프셋 값 변경은 아니지만
+    // 자동 갱신 on/off 를 좌우하므로 변경주체와 함께 이력에 남긴다(실제 전환 시에만).
+    $gmtchk_prev = !empty($config['time_offset_enabled']['gmtcheck']);
     $config['time_offset_enabled']['gmtcheck'] = $_POST['gmtcheck'];
     write_config("GMT has been manually checked");
+    $gmtchk_new = !empty($_POST['gmtcheck']);
+    if ($gmtchk_prev !== $gmtchk_new) {
+        if (!function_exists('cp_gmt_history_record') && file_exists('/etc/inc/cp_gmt_history.inc')) {
+            require_once('/etc/inc/cp_gmt_history.inc');
+        }
+        if (function_exists('cp_gmt_history_record')) {
+            $gmt_ip = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'unknown';
+            $gmt_actor = function_exists('cp_gmt_history_actor') ? cp_gmt_history_actor() : '';
+            $gmt_who = ($gmt_actor !== '' ? $gmt_actor . ' ' : '') . '(' . $gmt_ip . ')';
+            // 오프셋 값은 그대로 → timefrom=timeto (Change 컬럼은 변화 없음, 모드 전환은 설명에)
+            $cur_off = isset($config['time_offset_enabled']['time_offset'])
+                ? (string)$config['time_offset_enabled']['time_offset'] : '';
+            cp_gmt_history_record($cur_off, $cur_off, 'manual-web',
+                'Manual timezone mode ' . ($gmtchk_new ? 'ENABLED' : 'DISABLED') . ' by ' . $gmt_who);
+        }
+    }
 }
 $a_terminal_state = return_terminal_state();
 $a_terminal_label = return_gateways_label();

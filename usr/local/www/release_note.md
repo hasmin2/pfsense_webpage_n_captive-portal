@@ -28,6 +28,14 @@ Developed by SynerSAT Korea
   Allowance/Cutoff) are now logged to the database — who made the change,
   from what IP, and what changed. A new HISTORY button next to APPLY opens
   a log viewer with date-range filtering and CSV export.
+- FIXED: ACU reader timeout increased to 60000ms so GPS data is retrieved
+  reliably.
+- CHANGED: The GMT (timezone offset) change history now clearly shows who
+  made each change. Every change — manual, GPS-auto and remote — is tagged
+  by source ([manual-web] / [auto-gps] / [api-push]) and, for manual
+  changes, the logged-in admin account and IP, right in the history viewer.
+  Turning Manual Timezone Enable on or off is now logged as its own event
+  too.
 
 2026-07-07 Update
 
