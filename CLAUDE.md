@@ -1236,6 +1236,44 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   공인 엔드포인트 금지 — WAN 누수로 healthy 오판).
 - **2026-07-03 후속(ping 대상 교정 + 매분 환원)**: `openvpn_restart_timeperiod_check.php`(`OVWD_PING_HOST`
   10.8.128.1) + `firewall_cronlist`(`minute` `*`) 일괄. 패치노트는 `2026-07-03 Update` 항목에 병합(FIXED).
+- **⚠️ 근본 재설계(2026-07-14, develop 미커밋) — liveness 를 하드코딩 ICMP → dpinger 판정으로 교체**:
+  - **문제(정밀 재검토 결론)**: 워치독 내부 로직(플래그·per-client·fail카운터/쿨다운·싱글톤/reap·플래그정리)
+    자체는 정상이나, **liveness 전체가 단일 하드코딩 IP 로의 `ping -S <virtual_addr> <host>` 한 신호에
+    매달려 있어 양방향 취약**. FreeBSD 는 `-S`(소스)와 무관하게 **목적지 기준 라우팅** → host 가 공인
+    엔드포인트면 WAN 누수로 healthy 오판(→ **무재시작**, 원래 6h+ 증상), 터널 내부 IP(10.8.128.1)면 그
+    IP 의 ICMP 정책/경로 미설치 시 healthy 인데 실패 오판(→ **멀쩡한 터널 상시 재시작 = 끊김 상시화**).
+    즉 7/3 ping 대상 교정이 "무재시작"을 "상시 재시작"으로 뒤집었을 수 있음(선상 미검증이었음).
+  - **재설계(`openvpn_restart_timeperiod_check.php`)**: ICMP 완전 제거. liveness 를 **전제 없는 2신호**로:
+    - **(a) 제어플레인** — OpenVPN management `state` 가 `'up'`(CONNECTED) 이 아니면(reconnecting/down/…)
+      불건전. 업링크 전환 후 서버 도달 불가(흔한 케이스)를 외부 probe 없이 직접 감지.
+    - **(b) 데이터플레인** — `'up'` 이어도 **이 client 의 VPN 게이트웨이를 pfSense dpinger 가 `down` 으로
+      판정**하면 불건전(제어플레인은 붙었는데 데이터 안 흐르는 **wedged** 케이스 = 원래 6h+ 증상의 정체).
+      dpinger 는 게이트웨이 인터페이스에 **바인딩**돼 상시 감시하므로 `-S`/목적지라우팅/ICMP정책 전제가
+      없다(=올바른 ICMP). 우리 코드는 dpinger 의 이미-올바른 판정을 **읽어서** 그 client 만 재시작(과거엔
+      아무도 이 판정으로 client 를 재시작 안 했던 것이 진짜 갭).
+    - **(c) 안전 강등** — dpinger 판정이 `unknown`(게이트웨이 미모니터/미매핑/pending)이면 제어플레인
+      `'up'` 을 신뢰하고 **재시작 안 함** → **오재시작 불가**(하드코딩 ICMP 의 양방향 오판 원천 제거).
+  - **신규 `ovwd_build_vpn_gw_health()`**: `return_gateways_array()`+`return_gateways_status(true)` 로
+    게이트웨이를 순회, `get_real_interface($gw['interface'])`(폴백: interface/friendlyiface 문자열)가
+    `ovpnc{N}` 이면 **vpnid=N** 으로 접어 `vpnid=>'up'|'down'|'unknown'` 맵 생성. status stripos:
+    `online`→up / `down`→down(단 substatus `force_down`=관리자 강제 비활성은 **재시작 대상 아님→unknown**) /
+    그 외(none/pending/unmonitored)→unknown. 같은 vpnid 게이트웨이 다수면 **down 우선**(보수적).
+    `gwlb.inc`/`interfaces.inc` require(+`function_exists` 가드) — 미가용 시 빈 맵→전부 unknown(제어플레인만).
+  - **보존(무변경)**: 강제 재시작 **플래그**(경로전환/관리자, manual_routing "Automatic"·APIStatusOpenVPNRestart)
+    는 그대로 즉시 전 client 재시작. fail카운터/쿨다운(3회·300s)·싱글톤/reap·플래그정리·로그 가시화 동일.
+    제거: `OVWD_PING_HOST`·`$ping_bin`·`$timeout_pfx`·`virtual_addr` 의존·mwexec ping(+매 실패마다의 syslog 노이즈).
+  - **커버리지 한계(정직)**: wedged(up-but-data-dead) 감지는 **VPN 게이트웨이의 dpinger 모니터링에 의존**.
+    게이트웨이가 미모니터면 제어플레인만 사용(reconnecting/down 은 잡되 wedged 는 못 잡음) — 단 **오재시작은
+    절대 없음**. wedged 까지 잡으려면 VPN 게이트웨이 모니터(모니터IP=터널 원격)를 켜거나 OpenVPN
+    keepalive/ping-restart 설정 권장(네이티브 자가치유). 하드코딩 ICMP 보다 **모든 면에서 안전·정확**.
+  - **검증**: php -l 통과 + `ovwd_build_vpn_gw_health()` 스텁 하네스 **9/9**(online→up·down→down·
+    force_down→unknown·무상태→unknown·unmonitored문자열→up·비VPN제외·friendlyiface폴백·다중GW down우선·
+    interface직접ovpnc). **선상 실측 필수**(dpinger 모니터 설정·실제 재시작 동작). 배포 정합성: **코어
+    함수 의존만**(openvpn.inc/gwlb.inc/interfaces.inc) → 단독 배포 가능. `crontab -l | grep openvpn_restart` +
+    `clog /var/log/system.log | grep openvpn-watchdog`(RESTART reason=`gw=down` 확인).
+  - **잔여 후속(별건, 미적용)**: ① `manual_routing_timeperiod_check.php` 자동 만료→auto복귀 시 openvpnrestart
+    플래그 미설정(자동 failover 재바인딩은 liveness 의존). ② `crontab_import`(레거시) 가 `/usr/local/www/…`
+    (잘못된 경로) 참조 — 권위는 `firewall_cronlist`(`/usr/local/cron/…`).
 
 ### 41. 다크모드 — System/GPS(일출일몰)/Light/Dark 토글 (develop `ab95701`·`81c9423`·`e089710`)
 - **요구**: 다크모드 버튼을 전 웹페이지 공통 적용. 이후 시스템 테마 연동(기본) + GPS 일출/일몰 연동으로 확대.

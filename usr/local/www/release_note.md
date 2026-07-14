@@ -36,6 +36,12 @@ Developed by SynerSAT Korea
   changes, the logged-in admin account and IP, right in the history viewer.
   Turning Manual Timezone Enable on or off is now logged as its own event
   too.
+- FIXED: The VPN auto-recovery watchdog is now more reliable. It decides
+  whether a tunnel is dead using the firewall's own gateway monitor (the
+  same status the dashboard shows) plus the OpenVPN connection state,
+  instead of a single hardcoded ping target. This removes a case where a
+  genuinely dead tunnel was never restarted, as well as the opposite case
+  where a perfectly healthy tunnel could be restarted over and over.
 
 2026-07-07 Update
 
