@@ -276,7 +276,9 @@
       "Bash(rm -f /tmp/extnet_harness.php; echo cleaned)",
       "Bash(php -l usr/local/www/release_note.md)",
       "Bash(echo \"=== commit 1 done: $? ===\")",
-      "Bash(echo \"=== commit 2 done: $? ===\")"
+      "Bash(echo \"=== commit 2 done: $? ===\")",
+      "Bash(git --no-pager diff)",
+      "Bash(git --no-pager log --oneline -2)"
     ]
   }
 }
