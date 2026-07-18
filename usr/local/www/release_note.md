@@ -3,7 +3,7 @@ BlueWave Link — Release Notes
 Developed by SynerSAT Korea
 
 2026-07-19 Update
-Stable: 1.1.6-Stable
+Beta 1.1.77-Beta · Stable: 1.1.5-Stable
 
 - FIXED: Improved data usage accounting consistency — a user's recorded
   internet data usage now stays consistent with the actual measured traffic.

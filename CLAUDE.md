@@ -2139,8 +2139,8 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   (#24 OOM/ZFS-full·#26·Peplink flapping). **radacct 는 별도 경로(queries.conf)라 이 수정과 무관**(정보용 유지).
 - **선상 게이트**: 한 척 배포 → `usage_reconcile.py` 로 used-octets 가 InfluxDB≈WAN 수렴 + **오탐 락아웃 0**
   며칠 관찰 → 함대. (`preserveusersdb` 끄기는 대안 레버지만 v2 로 불필요 — v2 는 로그인 유지하며 정산 정확.)
-- **패치노트**: `usr/local/www/release_note.md` 최상단 `2026-07-19 Update` / Stable 1.1.6-Stable —
-  "Improved data usage accounting consistency" FIXED 1줄(사용자 비가시라 상세는 생략, 상세는 investigation §8).
+- **패치노트**: `usr/local/www/release_note.md` 최상단 `2026-07-19 Update` / Beta 1.1.77-Beta · Stable 1.1.5-Stable
+  — "Improved data usage accounting consistency" FIXED 1줄(사용자 비가시라 상세는 생략, 상세는 investigation §8).
 
 ### 61. EXT-NET(외부 인터넷) 실검사 실행범위 개선 — dpinger 무관, NET online 이면 실행 (develop 미커밋)
 - **배경/요구**: WAN 게이트웨이 flapping(Peplink↔dpinger, [[project_peplink_dpinger_flapping_rootcause]])을

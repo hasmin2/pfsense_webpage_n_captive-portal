@@ -5334,9 +5334,17 @@ STATE_ROOT="/var/run/datacounter-state"
 STATE_DIR="${STATE_ROOT}/${TIMERANGE}"
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
-# 사용자/range 기준 직전 Interim 값 저장 파일.
-# SESSIONID를 일부러 빼서 세션 재시작 후 카운터가 작아지는 상황도 감지한다.
-PREVFILE="${STATE_DIR}/prev-${USERNAME}"
+# 사용자/range/SID 기준 직전 Interim 값 저장 파일 (v2: per-SID keying, E2).
+# per-SID 라 동시 세션 간 PREV 핑퐁(재가산)이 없고, 새 SID 는 자연히 first_point 가 된다.
+# 재부팅 시 /var/run(tmpfs) 소거 → 같은 SID 라도 first_point → 카운터도 0 이라 delta 작음(정상).
+PREVFILE="${STATE_DIR}/prev-${USERNAME}-${SESSIONID}"
+
+# STOPPED 센티넬: Stop 처리 후 늦게 도착한 Interim 이 SESSFILE 을 되살리는 것을 막는다 (E1).
+STOPMARK="${STATE_DIR}/stopped-${USERNAME}-${SESSIONID}"
+
+# 회계 파일 RMW 직렬화 락: interim 의 SESSFILE 누적과 Stop 의 은행이 이 락을 공유해야
+# double-count/resurrect 가 없다 (E1). 락 유지 시간은 파일 I/O(수 ms)뿐 — export 는 락 밖.
+LOCK="/tmp/datacounter_${TIMERANGE}_${USERNAME}.lock"
 
 # Ensure base dir exists
 [ -d "$BASE" ] || mkdir -p "$BASE" 2>/dev/null
@@ -5360,7 +5368,7 @@ fi
 
 if [ $((NOW_TS - last_clean)) -ge 3600 ] 2>/dev/null; then
   echo "$NOW_TS" > "$CLEAN_STAMP" 2>/dev/null || true
-  find "$STATE_ROOT" -type f -name "prev-*" -mmin +720 -delete >/dev/null 2>&1 || true
+  find "$STATE_ROOT" -type f \( -name "prev-*" -o -name "stopped-*" \) -mmin +720 -delete >/dev/null 2>&1 || true
 fi
 
 # ---------- sanity guards ----------
@@ -5384,38 +5392,9 @@ if [ "$CUR_IN" -lt 0 ] || [ "$CUR_OUT" -lt 0 ] || [ "$CUR_TOTAL" -lt 0 ]; then
   exit 0
 fi
 
-# ---------- STOP zero-guard ----------
-# CUR_TOTAL=0 으로 Stop 이 오는 경우(로그아웃 없이 WiFi/LAN 절단 등):
-# NAS 가 최종 사용량을 0 으로 보고하므로, 아래 lockf STOP 섹션의 누적 로직을
-# 그대로 타면 마지막 SESSFILE 값이 USEDFILE 에 반영되지 않고 사라진다.
-# 따라서 여기서 SESSFILE 값을 USEDFILE 에 누적한 뒤 정리하고 종료한다.
-if [ "$STATUS" = "Stop" ] && [ "$CUR_TOTAL" -eq 0 ]; then
-  # PREVFILE 정리: 세션 종료이므로 다음 세션의 delta 오염 방지
-  rm -f "$PREVFILE" 2>/dev/null || true
-
-  # SESSFILE 정리: 마지막 Interim 이 non-zero 였다면 SESSFILE 이 남아있다.
-  # 이 파일을 삭제하지 않으면 다음 인증 시 datacounter_auth.sh 의 glob 이
-  # 구 세션 bytes 를 합산해 quota 합계가 부풀려지는 버그가 발생한다.
-  # 단, USEDFILE 에 반영되지 않은 bytes 이므로 먼저 USEDFILE 에 누적한 후 삭제한다.
-  if [ -f "$SESSFILE" ]; then
-    LAST_SESS=$(head -n1 "$SESSFILE" 2>/dev/null | tr -cd '0-9')
-    [ -z "$LAST_SESS" ] && LAST_SESS=0
-    if [ "$LAST_SESS" -gt 0 ]; then
-      # USEDFILE 에 마지막 세션 bytes 반영 (atomic)
-      lockf -t 10 "/tmp/datacounter_${TIMERANGE}_${USERNAME}.lock" sh -c '
-        USEDFILE="$1"; LAST_SESS="$2"
-        OLD=$(head -n1 "$USEDFILE" 2>/dev/null | tr -cd "0-9")
-        [ -z "$OLD" ] && OLD=0
-        NEW=$(( OLD + LAST_SESS ))
-        printf "%s\n" "$NEW" > "$USEDFILE"
-      ' sh "$USEDFILE" "$LAST_SESS" 2>/dev/null || true
-    fi
-    rm -f "$SESSFILE" 2>/dev/null || true
-  fi
-
-  log "DATACOUNTER STOP-ZERO user=$USERNAME range=$TIMERANGE sid=$SESSIONID (zero octets; session usage preserved)"
-  exit 0
-fi
+# ---------- STOP zero-guard 는 v2 에서 통합 Stop 핸들러로 흡수됨 ----------
+# CUR_TOTAL=0 인 Stop 도 아래 STOP 핸들러의 "SESSFILE(누적 delta) 은행 + 마지막 구간 delta"
+# 로직이 그대로 처리한다(FINAL_DELTA = CUR = 0 → SESSFILE 그대로 은행). 별도 분기 불필요.
 
 # ---------- INTERIM ----------
 if [ "$STATUS" = "Interim-Update" ]; then
@@ -5454,24 +5433,11 @@ if [ "$STATUS" = "Interim-Update" ]; then
     exit 0
   fi
 
-  # ---- 정상(non-zero) 처리: SESSFILE 기록 + 로그 + Influx export ----
-  # 단조성(high-water-mark) 보장: 같은 세션(SID)에서 카운터가 역행(0<cur<기존)하면
-  # 더 작은 값으로 덮어쓰지 않는다. ipfw 카운터 리셋/룰 리로드/IP 마이그레이션 등으로
-  # SESSFILE 이 줄면 그 차액은 USEDFILE 에 접힌 적이 없어 영구 손실되기 때문이다.
-  # (zero-guard 가 CUR_TOTAL==0 을 막는 것과 동일 철학의 일반화.)
-  if [ -f "$SESSFILE" ]; then
-    OLD_SESS=$(head -n1 "$SESSFILE" 2>/dev/null | tr -cd '0-9')
-    [ -z "$OLD_SESS" ] && OLD_SESS=0
-  else
-    OLD_SESS=0
-  fi
-  if [ "$CUR_TOTAL" -lt "$OLD_SESS" ] 2>/dev/null; then
-    log "DATACOUNTER INTERIM REGRESS-KEEP user=$USERNAME range=$TIMERANGE sid=$SESSIONID old=$OLD_SESS cur=$CUR_TOTAL (kept high-water)"
-  else
-    echo "$CUR_TOTAL" > "$SESSFILE"
-  fi
-
-  log "DATACOUNTER INTERIM user=$USERNAME range=$TIMERANGE sid=$SESSIONID in=$((CUR_IN/1048576))MB out=$((CUR_OUT/1048576))MB total=$((CUR_TOTAL/1048576))MB"
+  # ---- 정상(non-zero) 처리: v2 = delta 계산 → SESSFILE 에 delta 누적(락) → Influx export ----
+  # 구버전은 SESSFILE=max(CUR)(high-water)라 카운터 리셋(재부팅)마다 최고봉 에포크 1개만 남겨
+  # 과소계상됐다(예: 56G 실사용 → 14G 만 계상). v2 는 InfluxDB 와 동일한 검증된 delta 를
+  # SESSFILE 에 누적하므로(아래) 모든 에포크 climb 을 보존한다(used-octets ≈ InfluxDB ≈ 물리 WAN).
+  # SESSFILE 쓰기는 아래 delta 계산 후 락 안에서 수행한다(INTERIM 로그도 커밋 성공 후 남긴다).
 
   # ===== InfluxDB 1.8 export - previous Interim delta =====
   # 기존 CUR_IN / CUR_OUT / CUR_TOTAL 값은 변경하지 않고,
@@ -5488,6 +5454,7 @@ if [ "$STATUS" = "Interim-Update" ]; then
   PREV_TOTAL=0
   PREV_SID=""
   HAS_PREV=0
+  SIDPREV_TS=0   # per-SID PREVFILE 의 ts(없으면 0). 낙관적 락 토큰 전용(마이그레이션 baseline 과 분리).
 
   if [ -f "$PREVFILE" ]; then
     PREV_TS="$(grep -E '^ts=' "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
@@ -5502,6 +5469,30 @@ if [ "$STATUS" = "Interim-Update" ]; then
     [ -z "$PREV_TOTAL" ] && PREV_TOTAL=0
 
     HAS_PREV=1
+    SIDPREV_TS="$PREV_TS"
+  fi
+
+  # 배포 전환(transition, 일회성): per-SID PREVFILE 이 없고 구버전 per-USER PREVFILE
+  # (prev-USERNAME, SID 없는 옛 포맷)이 남아 있으면 그 값을 delta baseline 으로 승계한다.
+  # → 배포 직후 활성 세션의 첫 interim 이 first_point(DELTA=CUR=전체누적)로 튀어 SESSFILE
+  #   에 카운터 전체가 재가산되는 스파이크(오탐 락아웃)를 방지. SID 는 현재값으로 덮어
+  #   SESSION_CHANGED 억제. 낙관적 락 토큰(SIDPREV_TS)은 0(per-SID 부재) 유지 → 커밋 통과.
+  # 재부팅 시엔 /var/run(tmpfs)이 통째로 비어 이 옛 파일도 없으므로 정상 first_point
+  #   (카운터도 0 → DELTA 작음)로 동작한다. OLDPREV 는 TTL(720분) sweep 으로 정리된다.
+  if [ "$HAS_PREV" -eq 0 ]; then
+    OLDPREV="${STATE_DIR}/prev-${USERNAME}"
+    if [ -f "$OLDPREV" ]; then
+      PREV_TS="$(grep -E '^ts=' "$OLDPREV" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      PREV_IN="$(grep -E '^in=' "$OLDPREV" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      PREV_OUT="$(grep -E '^out=' "$OLDPREV" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      PREV_TOTAL="$(grep -E '^total=' "$OLDPREV" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd '0-9')"
+      [ -z "$PREV_TS" ] && PREV_TS=0
+      [ -z "$PREV_IN" ] && PREV_IN=0
+      [ -z "$PREV_OUT" ] && PREV_OUT=0
+      [ -z "$PREV_TOTAL" ] && PREV_TOTAL=0
+      PREV_SID="$SESSIONID"   # 같은 세션 취급(SESSION_CHANGED 억제) → DELTA=CUR-PREV(작음)
+      HAS_PREV=1
+    fi
   fi
 
   FIRST_POINT=0
@@ -5560,15 +5551,54 @@ if [ "$STATUS" = "Interim-Update" ]; then
   [ "$DELTA_OUT" -lt 0 ] 2>/dev/null && DELTA_OUT=0
   [ "$DELTA_TOTAL" -lt 0 ] 2>/dev/null && DELTA_TOTAL=0
 
-  # 다음 Interim 비교를 위해 현재값 저장
-  tmp="${PREVFILE}.$$"
-  {
-    echo "ts=$NOW_TS"
-    echo "sid=$SESSIONID"
-    echo "in=$CUR_IN"
-    echo "out=$CUR_OUT"
-    echo "total=$CUR_TOTAL"
-  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$PREVFILE" 2>/dev/null || true
+  # ===== v2: SESSFILE 에 delta 누적 (락 + STOPPED 가드 + 낙관적 동시성 + 성공시 PREV 전진) =====
+  # - STOPPED 센티넬 존재 → Stop 이후 늦게 온 interim → SESSFILE 되살리기 방지(E1) → skip(42).
+  # - PREVFILE ts 가 락 토큰(BASED_TS=SIDPREV_TS = per-SID PREVFILE ts·부재 0)과 다르면 →
+  #   동시/재전송 interim 이 이미 커밋 → 중복 가산 방지(낙관적 동시성) → skip(43).
+  # - SESSFILE 쓰기 성공 후에만 PREVFILE 전진(E8): 디스크풀 등 실패 시 PREV 안 밀어
+  #   다음 interim 이 같은 delta 를 회수(자가치유) → skip(1, export 안 함).
+  # - InfluxDB export 는 아래에서 "커밋(rc=0)된 경우에만" → used-octets 와 lockstep.
+  acc_rc=0
+  lockf -t 10 "$LOCK" sh -c '
+    STOPMARK="$1"; SESSFILE="$2"; PREVFILE="$3"; DELTA_TOTAL="$4"; BASED_TS="$5"
+    NOW_TS="$6"; SESSIONID="$7"; CUR_IN="$8"; CUR_OUT="$9"; CUR_TOTAL="${10}"
+    [ -f "$STOPMARK" ] && exit 42
+    if [ -f "$PREVFILE" ]; then
+      curts="$(grep -E "^ts=" "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd "0-9")"
+    else
+      curts=""
+    fi
+    [ -z "$curts" ] && curts=0
+    [ -z "$BASED_TS" ] && BASED_TS=0
+    [ "$curts" != "$BASED_TS" ] && exit 43
+    OLD=$(head -n1 "$SESSFILE" 2>/dev/null | tr -cd "0-9"); [ -z "$OLD" ] && OLD=0
+    NEW=$(( OLD + DELTA_TOTAL ))
+    # 임시파일은 반드시 점(.)으로 시작해 auth 의 합산 glob(used-octets-USER-*)에 안 걸리게 한다.
+    # 같은 디렉터리라 mv 는 원자적. (구버전 "${SESSFILE}.$$" 는 glob 에 걸려 mv 창에서 이중합산 위험.)
+    stmp="${SESSFILE%/*}/.dctmp-i.$$"
+    if printf "%s\n" "$NEW" > "$stmp" 2>/dev/null && mv -f "$stmp" "$SESSFILE" 2>/dev/null; then
+      ptmp="${PREVFILE}.$$"
+      { echo "ts=$NOW_TS"; echo "sid=$SESSIONID"; echo "in=$CUR_IN"; echo "out=$CUR_OUT"; echo "total=$CUR_TOTAL"; } > "$ptmp" 2>/dev/null && mv -f "$ptmp" "$PREVFILE" 2>/dev/null || true
+      exit 0
+    fi
+    rm -f "$stmp" 2>/dev/null || true
+    exit 1
+  ' sh "$STOPMARK" "$SESSFILE" "$PREVFILE" "$DELTA_TOTAL" "$SIDPREV_TS" "$NOW_TS" "$SESSIONID" "$CUR_IN" "$CUR_OUT" "$CUR_TOTAL" || acc_rc=$?
+
+  if [ "$acc_rc" -eq 42 ]; then
+    log "DATACOUNTER INTERIM SKIP-STOPPED user=$USERNAME range=$TIMERANGE sid=$SESSIONID (interim after Stop; ignored)"
+    exit 0
+  fi
+  if [ "$acc_rc" -eq 43 ]; then
+    log "DATACOUNTER INTERIM SKIP-DUP user=$USERNAME range=$TIMERANGE sid=$SESSIONID (concurrent/dup commit; ignored)"
+    exit 0
+  fi
+  if [ "$acc_rc" -ne 0 ]; then
+    log "DATACOUNTER INTERIM WRITE-FAIL user=$USERNAME range=$TIMERANGE sid=$SESSIONID (SESSFILE write failed; PREV not advanced, next interim recovers)"
+    exit 0
+  fi
+
+  log "DATACOUNTER INTERIM user=$USERNAME range=$TIMERANGE sid=$SESSIONID in=$((CUR_IN/1048576))MB out=$((CUR_OUT/1048576))MB total=$((CUR_TOTAL/1048576))MB delta=$((DELTA_TOTAL/1048576))MB"
 
   # Influx에는 delta만 기본 필드로 저장하고,
   # 검증/디버깅용으로 current/prev/reset 정보도 함께 저장한다.
@@ -5593,9 +5623,13 @@ if [ "$STATUS" = "Interim-Update" ]; then
   exit 0
 fi
 
-# ---------- STOP / others ----------
-LOCK="/tmp/datacounter_${TIMERANGE}_${USERNAME}.lock"
-
+# ---------- STOP (v2: SESSFILE(누적 delta) 은행 + 마지막 구간 delta) ----------
+# 구버전은 packet CUR_TOTAL 을 은행했는데, 리셋(재부팅) 후 Stop 이면 CUR 이 SESSFILE(누적)보다
+# 작아 high-water 를 잃었다. v2 는 SESSFILE(=Σdelta, 검증된 누적)에 마지막 구간 delta 를 더해
+# 은행한다. CUR_TOTAL=0 Stop 도 여기서 처리됨(FINAL_DELTA=0 → SESSFILE 그대로 은행).
+# ⚠️ STATUS=Stop 에서만 실행: Start/Accounting-On 등이 흘러들어 STOPMARK 를 세워 그 세션의
+#    이후 interim 이 전부 skip(42) 되는 사고를 방지(현 설정은 Stop/Interim 만 호출하나 방어).
+if [ "$STATUS" = "Stop" ]; then
 lockf -t 10 "$LOCK" sh -c '
   USERNAME="$1"
   TIMERANGE="$2"
@@ -5603,50 +5637,81 @@ lockf -t 10 "$LOCK" sh -c '
   CUR_IN="$4"
   CUR_OUT="$5"
   CUR_TOTAL="$6"
-  IN_GW="$7"
-  OUT_GW="$8"
-  LOGFILE="$9"
-  STATE_DIR="${10}"
+  LOGFILE="$7"
+  STATE_DIR="$8"
+  STOPMARK="$9"
 
   BASE="/var/log/radacct/datacounter/$TIMERANGE"
   USEDFILE="$BASE/used-octets-$USERNAME"
   SESSFILE="$BASE/used-octets-$USERNAME-$SESSIONID"
+  PREVFILE="${STATE_DIR}/prev-${USERNAME}-${SESSIONID}"
 
-  # PREVFILE 정리: Stop 수신 시 다음 세션의 첫 Interim이 잘못된 prev 값을
-  # 참조하지 않도록 반드시 삭제한다.
-  PREVFILE="${STATE_DIR}/prev-${USERNAME}"
+  # 중복 Stop(재전송) 방지: 이미 STOPPED 면 이 SID 는 이미 은행됨 → 재적립 금지(멱등, E1).
+  [ -f "$STOPMARK" ] && exit 0
+  # STOPPED 센티넬을 먼저 세워 늦게 도착한 interim 의 SESSFILE 되살리기를 차단(E1).
+  : > "$STOPMARK" 2>/dev/null || true
+
+  CUR_TOTAL=$(printf "%s" "$CUR_TOTAL" | tr -cd "0-9"); [ -z "$CUR_TOTAL" ] && CUR_TOTAL=0
+  CUR_IN=$(printf "%s" "$CUR_IN" | tr -cd "0-9");       [ -z "$CUR_IN" ] && CUR_IN=0
+  CUR_OUT=$(printf "%s" "$CUR_OUT" | tr -cd "0-9");     [ -z "$CUR_OUT" ] && CUR_OUT=0
+
+  # 마지막 구간 delta(마지막 interim → Stop). PREVFILE 기준, 카운터 역행(리셋)이면 CUR.
+  # interim 이 한 번도 없던 짧은 세션(PREVFILE 부재)은 전체 CUR 이 이 세션 사용량.
+  if [ -f "$PREVFILE" ]; then
+    PREV_TOTAL="$(grep -E "^total=" "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd "0-9")"
+    [ -z "$PREV_TOTAL" ] && PREV_TOTAL=0
+    if [ "$CUR_TOTAL" -ge "$PREV_TOTAL" ] 2>/dev/null; then
+      FINAL_DELTA=$(( CUR_TOTAL - PREV_TOTAL ))
+    else
+      FINAL_DELTA=$(( CUR_TOTAL ))
+    fi
+  else
+    FINAL_DELTA=$(( CUR_TOTAL ))
+  fi
+  [ "$FINAL_DELTA" -lt 0 ] 2>/dev/null && FINAL_DELTA=0
+
+  OLD_SESS=$(head -n1 "$SESSFILE" 2>/dev/null | tr -cd "0-9"); [ -z "$OLD_SESS" ] && OLD_SESS=0
+  SESS_FINAL=$(( OLD_SESS + FINAL_DELTA ))
+
+  OLD_USED=$(head -n 1 "$USEDFILE" 2>/dev/null | tr -d "\r" | tr -cd "0-9"); [ -z "$OLD_USED" ] && OLD_USED=0
+  NEW_USED=$(( OLD_USED + SESS_FINAL ))
+
+  # 임시파일은 점(.) 시작으로 auth 합산 glob(used-octets-USER-*) 회피(interim 과 동일 이유).
+  utmp="${USEDFILE%/*}/.dctmp-u.$$"
+  banked=0
+  if printf "%s\n" "$NEW_USED" > "$utmp" 2>/dev/null && mv -f "$utmp" "$USEDFILE" 2>/dev/null; then
+    banked=1
+  elif printf "%s\n" "$NEW_USED" > "$USEDFILE" 2>/dev/null; then
+    banked=1
+  fi
+  rm -f "$utmp" 2>/dev/null || true
+
+  # PREVFILE 정리: 세션 종료로 무의미(다음 세션 delta 오염 방지). tmpfs rm 이라 디스크풀에도 성공.
   rm -f "$PREVFILE" 2>/dev/null || true
-
-  OLD_TOTAL=$(head -n 1 "$USEDFILE" 2>/dev/null | tr -d "\r" | tr -cd "0-9")
-  CUR_TOTAL=$(printf "%s" "$CUR_TOTAL" | tr -cd "0-9")
-  CUR_IN=$(printf "%s" "$CUR_IN" | tr -cd "0-9")
-  CUR_OUT=$(printf "%s" "$CUR_OUT" | tr -cd "0-9")
-
-  [ -z "$OLD_TOTAL" ] && OLD_TOTAL=0
-  [ -z "$CUR_TOTAL" ] && CUR_TOTAL=0
-  [ -z "$CUR_IN" ] && CUR_IN=0
-  [ -z "$CUR_OUT" ] && CUR_OUT=0
-
-  NEW_TOTAL=$(( ${OLD_TOTAL:-0} + ${CUR_TOTAL:-0} ))
-
-  [ -f "$SESSFILE" ] && rm -f "$SESSFILE"
-  printf "%s\n" "$NEW_TOTAL" > "$USEDFILE"
+  # SESSFILE 은 은행 성공 시에만 삭제. 은행 실패(디스크풀 #24 등) 시 남겨서 auth glob 합산으로
+  # 세션 값을 보존한다(base 는 안 늘었고 STOPMARK 로 interim 은 skip → 이중가산 없음). 리셋 크론이 정리.
+  if [ "$banked" -eq 1 ]; then
+    rm -f "$SESSFILE" 2>/dev/null || true
+  else
+    printf "%s datacounter: %s\n" "$(date "+%b %e %H:%M:%S")" \
+"DATACOUNTER STOP BANK-FAIL user=$USERNAME range=$TIMERANGE sid=$SESSIONID (USEDFILE write failed; SESSFILE kept, quota preserved via glob)" >> "$LOGFILE" 2>/dev/null
+  fi
 
   printf "%s datacounter: %s\n" "$(date "+%b %e %H:%M:%S")" \
 "DATACOUNTER STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID \
-in=$((CUR_IN/1048576))MB out=$((CUR_OUT/1048576))MB \
-total=$((CUR_TOTAL/1048576))MB accum=$((NEW_TOTAL/1048576))MB" >> "$LOGFILE" 2>/dev/null
+sess=$((SESS_FINAL/1048576))MB final_delta=$((FINAL_DELTA/1048576))MB accum=$((NEW_USED/1048576))MB" >> "$LOGFILE" 2>/dev/null
 
   exit 0
 ' sh \
 "$USERNAME" "$TIMERANGE" "$SESSIONID" \
 "$CUR_IN" "$CUR_OUT" "$CUR_TOTAL" \
-"$IN_GW" "$OUT_GW" "$LOGFILE" "$STATE_DIR"
+"$LOGFILE" "$STATE_DIR" "$STOPMARK"
 
 RC=$?
 
 if [ "$RC" -ne 0 ]; then
   log "DATACOUNTER SCRIPT FAIL user=$USERNAME range=$TIMERANGE sid=$SESSIONID rc=$RC"
+fi
 fi
 
 # FreeRADIUS Accounting-Response 지연/미응답 방지를 위해 항상 0 종료.
