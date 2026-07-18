@@ -2,6 +2,17 @@ BlueWave Link — Release Notes
 
 Developed by SynerSAT Korea
 
+2026-07-19 Update
+Stable: 1.1.6-Stable
+
+- FIXED: Improved data usage accounting consistency — a user's recorded
+  internet data usage now stays consistent with the actual measured traffic.
+- CHANGED: Broadened when the external-internet (EXT-NET) reachability check
+  runs. It now runs whenever a gateway's network shows Online — including
+  antennas whose gateway monitoring is turned off and forced Online — instead
+  of being skipped for those. The EXT-NET column now reflects the real
+  internet test even when dpinger monitoring is disabled.
+
 2026-07-08 Update
 
 - NEW: The Terminal Status table now lets you set a Monthly Allowance (GB)

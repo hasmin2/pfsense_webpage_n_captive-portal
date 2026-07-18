@@ -2115,6 +2115,80 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **작업 상태**: 코드 변경 없음. 커밋 없음. 사용자가 이 대화 컨텍스트를 종료할 예정이라 진단
   내용만 기록.
 
+### 60. used-octets 과소계상(톱니 카운터) 근본 수정 — v2 delta 누적 (develop 미커밋)
+- **발견/확정**: 같은 유저 3저장소 불일치(used-octets 14G / InfluxDB 56G / radacct 15M). 선상 물리
+  WAN(vtnet0 516G)≈InfluxDB(498G) 대조로 **used-octets 가 ~3.8배 과소, InfluxDB 정확** 확정. radacct 는
+  SET-덮어쓰기(latest)라 정산기 아님(정보용). 상세 = `docs/usage_undercount_investigation.md`.
+- **근본(§4b, 로그 대조 확정)**: "리셋"의 정체 = **박스 재부팅**(7월 `Bootup complete` 10회 ≈ first_point 11회,
+  MIGRATE=0·stopstart=interimupdate 로 다른 원인 배제). 재부팅마다 ipfw 카운터 0(stock 동작)인데 세션은
+  preserve(Acct-Stop 없음) → **톱니**. datacounter 가 **high-water(SESSFILE=max(CUR))**라 최고봉 에포크
+  1개(14G)만 남기고 나머지 ~9개 에포크 climb 을 버림. InfluxDB 는 delta 합이라 전부 포착.
+- **수정(v2)**: SESSFILE 을 high-water → **InfluxDB 와 동일한 검증된 delta 누적**으로 전환(재부팅 몇 번이든
+  모든 에포크 보존 → used-octets≈InfluxDB≈WAN). 가드: **E1**(interim/Stop 같은 락 공유 + STOPPED 센티넬로
+  늦은 interim skip + 중복 Stop 멱등 + 낙관적 ts 토큰 SIDPREV_TS) · **E2**(PREVFILE per-USER→per-SID) ·
+  **E8**(SESSFILE 쓰기 성공 시에만 PREV 전진 + InfluxDB export 도 커밋 시에만=lockstep) · **E10**(first_point
+  delta=CUR 유지). **Stop 통합**(zero-stop 흡수, SESSFILE 누적+마지막 구간 delta 은행, 구버전 packet-CUR
+  은행 버그 제거). **배포 전환 마이그레이션**(첫 interim 이 구 per-USER prev 승계 → 활성 세션 28G 스파이크·
+  오탐 락아웃 방지; 재부팅 시엔 tmpfs 소거로 정상 first_point). **`if STATUS=Stop` 방어**(Start 등이 STOPMARK
+  세워 세션 회계 전멸시키는 사고 차단). **E5**: 리셋 크론은 disconnect(Stop) 후 파일삭제·`/var/run` prev 미삭제
+  라 무수정 안전.
+- **파일(동시 배포 필수)**: `usr/local/etc/raddb/scripts/datacounter_acct.sh` +
+  `usr/local/pkg/freeradius.inc` 임베디드 nowdoc(**바이트 동일** 27659, 재추출 diff 0). 셸 단위테스트
+  **16/16**(정상·재부팅·never-stop·STOPPED·중복Stop·재전송·짧은세션·zero·전환·Start no-op) + php -l 통과.
+- **소급 없음**: 배포 시점부터 정확(과거 버려진 에포크 복구 불가). 근원(재부팅 빈도)은 별개 안정화 필요
+  (#24 OOM/ZFS-full·#26·Peplink flapping). **radacct 는 별도 경로(queries.conf)라 이 수정과 무관**(정보용 유지).
+- **선상 게이트**: 한 척 배포 → `usage_reconcile.py` 로 used-octets 가 InfluxDB≈WAN 수렴 + **오탐 락아웃 0**
+  며칠 관찰 → 함대. (`preserveusersdb` 끄기는 대안 레버지만 v2 로 불필요 — v2 는 로그인 유지하며 정산 정확.)
+- **패치노트**: `usr/local/www/release_note.md` 최상단 `2026-07-19 Update` / Stable 1.1.6-Stable —
+  "Improved data usage accounting consistency" FIXED 1줄(사용자 비가시라 상세는 생략, 상세는 investigation §8).
+
+### 61. EXT-NET(외부 인터넷) 실검사 실행범위 개선 — dpinger 무관, NET online 이면 실행 (develop 미커밋)
+- **배경/요구**: WAN 게이트웨이 flapping(Peplink↔dpinger, [[project_peplink_dpinger_flapping_rootcause]])을
+  근본적으로 못 막아, 사용자가 게이트웨이별 **"Disable Gateway Monitoring"(`monitor_disable`)** 으로
+  dpinger 를 끄고 status 를 **무조건 online** 으로 고정. 그러자 **직접 만든 EXT-NET(nmap/ping 외부
+  인터넷 도달성) 판정이 안 도는** 증상 → "monitor_disable 무관, NET(status)가 online 이면 무조건 실검사"
+  로 개선(옵션 B).
+- **구조 확인(진단)**:
+  - EXT-NET 실검사를 **실제로 돌리는 유일한 주체 = `APISystemSendPing`**(`/api/v1/system/ping`) — `nmap_check.sh`/
+    `ping_check.sh` 를 `mwexec` 로 백그라운드 실행 → `/etc/inc/{srcip}.log` 에 `online`/`offline` 기록.
+    (레포 전수 grep 으로 다른 writer 없음. 주기 호출은 **외부 메인서버 폴러**에 의존 — 레포 내 크론 없음, 기존과 동일.)
+  - **표시부는 `.log` 를 읽기만** 함: `get_extnet_status()`([terminal_status.inc:247]) ← index.php(EXT-NET 컬럼)·
+    terminal.php·manual_routing.widget.php. 모두 `return_gateways_status(true)`(byname).
+- **근본 버그(2군데)**:
+  1. **writer 게이트(APISystemSendPing)**: `if(!isset($gw["monitor_disable"]))` 로 monitor_disable 게이트웨이를
+     **통째로 skip**(pingresult="online" 만 세팅, `$gw_metrics` 에도 미포함) → 강제 online 을 만든 그 플래그가
+     실검사를 꺼버리는 딜레마. `.log` 영영 미갱신 → 표시부는 stale/`Init`.
+  2. **gwlb.inc tack-on 루프**(monitor_disable 게이트웨이를 status 배열에 얹는 부분, `return_gateways_status`):
+     - `if ($item['name'] === $gwname)` 의 **`$gwname` 이 직전 메인루프의 stale 값** → monitor_disable
+       게이트웨이에 `check_method`/`destinationip`/`check_timeout` 가 **엉뚱하게 복사되거나(전부 disable 이면
+       아예 미복사)**. 전 게이트웨이 모니터링을 끈 사용자 시나리오에서 특히 치명(실검사에 필요한 필드 공백).
+     - 커스텀 monitor IP 분기에서 **`$realif` 미설정** → `srcip` 오산출 → `.log` 파일명 writer/reader 불일치 소지.
+- **수정(옵션 B)**:
+  - `etc/inc/api/models/APISystemSendPing.inc`: **monitor_disable 게이트 제거** → `status === "online"` 이면
+    `check_method`(nmap/ping/none)에 따라 실검사. **방어**: `check_method` 없으면 `'none'`, `check_timeout`
+    없으면 `"10"`(빈 값이면 셸 인자수 부족으로 조용히 실패하던 것 방지), `destinationip` isset 가드.
+    → monitor_disable 게이트웨이도 이제 응답 배열 포함(예전엔 제외 — **추가만** 됨, 외부 소비자 확인 권장).
+  - `etc/inc/gwlb.inc`: tack-on 루프 `$gwname` → `$gwitem['name']`([:588]) + else 분기 `$realif = $gwitem['interface']`
+    복원([:560], stock pfSense 동작). → monitor_disable 게이트웨이의 `check_method`/`srcip`/`destinationip`/
+    `check_timeout` 가 status 배열에 정확히 실림(writer·reader 공통 이득). tack-on 은 monitor_disable
+    게이트웨이만 처리하므로 **모니터링 켜진 게이트웨이·failover/default-gw 선택엔 영향 0**.
+- **판정 규약 확정(사용자 합의)**: **monitor_disable 무관, NET(status)가 online 이면 실검사 / down 이면 안 함.**
+  dpinger status 는 [gwlb.inc:405~440] 상 **정확히 `"online"`/`"down"` 둘뿐**(loss/latency 열화는 status 는
+  online 유지, substatus 에만 표시)이라 writer(`=== "online"`)·reader/NET컬럼(`stristr(...,"online")`)·
+  `get_net_status` 가 **완전 동일 조건**에서 동작(불일치 없음). action_disable 링크 열화도 status=online 유지 →
+  실검사 계속. monitor_disable 게이트웨이는 status 가 **항상** online → 사실상 무조건 실행.
+- **전제(중요)**: "무조건 online" 이 실제로 status=online 을 만들어야 함 = pfSense **"Disable Gateway
+  Monitoring"(monitor_disable)** 체크로 꺼야 tack-on 이 online 강제. dpinger 를 다른 방식(데몬 정지 등)으로
+  끄고 플래그 미설정 시엔 status 가 online 이 아니라(pending/none) 규약상 실검사 안 함(정상).
+- **검증**: php -l 2파일 통과 / 결정로직 하네스 7/7(모니터링on·**monitor_disable+online+nmap=실검사**·
+  timeout 기본값·check_method 누락→none·ping·status none→up=offline·down=offline) / 소비자 8곳 byname=true 일관 확인.
+- **배포 정합성**: `etc/inc/gwlb.inc` + `etc/inc/api/models/APISystemSendPing.inc` **같은 리비전 일괄 배포**
+  (표시부 terminal_status.inc/index.php/terminal.php/widget 은 무수정 — `.log` 를 이미 읽음). 외부 폴러가
+  `/api/v1/system/ping` 을 계속 호출해야 검사가 주기 실행됨(기존과 동일).
+- **선상 검증**: dpinger 끈 게이트웨이에서 `ls -l /etc/inc/*.log` 갱신 여부 / EXT-NET 컬럼이 실제 인터넷 상태
+  추종 / `/api/v1/system/ping` 응답에 해당 게이트웨이가 실 `pingresult` 로 포함 / 그 게이트웨이 status 가
+  실제로 online 으로 뜨는지(전제 ①).
+
 ## 다음 작업 대기 중
 
 - [ ] **#59 미해결(진단만 완료, 코드 수정 없음)**: 선상 PHP fatal "Cannot declare class
