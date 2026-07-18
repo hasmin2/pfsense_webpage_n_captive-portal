@@ -2189,6 +2189,33 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   추종 / `/api/v1/system/ping` 응답에 해당 게이트웨이가 실 `pingresult` 로 포함 / 그 게이트웨이 status 가
   실제로 online 으로 뜨는지(전제 ①).
 
+### 62. one-time(forever) 계정 할당량 초과 시 표시 숨김 제거 (develop 미커밋)
+- **요구**: crew account 에서 one-time 계정의 데이터 사용량이 할당량보다 커지면 화면에서 숨기던 조건을
+  없애고 항상 보이게. one-time 은 원래대로 월말에 일괄 삭제되어야 하며 그 삭제 로직이 잘 작동해야 함.
+- **숨김 로직 위치(전수조사 = 3곳, 전부 옵션 B 로 제거)**:
+  1. `etc/inc/manage_crew_wifi_account.inc` `build_wifi_rows()` — `if ($used_quota > $maxtotal &&
+     $pointoftime === 'forever') continue;` 제거(+ 미사용된 `$pointoftime` 변수 제거). 이 함수는
+     crew_account.php 표(`draw_wifi_contents`) + Export CSV + Export Credentials CSV **3곳 공용**.
+  2. `usr/local/www/widgets/widgets/manage_freeradiususer.widget.php` 위젯 표 — 내부 게이트
+     `if($used_quota <= max || pointoftime !== 'forever')` 제거(여는 조건+닫는 중괄호).
+  3. 같은 파일 `confirm_checkPw()` pwlist — 동일 게이트 제거 + 이제 dead 된 `check_quota()` 호출 제거
+     (불필요 디스크 읽기 제거).
+  - → 초과 one-time 이 이제 monthly/weekly/daily 와 동일하게 항상 노출. **부수 이득**: 체크박스로
+    선택 가능해져 관리자가 GUI 에서 수동 리셋/삭제도 가능(전엔 숨겨져 불가).
+- **월말 삭제 로직 검증(무수정, 독립·정상)**: 사용자가 말한 `datareset.php` 는 **레포에 없음**. 실제
+  삭제 주체 = `usr/local/cron/crew_monthlyusage_reset_check.php`(매월 1일 00:09,00:10). 조건
+  `forever && ($isOlderThan365Days || ($maxTotalOctets>0 && $usedQuota>=$maxTotalOctets))` → used-octets
+  glob 삭제 + config unset + write_config + freeradius_users_resync. **이 크론은 display 필터와 다른
+  파일에서 `check_quota()` 를 자체 재계산**하므로 숨김 제거와 완전 독립 → 삭제 동작 변화 0.
+  삭제는 "무조건 일괄"이 아니라 **조건부**(365일 초과 또는 할당량 초과)이며, 지금 숨기던 대상(used>max)이
+  곧 `$isQuotaExceeded` 대상과 같아 원래 "곧 삭제될 초과 계정"을 숨겼던 것.
+- **엣지(코드 변경 불필요)**: `varusersmaxtotaloctets=0` 인 forever 계정은 이제 표시되나, 삭제 크론이
+  `max>0` 요구라 quota 기준 삭제 안 됨(365일 기준으로만). 실무상 one-time 은 quota>0 이라 드묾.
+- **검증**: php -l 2파일 통과 + 브레이스 균형 확인.
+- **배포 정합성**: `manage_crew_wifi_account.inc` + `manage_freeradiususer.widget.php` 2파일 일괄.
+- **패치노트**: `release_note.md` 최신 `2026-07-19 Update` 에 병합(새 버전 안 만듦, 사용자 지시) —
+  "One-time user IDs can be seen once depleted." FIXED 1줄.
+
 ## 다음 작업 대기 중
 
 - [ ] **#59 미해결(진단만 완료, 코드 수정 없음)**: 선상 PHP fatal "Cannot declare class

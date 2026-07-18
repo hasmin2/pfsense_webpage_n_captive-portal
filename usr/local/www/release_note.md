@@ -12,6 +12,7 @@ Beta 1.1.77-Beta · Stable: 1.1.5-Stable
   antennas whose gateway monitoring is turned off and forced Online — instead
   of being skipped for those. The EXT-NET column now reflects the real
   internet test even when dpinger monitoring is disabled.
+- FIXED: One-time user IDs can be seen once depleted.
 
 2026-07-08 Update
 

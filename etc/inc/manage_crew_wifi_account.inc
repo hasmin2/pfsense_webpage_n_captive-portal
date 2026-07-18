@@ -420,13 +420,12 @@ function build_wifi_rows(string $isPrepaid): array {
         }
 
         $timerangeperiod = (string)($user['varusersmaxtotaloctetstimerange'] ?? '');
-        $pointoftime     = strtolower((string)($user['varuserspointoftime'] ?? ''));
         $used_quota      = (float)check_quota($name, $timerangeperiod);
         $maxtotal        = (float)($user['varusersmaxtotaloctets'] ?? 0);
 
-        if ($used_quota > $maxtotal && $pointoftime === 'forever') {
-            continue;
-        }
+        // one-time(forever) 계정도 할당량 초과 상태로 항상 표시(기존 숨김 조건 제거).
+        // monthly/weekly/daily 와 동일하게 초과분도 노출한다. 초과 one-time 계정의 실제
+        // 삭제는 crew_monthlyusage_reset_check.php(매월 1일)가 display 와 무관하게 독립 수행.
 
         $terminaltype = ($user['varusersterminaltype'] ?? '') ?: 'Auto';
         $timerange    = strtolower($timerangeperiod) === 'forever' ? 'one-time' : $timerangeperiod;
