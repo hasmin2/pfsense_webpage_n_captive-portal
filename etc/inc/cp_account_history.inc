@@ -1,27 +1,38 @@
 <?php
 /*
- * cp_account_history.inc (#49) — crew wifi 계정 변경 이력을 MariaDB 에 기록
+ * cp_account_history.inc (#49, #54) — crew wifi 계정 변경/로그인·로그아웃 이력을 MariaDB 에 기록
  *
  * 대상 DB: mariadb://192.168.209.210:3306 (radius/radius, MariaDB 5.5)
- * 테이블 : radius.radacct_changehistory — 없으면 자동 생성(멱등)
+ * 테이블 : radius.radacct_changehistory — 없으면 자동 생성(멱등), #49 원본 5컬럼 그대로 유지
  *   id                 INT AUTO_INCREMENT PK
  *   timestamp          DATETIME  (박스 UTC — #41/#48 과 동일 기준)
- *   username           VARCHAR(64)   변경 대상 계정 (per-user 조회용 인덱스; description
- *                                    선두 "user=<X> " 에서 자동 추출 — 훅 수정 불필요)
+ *   username           VARCHAR(64)   대상 계정 (per-user 조회용 인덱스; description 선두
+ *                                    "user=<X> " 에서 자동 추출 — 훅 수정 불필요)
  *   change_type        VARCHAR(64)   password_reset / password_change / usage_reset /
  *                                    user_create / user_delete / user_modify /
- *                                    description_change / schedule_change / quota_topup
+ *                                    description_change / schedule_change / quota_topup /
+ *                                    **login / logout** (#54)
  *   change_description VARCHAR(1024) 세부 내용(사용자·값·수행자). **실제 비밀번호 금지** —
  *                                    PW 는 "(changed)"/"initial"/"random" 등으로만 표기.
+ *                                    login/logout 은 IP/MAC/사유도 이 텍스트 안에 포함(#54 후속,
+ *                                    사용자 지시 — 별도 컬럼을 추가하면 이미 배포된 박스마다
+ *                                    ALTER TABLE 이 필요해지므로, 기존 change_type 이벤트와
+ *                                    동일하게 이 컬럼 하나로 표현해 스키마를 절대 건드리지 않음).
  *
- * 조회: cp_account_history_fetch($username,$from,$to) — crew_account.php 의 per-user
- *       "History" 버튼 모달(#50)이 crew_account_history_data.php 를 통해 사용.
+ * 조회: cp_account_history_fetch($username,$from,$to,$limit,$tab) — crew_account.php 의 per-user
+ *       "History" 버튼 모달(#50, #54 로 Change/Login/Usage 3탭)이 crew_account_history_data.php 를
+ *       통해 사용. $tab='change'(기본, login/logout 제외) | 'login'(login+logout).
+ *       Usage 탭은 이 테이블이 아니라 radius.radacct 를 직접 조회한다
+ *       (cp_account_history_fetch_usage() 참고 — #54 후속, 사용자 지시).
  *
- * 호출처(#49 시점 계정 변경 writer 전수):
+ * 호출처(계정 변경 writer 전수):
  *   - etc/inc/manage_crew_wifi_account.inc  (crew/prepaid 웹 + API bulk-create/delete 공용)
  *   - usr/local/www/widgets/widgets/manage_freeradiususer.widget.php (대시보드 위젯 4분기)
  *   - etc/inc/api/models/APIFreeRadiusUser{Create,Update,Topup}.inc (원격 REST)
  *   - etc/inc/captiveportal.inc commit_change_pw (포털 자가 비번변경)
+ *   - etc/inc/captiveportal.inc cp_log_account_login()/cp_log_account_logout() (#54,
+ *     portal_allow/captiveportal_disconnect/captiveportal_radius_stop_all 훅 — 게스트
+ *     passthrough 'unauthenticated' 는 계정이 없어 기록 대상에서 제외)
  *   (주기 리셋 크론(daily/weekly/…/selfheal)은 관리자 행위가 아니라 **의도적으로 제외** —
  *    유저수×주기만큼 매일 쌓여 노이즈. 필요 시 같은 helper 로 한 줄 추가 가능.)
  *
@@ -73,7 +84,7 @@ function cp_account_history_create_table_sql() {
 }
 
 /* description 선두의 "user=<username> ..." 에서 대상 계정명 추출 (없으면 '').
- * 모든 #49 훅이 desc 를 "user={username} ..." 로 시작하도록 만들므로 신뢰 가능.
+ * 모든 훅이 desc 를 "user={username} ..." 로 시작하도록 만들므로 신뢰 가능.
  * username 은 [A-Za-z0-9._-] + crewpay- 접두사(공백 없음)라 \S+ 로 안전 절취. */
 function cp_account_history_extract_username($desc) {
 	if (preg_match('/^user=(\S+)/', (string)$desc, $m)) {
@@ -84,6 +95,9 @@ function cp_account_history_extract_username($desc) {
 
 /**
  * 계정 변경 이력 기록 — 사용자별 1행. 다건은 배열로 넘기면 단일 INSERT 배치.
+ * login/logout(#54) 도 이 함수를 그대로 사용 — IP/MAC/사유는 description 텍스트 안에 포함
+ * (예: "user=X logged in from ip=... mac=... via radius"). 별도 컬럼을 두지 않아 이미
+ * 배포된 박스에 ALTER TABLE 이 전혀 필요 없다(사용자 지시).
  *
  * @param string       $change_type  변경 유형 태그 (64자 클램프)
  * @param string|array $descriptions 세부 내용 1건(문자열) 또는 여러 건(배열, 행당 1개).
@@ -143,9 +157,10 @@ function cp_account_history_record($change_type, $descriptions) {
  * @param string $from_dt  UTC 'YYYY-MM-DD HH:MM:SS'
  * @param string $to_dt    UTC 'YYYY-MM-DD HH:MM:SS'
  * @param int    $limit    최대 행수 (1~5000)
+ * @param string $tab      'change'(기본, login/logout 제외) | 'login'(login+logout)
  * @return array|false [['id','timestamp','change_type','change_description'], ...] — 실패 시 false
  */
-function cp_account_history_fetch($username, $from_dt, $to_dt, $limit = 1000) {
+function cp_account_history_fetch($username, $from_dt, $to_dt, $limit = 1000, $tab = 'change') {
 	if (!function_exists('cp_gmt_history_exec_sql') || !function_exists('cp_gmt_history_sql_str')) {
 		return false;
 	}
@@ -162,11 +177,18 @@ function cp_account_history_fetch($username, $from_dt, $to_dt, $limit = 1000) {
 	if ($limit < 1) { $limit = 1; }
 	if ($limit > 5000) { $limit = 5000; }
 
+	if ($tab === 'login') {
+		$typeFilter = " AND `change_type` IN ('login','logout')";
+	} else {
+		$typeFilter = " AND `change_type` NOT IN ('login','logout')";
+	}
+
 	$sql = cp_account_history_create_table_sql()
 		. 'SELECT `id`,`timestamp`,`change_type`,`change_description` FROM `' . CP_ACCT_HISTORY_TABLE . '`'
 		. " WHERE `username` = '" . cp_gmt_history_sql_str($username) . "'"
 		. " AND `timestamp` >= '" . cp_gmt_history_sql_str($from_dt) . "'"
 		. " AND `timestamp` <= '" . cp_gmt_history_sql_str($to_dt) . "'"
+		. $typeFilter
 		. " ORDER BY `timestamp` DESC, `id` DESC LIMIT {$limit};\n";
 
 	$out = array();
@@ -187,6 +209,78 @@ function cp_account_history_fetch($username, $from_dt, $to_dt, $limit = 1000) {
 			'timestamp'          => $parts[1],
 			'change_type'        => $parts[2],
 			'change_description' => $parts[3],
+		);
+	}
+	return $rows;
+}
+
+/**
+ * #54 Usage 탭 데이터 소스 = radius.radacct (표준 FreeRADIUS SQL accounting 테이블,
+ * 사용자 지시로 별도 기록 대신 이 테이블을 직접 조회). radacct_changehistory 와 같은
+ * `radius` DB 라 cp_gmt_history_exec_sql() 연결을 그대로 재사용.
+ *
+ * "완료된 세션만"(#54 확정) = acctstoptime IS NOT NULL(로그아웃/Stop 미수신 세션은 제외).
+ * 기간 필터는 acctstarttime 기준(사용자 지시), 표시 시각은 acctstoptime(세션 종료 시각).
+ * username 은 대소문자 무시 매칭(#6/#17 과 동일 관례 — NAS 가 보고한 대소문자가 계정 표기와
+ * 다를 수 있음).
+ *
+ * 응답 필드명은 crew_account_history_data.php 가 그대로 JSON 으로 내보내는 모달 JS 의
+ * Usage 탭 렌더 규약(client_ip/client_mac/session_duration/input_octets/output_octets)에
+ * 맞춰져 있다 — radacct_changehistory 스키마와는 무관(그 테이블은 손대지 않음).
+ *
+ * @return array|false [['id','timestamp','change_type','change_description','client_ip',
+ *                       'client_mac','session_id','session_duration','input_octets',
+ *                       'output_octets'], ...] — 실패 시 false (radacct 미존재/SQL accounting
+ *                       비활성 등도 여기 포함, throw 없이 graceful degrade)
+ */
+function cp_account_history_fetch_usage($username, $from_dt, $to_dt, $limit = 1000) {
+	if (!function_exists('cp_gmt_history_exec_sql') || !function_exists('cp_gmt_history_sql_str')) {
+		return false;
+	}
+	$username = trim((string)$username);
+	if ($username === '' || !preg_match('/^[A-Za-z0-9._-]+$/', $username)) {
+		return false;
+	}
+	$re = '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/';
+	if (!preg_match($re, (string)$from_dt) || !preg_match($re, (string)$to_dt)) {
+		return false;
+	}
+	$limit = (int)$limit;
+	if ($limit < 1) { $limit = 1; }
+	if ($limit > 5000) { $limit = 5000; }
+
+	$sql = 'SELECT `radacctid`,`acctstoptime`,`acctsessiontime`,`acctinputoctets`,`acctoutputoctets`,'
+		. '`framedipaddress`,`callingstationid` FROM `radacct`'
+		. " WHERE LOWER(`username`) = '" . cp_gmt_history_sql_str(strtolower($username)) . "'"
+		. ' AND `acctstoptime` IS NOT NULL'
+		. " AND `acctstarttime` >= '" . cp_gmt_history_sql_str($from_dt) . "'"
+		. " AND `acctstarttime` <= '" . cp_gmt_history_sql_str($to_dt) . "'"
+		. " ORDER BY `acctstarttime` DESC LIMIT {$limit};\n";
+
+	$out = array();
+	// -N(헤더 생략) -B(탭 구분 배치 출력)
+	$ret = cp_gmt_history_exec_sql($sql, '-N -B', $out);
+	if ($ret !== 0) {
+		if (function_exists('log_error')) {
+			log_error('ACCT HISTORY: usage fetch (radacct) failed (' . $username . '): ' . implode(' | ', $out));
+		}
+		return false;
+	}
+	$rows = array();
+	foreach ($out as $line) {
+		$parts = explode("\t", $line, 7);
+		if (count($parts) < 7) { continue; }   // 빈/불완전 행 방어
+		$rows[] = array(
+			'id'                 => (int)$parts[0],
+			'timestamp'          => $parts[1],
+			'change_type'        => 'logout',
+			'change_description' => '',
+			'client_ip'          => ($parts[5] === 'NULL') ? '' : $parts[5],
+			'client_mac'         => ($parts[6] === 'NULL') ? '' : $parts[6],
+			'session_id'         => '',
+			'session_duration'   => (int)$parts[2],
+			'input_octets'       => (int)$parts[3],
+			'output_octets'      => (int)$parts[4],
 		);
 	}
 	return $rows;

@@ -2,6 +2,80 @@ BlueWave Link — Release Notes
 
 Developed by SynerSAT Korea
 
+2026-07-19 Update
+Beta 1.1.77-Beta · Stable: 1.1.5-Stable
+
+- FIXED: Improved data usage accounting consistency — a user's recorded
+  internet data usage now stays consistent with the actual measured traffic.
+- CHANGED: Broadened when the external-internet (EXT-NET) reachability check
+  runs. It now runs whenever a gateway's network shows Online — including
+  antennas whose gateway monitoring is turned off and forced Online — instead
+  of being skipped for those. The EXT-NET column now reflects the real
+  internet test even when dpinger monitoring is disabled.
+- FIXED: One-time user IDs can be seen once depleted.
+
+2026-07-08 Update
+
+- NEW: The Terminal Status table now lets you set a Monthly Allowance (GB)
+  and a Cutoff toggle for every antenna — the same fields available on the
+  System > Gateways edit page. The allowance field is merged right into
+  the existing Info column ("usage / allowance GB") instead of a separate
+  column, so nothing is duplicated; Cutoff has its own column. No popup
+  needed — set and apply right from the status table.
+- FIXED: Terminal Status — pressing F5 (or any browser refresh) after
+  clicking APPLY (Data Cutoff or Manual Override) no longer shows the
+  browser's "Confirm Form Resubmission" warning.
+- FIXED: Terminal Status — the usage number in the Info column now always
+  shows, even when no Monthly Allowance is set or for the secondary VSAT
+  antenna, matching the Main Panel's display.
+- NEW: A refreshed look across the whole console — sidebar, tables, buttons,
+  forms and popups on every page now share a single light/dark color system
+  instead of scattered hardcoded colors. Status (Online/Offline/etc.) now
+  reads as a colored badge instead of a small icon, form fields show a
+  focus ring, and cards/buttons use soft rounded corners and shadows
+  instead of flat squared panels. The existing System/GPS/Light/Dark
+  toggle in the sidebar switches between the two themes as before — this
+  is a visual refresh only, no font or icon downloads added.
+- NEW: Terminal Status changes (Manual Override routing, Data Cutoff
+  Allowance/Cutoff) are now logged to the database — who made the change,
+  from what IP, and what changed. A new HISTORY button next to APPLY opens
+  a log viewer with date-range filtering and CSV export.
+- FIXED: ACU reader timeout increased to 60000ms so GPS data is retrieved
+  reliably.
+- CHANGED: The GMT (timezone offset) change history now clearly shows who
+  made each change. Every change — manual, GPS-auto and remote — is tagged
+  by source ([manual-web] / [auto-gps] / [api-push]) and, for manual
+  changes, the logged-in admin account and IP, right in the history viewer.
+  Turning Manual Timezone Enable on or off is now logged as its own event
+  too.
+- FIXED: The VPN auto-recovery watchdog is now more reliable. It decides
+  whether a tunnel is dead using the firewall's own gateway monitor (the
+  same status the dashboard shows) plus the OpenVPN connection state,
+  instead of a single hardcoded ping target. This removes a case where a
+  genuinely dead tunnel was never restarted, as well as the opposite case
+  where a perfectly healthy tunnel could be restarted over and over.
+
+2026-07-07 Update
+
+- NEW: The Crew Accounts page toolbar now has two dropdown buttons for
+  admin/vesseladmin logins. "Export" contains Export CSV plus the new Export
+  Credentials CSV, which downloads a CSV with just each account's ID, data
+  quota and password — a quick reference sheet for admins. "Manage PW" combines
+  what used to be two separate buttons into Reset Random PW and Reset Initial
+  PW. Customer logins still see a single Reset PW button, unchanged.
+
+2026-07-06 Update
+
+- NEW: Account history now has Login and Usage tabs. The per-account "History"
+  view on the Crew Accounts page has three tabs — Change, Login and Usage — all
+  using the same date-range picker (1 / 7 / 30 days, all time, or a custom
+  range). Login lists every login and logout for that account, with the IP,
+  MAC address and the reason for each logout (idle timeout, session timeout,
+  quota exceeded, admin action, etc). Usage lists the data used in each
+  completed session — duration, data in, data out and total — once the
+  session has ended. Both tabs support the same paging and CSV export as the
+  Change tab.
+
 2026-07-03 Update
 Beta 1.1.53-Beta · Stable: 1.1.4-Stable
 

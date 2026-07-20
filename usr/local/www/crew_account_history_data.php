@@ -10,9 +10,17 @@
  * 파라미터(POST):
  *   username=<계정명>  (필수)
  *   mode=days + days=1|7|30  또는  mode=custom + from=YYYY-MM-DD + to=YYYY-MM-DD
+ *   tab=change(기본, login/logout 제외) | login(login+logout) | usage(완료 세션) — #54
+ *     - change/login 은 radacct_changehistory 조회(cp_account_history_fetch).
+ *     - usage 는 radius.radacct(표준 FreeRADIUS SQL accounting) 조회(cp_account_history_fetch_usage,
+ *       #54 후속 — 별도 기록 대신 기존 accounting 테이블을 직접 사용, 사용자 지시).
  *   기본 = 최근 30일 (계정 변경은 GMT 변경보다 드물어 기본 창을 넓게).
  *
- * 응답: {ok, username, rows:[{id,timestamp,change_type,change_description}], from, to}
+ * 응답: {ok, username, rows:[...], from, to}
+ *   change/login: rows = [{id,timestamp,change_type,change_description}] (radacct_changehistory,
+ *     IP/MAC/사유는 change_description 텍스트 안에 포함 — 별도 컬럼 없음, #54 후속).
+ *   usage: rows = [{id,timestamp,change_type,change_description,client_ip,client_mac,session_id,
+ *     session_duration,input_octets,output_octets}] (radius.radacct 조회, 표준 accounting 컬럼).
  *   ok=false = 라이브러리 미배포(버전섞임)/DB 불통/입력 오류 — fatal 없음.
  */
 
@@ -60,7 +68,21 @@ if ($mode === 'custom') {
     $to   = gmdate('Y-m-d H:i:s');
 }
 
-$rows = cp_account_history_fetch($username, $from, $to);
+$tab = isset($_POST['tab']) ? (string)$_POST['tab'] : 'change';
+if (!in_array($tab, array('change', 'login', 'usage'), true)) {
+    $tab = 'change';
+}
+
+if ($tab === 'usage') {
+    // #54 후속: Usage 는 radacct_changehistory 가 아니라 radius.radacct(표준 accounting) 조회
+    if (!function_exists('cp_account_history_fetch_usage')) {
+        echo json_encode($resp);
+        exit;
+    }
+    $rows = cp_account_history_fetch_usage($username, $from, $to, 1000);
+} else {
+    $rows = cp_account_history_fetch($username, $from, $to, 1000, $tab);
+}
 if ($rows !== false) {
     $resp['ok']   = true;
     $resp['rows'] = $rows;

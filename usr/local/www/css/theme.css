@@ -1,0 +1,274 @@
+@charset "utf-8";
+
+/*-------------------------------------------------------------------
+    theme.css — 디자인 토큰 + 공통 컴포넌트 모던 리스킨
+
+    - 이 파일은 항상 로드된다. 색은 CSS 커스텀 프로퍼티(--*)로 :root 에
+      정의되고, dark.css 가 html.dark 스코프에서 그 값만 재정의한다.
+      (구 dark.css 는 셀렉터마다 색을 재지정해야 했음 — 이제는 변수만
+      바꾸면 이 파일의 모든 컴포넌트 규칙이 자동으로 다크에 맞춰진다.)
+    - style.css/components.css/common.css/reset.css/utility.css 는
+      건드리지 않는다. 이 파일은 그 위에 얹는 오버라이드 레이어이며,
+      같은(또는 더 높은) 셀렡터 명시도를 사용해 뒤에 로드되는 이점으로
+      이긴다(print_css_n_head 순서: reset→fonts→utility→common→
+      components→style→**theme**→dark).
+    - 외부 폰트/아이콘 CDN 등 온라인 리소스는 전혀 쓰지 않는다 — 기존
+      셀프호스팅 Pretendard(fonts.css)와 로컬 PNG 아이콘만 사용.
+    - 범위: print_css_n_head/print_sidebar 를 쓰는 커스텀 콘솔 9개 페이지.
+      (stock pfSense / 캡티브포털은 별도 테마라 제외 — 기존 dark.css 와 동일 원칙)
+-------------------------------------------------------------------*/
+
+:root {
+    /* ---- 표면/텍스트: 순수 회색이 아니라 브랜드 틸 쪽으로 살짝 치우친
+       쿨톤 뉴트럴. 라이트=차가운 블루그레이, 다크=네이비. ---- */
+    --ink: #142430;
+    --ink-soft: #4C6172;
+    --muted: #7A8C9C;
+    --surface-0: #EEF3F6;
+    --surface-1: #FFFFFF;
+    --surface-2: #F5F8FA;
+    --border: #DAE3E9;
+    --border-soft: #E7EDF1;
+
+    /* ---- 액센트: 기존에 섞여있던 두 민트(#12B886 버튼 / #38D9A9 사이드바)를
+       하나의 시그널 틸로 통일 ---- */
+    --accent: #0FA98A;
+    --accent-strong: #0B8770;
+    --accent-ink: #FFFFFF;
+    --accent-soft: #E3F5F0;
+
+    /* ---- 보조 액센트(딥씨 블루) — 링크/정보성 요소 ---- */
+    --info: #2C6FE0;
+    --info-soft: #E7EFFD;
+
+    /* ---- 의미색(상태) — 액센트와 별개 축 ---- */
+    --ok: #1E9E64;
+    --ok-soft: #E5F6ED;
+    --warn: #C98A1E;
+    --warn-soft: #FBF0DE;
+    --crit: #D8464F;
+    --crit-soft: #FBE7E8;
+    --neutral-strong: #45566A;
+
+    --shadow-sm: 0 1px 2px rgba(20, 36, 48, .06);
+    --shadow-md: 0 6px 20px -6px rgba(20, 36, 48, .16), 0 1px 2px rgba(20, 36, 48, .06);
+    --shadow-lg: 0 20px 48px -12px rgba(10, 20, 30, .28);
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+
+    /* ---- 사이드바: 브랜드 앵커라 라이트/다크 모두 고정 네이비 ---- */
+    --nav-bg: #0A1721;
+    --nav-border: #17293A;
+    --nav-text: #9FB3C4;
+    --nav-text-on: #FFFFFF;
+    --nav-active: linear-gradient(135deg, #0FA98A, #12C79E);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    body, .btn, input[type="text"], .select.v1,
+    .check.v1 input[type="checkbox"] + label::before,
+    .radio.v1 input[type="radio"] + label::before,
+    .switch input[type="checkbox"] + label,
+    .switch input[type="checkbox"] + label::before,
+    .theme-toggle,
+    #wrapper #sidebar #lnb .depth01 > ul > li > a {
+        transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+}
+
+/* =========================================================
+   기본 표면 / 텍스트 / placeholder
+   ========================================================= */
+body { color: var(--ink); }
+#wrapper { background-color: var(--surface-0); }
+#wrapper #content .contents { background-color: var(--surface-0); }
+
+/* reset.css 가 전 요소 placeholder 를 투명 처리해 입력 힌트가 안 보이던 것을
+   input/textarea 한정으로 되살림(다른 페이지 영향 없이 표시 스펙만 개선). */
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+input::-webkit-input-placeholder, textarea::-webkit-input-placeholder { color: var(--muted); }
+
+/* =========================================================
+   사이드바
+   ========================================================= */
+#wrapper #sidebar .brand { background-color: var(--nav-bg); border-bottom: 1px solid var(--nav-border); }
+#wrapper #sidebar .brand .location { color: var(--accent-strong); }
+#wrapper #sidebar .brand .gmt { color: var(--nav-text); }
+#wrapper #sidebar #lnb { background-color: var(--nav-bg); }
+#wrapper #sidebar #lnb .depth01 > ul > li > a { color: var(--nav-text); border-radius: var(--radius-sm); margin: 0 10px; padding: 12px 16px; }
+#wrapper #sidebar #lnb .depth01 > ul > li > a:hover { background-color: rgba(255, 255, 255, .06); color: var(--nav-text-on); }
+#wrapper #sidebar #lnb .depth01 > ul > li.on { background: none; }
+#wrapper #sidebar #lnb .depth01 > ul > li.on > a { background: var(--nav-active); color: var(--nav-text-on); box-shadow: 0 6px 16px -6px rgba(15, 169, 138, .55); }
+
+#sidebar .brand .gmt-option label { color: rgba(255, 255, 255, .45); }
+
+/* 다크모드 토글 버튼 — 사이드바가 라이트/다크 무관 고정 네이비라 버튼도 고정 톤.
+   (구 dark.css 가 이 버튼의 레이아웃까지 전담하던 유일한 파일이었음 — 색뿐 아니라
+   display/size/padding 전부 여기로 그대로 이관, 누락 없이.) */
+.theme-toggle-li { padding: 0 20px; }
+.theme-toggle {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 44px; padding: 0 14px; border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, .05); border: 1px solid var(--nav-border); color: var(--nav-text);
+    font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.theme-toggle .tt-ic { font-size: 16px; line-height: 1; }
+.theme-toggle:hover { background: rgba(255, 255, 255, .1); }
+html.dark .theme-toggle { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
+html.dark .theme-toggle:hover { background: var(--accent-soft); filter: brightness(1.1); }
+
+/* =========================================================
+   상단 헤드라인 바
+   ========================================================= */
+#wrapper #content .headline-wrap {
+    background-color: var(--surface-1);
+    border-bottom: 1px solid var(--border);
+    box-shadow: none;
+}
+#wrapper #content .headline-wrap .title-area .headline { color: var(--ink); letter-spacing: -.01em; }
+.btn-setting { color: var(--ink-soft); border: 1px solid var(--border); border-radius: 999px; padding-left: 16px; padding-right: 14px; background-color: var(--surface-2); background-position: left 14px center; }
+
+/* =========================================================
+   타일 카드 (Private Internet Control 등)
+   ========================================================= */
+.private-wrap .tile-wrap .tile-area {
+    background-color: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+.private-wrap .tile-wrap .tile-area dd { border-top-color: var(--border-soft); }
+
+/* =========================================================
+   팝업 / 모달(공통)
+   ========================================================= */
+.popup {
+    background-color: var(--surface-1);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+}
+.popup .pop-head { background-color: var(--nav-bg); padding: 18px 0; }
+.popup .pop-cont + .pop-foot,
+.popup .pop-foot { border-top: 1px solid var(--border-soft); }
+.pop-set-terminal .override-list { background-color: var(--surface-2); border-radius: var(--radius-md); }
+
+/* =========================================================
+   버튼
+   ========================================================= */
+.btn { border-radius: var(--radius-sm); font-weight: 700; }
+.btn.fill-mint { border-color: var(--accent); background-color: var(--accent); color: var(--accent-ink); box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--accent) 70%, transparent); }
+.btn.fill-mint:hover { background-color: var(--accent-strong); border-color: var(--accent-strong); }
+.btn.fill-dark { border-color: var(--neutral-strong); background-color: var(--neutral-strong); color: #fff; }
+.btn.line-mint { border-color: var(--accent); background-color: var(--surface-1); color: var(--accent-strong); }
+.btn.line-red { border-color: var(--crit); background-color: var(--surface-1); color: var(--crit); }
+.btn.line-gray { border-color: var(--border); background-color: var(--surface-1); color: var(--ink-soft); }
+.btn.line-gray:disabled { border-color: var(--border-soft); background-color: var(--surface-2); color: var(--muted); }
+.btn-login { background-color: var(--surface-1); color: var(--accent-strong); border-radius: var(--radius-sm); }
+
+/* =========================================================
+   리스트 / 테이블 (.list-wrap.v1)
+   ========================================================= */
+.list-wrap.v1 { background-color: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
+.list-wrap.v1 .sort-area .inner { background-color: var(--surface-2); box-shadow: none; border-bottom: 1px solid var(--border); }
+.list-wrap.v1 table thead tr th {
+    background-color: var(--surface-2); color: var(--muted);
+    font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+}
+.list-wrap.v1 table tbody tr { background-color: var(--surface-1); border-bottom: 1px solid var(--border-soft); }
+.list-wrap.v1 table tbody tr:hover { background-color: var(--surface-2); }
+.list-wrap.v1 table tbody tr td { color: var(--ink); }
+.list-wrap.v1 table tbody tr td span { color: var(--muted); }
+/* 선택/활성 행: 진한 단색 채움 대신 액센트 은은한 틴트 — 기본 텍스트색으로도 대비 충분해
+   기존의 tr.on 전용 어두운 텍스트 강제 규칙이 더 이상 필요 없다. */
+.list-wrap.v1 table tbody tr.on,
+.list-wrap.v1 table tbody tr.on:hover { background-color: var(--accent-soft); }
+.list-wrap.v1 table tbody tr.on td,
+.list-wrap.v1 table tbody tr.on td span { color: var(--ink); }
+.list-top .btn-area { background-color: var(--surface-1); }
+
+/* 상태 텍스트 → 필(pill) 뱃지. 배경 아이콘(png) 대신 색 점 + 필 배경으로 표현. */
+.txt-online, .txt-offline, .txt-warning, .txt-noconn, .txt-na {
+    background-image: none; padding: 4px 12px 4px 10px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px;
+    line-height: 1.6;
+}
+.txt-online::before, .txt-offline::before, .txt-warning::before, .txt-noconn::before, .txt-na::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%; flex: none;
+}
+.txt-online { background-color: var(--ok-soft); color: var(--ok); }
+.txt-online::before { background-color: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.txt-offline { background-color: var(--crit-soft); color: var(--crit); }
+.txt-offline::before { background-color: var(--crit); }
+.txt-warning { background-color: var(--warn-soft); color: var(--warn); }
+.txt-warning::before { background-color: var(--warn); }
+.txt-noconn { background-color: var(--warn-soft); color: var(--warn); }
+.txt-noconn::before { background-color: var(--warn); }
+.txt-na { background-color: var(--surface-2); color: var(--muted); }
+.txt-na::before { background-color: var(--muted); }
+
+/* =========================================================
+   섹션 라벨 / 구분선
+   ========================================================= */
+.tit.v1 { color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.tit.v2 { color: var(--ink); }
+.line.v1 { border-top-color: var(--border); }
+
+/* =========================================================
+   폼 요소
+   ========================================================= */
+.form .form-tit .tit { color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+
+input[type="text"], input[type="password"], .spinner input {
+    background-color: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--ink);
+}
+input[type="text"]:focus, input[type="password"]:focus, .spinner input:focus {
+    outline: none; border-color: var(--accent); background-color: var(--surface-1);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.select.v1 { background-color: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--ink); }
+.select.v1:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* --- 라디오: PNG 아이콘 대신 CSS 로 직접 그려서 테마에 자동 대응 --- */
+.radio.v1 input[type="radio"] + label::before {
+    background: var(--surface-1); border: 1.5px solid var(--border); border-radius: 50%;
+    box-sizing: border-box;
+}
+.radio.v1 input[type="radio"]:checked + label::before {
+    background: var(--accent); border-color: var(--accent);
+    box-shadow: inset 0 0 0 3px var(--surface-1);
+}
+.radio.v1 input[type="radio"] + label p { color: var(--ink); }
+.radio.v1 input[type="radio"]:checked + label p { color: var(--ink); font-weight: 600; }
+
+/* --- 체크박스: 동일하게 CSS 드로잉 --- */
+.check.v1 input[type="checkbox"] + label::before {
+    background: var(--surface-1); border: 1.5px solid var(--border); border-radius: 5px;
+    box-sizing: border-box;
+}
+.check.v1 input[type="checkbox"]:checked + label::before {
+    background-color: var(--accent); border-color: var(--accent);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8.3l2.8 2.8 6.2-6.6' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: center; background-size: 62%;
+}
+.check.v1 input[type="checkbox"] + label p { color: var(--ink); }
+
+/* --- 스위치(material switch, Private Internet Control 등) --- */
+.switch input[type="checkbox"] + label { background-color: var(--border); box-shadow: inset 0 0 0 1px var(--border); }
+.switch input[type="checkbox"] + label::before { box-shadow: var(--shadow-sm); }
+.switch input[type="checkbox"]:checked + label { background-color: var(--accent); box-shadow: none; }
+
+/* --- 스피너(+/-) --- */
+.spinner [class^='btn-'] { background-color: var(--surface-2); border-radius: var(--radius-sm); }
+.spinner input { border-radius: var(--radius-sm); }
+
+/* 참고: index.php 의 .daily-usage-btn 은 페이지 자체 인라인 <style> 에서 색을
+   완전히 재정의하므로(동일 명시도, 더 늦게 로드) 여기서 재정의해도 무의미 —
+   라이트 모드는 그 인라인 스타일이 그대로 유지되고, 다크 모드는 기존처럼
+   dark.css 의 `html.dark .daily-usage-btn`(더 높은 명시도)가 담당한다. */
