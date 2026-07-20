@@ -5062,7 +5062,7 @@ esc_tag() {
 INFLUX_HOST="192.168.209.210"
 INFLUX_PORT="8086"
 INFLUX_DB="wifiusage"
-INFLUX_PRECISION="m"
+INFLUX_PRECISION="s"
 INFLUX_TIMEOUT="1"       # seconds
 INFLUX_CACHE_SEC="600"   # 10분 캐시 (DB 존재/헬스체크 통과 상태)
 
@@ -5138,164 +5138,6 @@ influx_write_line() {
   }
 
   return 0
-}
-
-# ---------- Central InfluxDB export helpers (1.8.x) ----------
-# 중앙/가상 서버용. 여러 선박의 동일 USER ID가 중복될 수 있으므로
-# measurement를 선박별로 나누지 않고 vessel_imo/user tag로 구분한다.
-# DB는 이미 생성되어 있다고 가정하므로 CREATE DATABASE 방어 코드는 넣지 않는다.
-CENTRAL_INFLUX_HOST="10.8.128.1"
-CENTRAL_INFLUX_PORT="8086"
-CENTRAL_INFLUX_DB="wifiusage"
-CENTRAL_INFLUX_PRECISION="m"
-CENTRAL_INFLUX_TIMEOUT="10"   # 중앙은 위성회선 너머(원격)라 1초로는 잦은 드롭 → 10초
-CENTRAL_INFLUX_CACHE_SEC="600"
-CENTRAL_MEASUREMENT="wifi_usage"
-
-# 인증이 켜져 있으면 채우세요 (비우면 인증 없이 동작)
-CENTRAL_INFLUX_USER=""
-CENTRAL_INFLUX_PASS=""
-
-CENTRAL_INFLUX_BASE="http://${CENTRAL_INFLUX_HOST}:${CENTRAL_INFLUX_PORT}"
-CENTRAL_INFLUX_WRITE_URL="${CENTRAL_INFLUX_BASE}/write?db=${CENTRAL_INFLUX_DB}&precision=${CENTRAL_INFLUX_PRECISION}"
-CENTRAL_INFLUX_READY_MARK="/tmp/influx_ready_central_${CENTRAL_INFLUX_DB}.stamp"
-
-# vessel_imo 조회용 DB 정보
-VESSEL_DB_HOST="192.168.209.210"
-VESSEL_DB_PORT="3306"
-VESSEL_DB_NAME="radius"
-VESSEL_DB_USER="radius"
-VESSEL_DB_PASS="radius"
-VESSEL_TABLE="vesselinfo"
-VESSEL_COLUMN="vessel_imo"
-VESSEL_CACHE="/tmp/datacounter_vessel_imo.cache"
-VESSEL_FAIL_MARK="/tmp/datacounter_vessel_imo.fail"
-VESSEL_CACHE_SEC="3600"
-VESSEL_FAIL_CACHE_SEC="300"
-
-mysql_client_bin() {
-  command -v mysql 2>/dev/null && return 0
-  command -v mariadb 2>/dev/null && return 0
-  return 1
-}
-
-get_vessel_imo() {
-  now="$(date +%s)"
-
-  # 성공 캐시 사용
-  if [ -f "$VESSEL_CACHE" ]; then
-    cache_ts="$(sed -n '1p' "$VESSEL_CACHE" 2>/dev/null | tr -cd '0-9')"
-    cache_val="$(sed -n '2p' "$VESSEL_CACHE" 2>/dev/null | sed 's/[^0-9a-zA-Z.:_-]/X/g')"
-    [ -z "$cache_ts" ] && cache_ts=0
-    age=$(( now - cache_ts ))
-    if [ -n "$cache_val" ] && [ "$age" -ge 0 ] && [ "$age" -lt "$VESSEL_CACHE_SEC" ]; then
-      printf '%s' "$cache_val"
-      return 0
-    fi
-  fi
-
-  # 실패 캐시 사용: DB 장애 시 Interim마다 DB 접속 시도하지 않도록 함
-  if [ -f "$VESSEL_FAIL_MARK" ]; then
-    fail_ts="$(cat "$VESSEL_FAIL_MARK" 2>/dev/null | tr -cd '0-9')"
-    [ -z "$fail_ts" ] && fail_ts=0
-    age=$(( now - fail_ts ))
-    if [ "$age" -ge 0 ] && [ "$age" -lt "$VESSEL_FAIL_CACHE_SEC" ]; then
-      return 1
-    fi
-  fi
-
-  MYSQL_BIN="$(mysql_client_bin)" || {
-    echo "$now" > "$VESSEL_FAIL_MARK" 2>/dev/null || true
-    log "CENTRAL INFLUX SKIP reason=mysql_client_not_found"
-    return 1
-  }
-
-  # vesselinfo에는 이 클라이언트 선박의 고유 vessel_imo가 들어 있다고 가정한다.
-  vessel_raw="$($MYSQL_BIN \
-    -N -B \
-    -h "$VESSEL_DB_HOST" \
-    -P "$VESSEL_DB_PORT" \
-    -u "$VESSEL_DB_USER" \
-    --password="$VESSEL_DB_PASS" \
-    --connect-timeout=2 \
-    "$VESSEL_DB_NAME" \
-    -e "SELECT ${VESSEL_COLUMN} FROM ${VESSEL_TABLE} WHERE ${VESSEL_COLUMN} IS NOT NULL AND ${VESSEL_COLUMN} <> '' LIMIT 1;" \
-    2>/dev/null | head -n 1)"
-
-  vessel_imo="$(printf '%s' "$vessel_raw" | sed 's/[^0-9a-zA-Z.:_-]/X/g')"
-
-  if [ -z "$vessel_imo" ]; then
-    echo "$now" > "$VESSEL_FAIL_MARK" 2>/dev/null || true
-    log "CENTRAL INFLUX SKIP reason=vessel_imo_not_found db=${VESSEL_DB_HOST}:${VESSEL_DB_PORT}/${VESSEL_DB_NAME}/${VESSEL_TABLE}"
-    return 1
-  fi
-
-  {
-    echo "$now"
-    echo "$vessel_imo"
-  } > "${VESSEL_CACHE}.$$" 2>/dev/null && mv -f "${VESSEL_CACHE}.$$" "$VESSEL_CACHE" 2>/dev/null || true
-
-  rm -f "$VESSEL_FAIL_MARK" 2>/dev/null || true
-  printf '%s' "$vessel_imo"
-  return 0
-}
-
-curl_central_influx() {
-  if [ -n "$CENTRAL_INFLUX_USER" ] && [ -n "$CENTRAL_INFLUX_PASS" ]; then
-    curl -sS -m "$CENTRAL_INFLUX_TIMEOUT" --connect-timeout "$CENTRAL_INFLUX_TIMEOUT" -u "${CENTRAL_INFLUX_USER}:${CENTRAL_INFLUX_PASS}" "$@"
-  else
-    curl -sS -m "$CENTRAL_INFLUX_TIMEOUT" --connect-timeout "$CENTRAL_INFLUX_TIMEOUT" "$@"
-  fi
-}
-
-central_influx_prepare() {
-  now="$(date +%s)"
-  if [ -f "$CENTRAL_INFLUX_READY_MARK" ]; then
-    last="$(cat "$CENTRAL_INFLUX_READY_MARK" 2>/dev/null)"
-    [ -z "$last" ] && last=0
-    age=$(( now - last ))
-    if [ "$age" -ge 0 ] && [ "$age" -lt "$CENTRAL_INFLUX_CACHE_SEC" ]; then
-      return 0
-    fi
-  fi
-
-  # 중앙 DB는 이미 생성되어 있다고 가정. health/ping만 확인한다.
-  curl_central_influx -I "${CENTRAL_INFLUX_BASE}/ping" >/dev/null 2>&1 || return 1
-
-  echo "$now" > "$CENTRAL_INFLUX_READY_MARK" 2>/dev/null || true
-  return 0
-}
-
-central_influx_write_line() {
-  line="$1"
-  resp="$(curl_central_influx -i -H 'Content-Type: text/plain' --data-binary "$line" "${CENTRAL_INFLUX_WRITE_URL}" 2>&1)"
-  rc=$?
-
-  if [ $rc -ne 0 ]; then
-    log "CENTRAL INFLUX WRITE FAIL rc=$rc url=${CENTRAL_INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '\n' ' ' | cut -c1-300)"
-    return 1
-  fi
-
-  echo "$resp" | grep -q " 204 " || {
-    log "CENTRAL INFLUX WRITE NON-204 url=${CENTRAL_INFLUX_WRITE_URL} resp=$(echo "$resp" | tr '\n' ' ' | cut -c1-300)"
-    return 1
-  }
-
-  return 0
-}
-
-central_influx_export_usage() {
-  vessel_imo="$(get_vessel_imo)" || return 1
-
-  # 필수 구분자 외 sid/debug 문자열은 넣지 않는다.
-  # 중앙 저장 구조:
-  #   measurement: wifi_usage
-  #   tags: vessel_imo, user
-  #   fields: in_bytes, out_bytes, total_bytes (숫자 only)
-  line="${CENTRAL_MEASUREMENT},vessel_imo=$(esc_tag "$vessel_imo"),user=$(esc_tag "$USERNAME") in_bytes=${in_bytes}i,out_bytes=${out_bytes}i,total_bytes=${total_bytes}i ${ts_m}"
-
-  central_influx_prepare >/dev/null 2>&1 || return 1
-  central_influx_write_line "$line"
 }
 
 # ---------- args (raw) ----------
@@ -5444,9 +5286,11 @@ if [ "$STATUS" = "Interim-Update" ]; then
   # Influx 전송용 DELTA_IN / DELTA_OUT / DELTA_TOTAL만 계산한다.
   MEASUREMENT="datacounter_interim_delta"
 
-  # precision=m 이므로 timestamp는 epoch minute.
-  # 기존 10분 bucket은 같은 tag/timestamp 포인트를 overwrite할 수 있어 현재 minute로 저장한다.
-  ts_m=$(( NOW_TS / 60 ))
+  # precision=s 이므로 timestamp는 epoch second.
+  # 초 단위 저장으로 같은 분(分)에 떨어진 interim/Stop 이 서로를 overwrite 하지 않게 한다
+  # (분 단위면 같은 분의 두 포인트가 last-write-wins 로 하나 소실 → 과소계상).
+  # 육상 복제는 epoch=s·초 합산이라 이 정밀도와 정확히 일치한다.
+  ts_s=$NOW_TS
 
   PREV_TS=0
   PREV_IN=0
@@ -5606,9 +5450,9 @@ if [ "$STATUS" = "Interim-Update" ]; then
   out_bytes=$(( DELTA_OUT ))
   total_bytes=$(( DELTA_TOTAL ))
 
-  line="${MEASUREMENT},user=$(esc_tag "$USERNAME"),sid=$(esc_tag "$SESSIONID") in_bytes=${in_bytes}i,out_bytes=${out_bytes}i,total_bytes=${total_bytes}i,current_in_bytes=${CUR_IN}i,current_out_bytes=${CUR_OUT}i,current_total_bytes=${CUR_TOTAL}i,prev_in_bytes=${PREV_IN}i,prev_out_bytes=${PREV_OUT}i,prev_total_bytes=${PREV_TOTAL}i,first_point=${FIRST_POINT}i,session_changed=${SESSION_CHANGED}i,reset=${RESET_DETECTED}i,reset_in=${RESET_IN}i,reset_out=${RESET_OUT}i,reset_total=${RESET_TOTAL}i ${ts_m}"
+  line="${MEASUREMENT},user=$(esc_tag "$USERNAME"),sid=$(esc_tag "$SESSIONID") in_bytes=${in_bytes}i,out_bytes=${out_bytes}i,total_bytes=${total_bytes}i,current_in_bytes=${CUR_IN}i,current_out_bytes=${CUR_OUT}i,current_total_bytes=${CUR_TOTAL}i,prev_in_bytes=${PREV_IN}i,prev_out_bytes=${PREV_OUT}i,prev_total_bytes=${PREV_TOTAL}i,first_point=${FIRST_POINT}i,session_changed=${SESSION_CHANGED}i,reset=${RESET_DETECTED}i,reset_in=${RESET_IN}i,reset_out=${RESET_OUT}i,reset_total=${RESET_TOTAL}i ${ts_s}"
 
-  # InfluxDB/MySQL export 는 RADIUS 응답 경로에서 분리(fire-and-forget)한다.
+  # InfluxDB export 는 RADIUS 응답 경로에서 분리(fire-and-forget)한다.
   # wait=yes 라도 스크립트가 즉시 반환하도록 백그라운드 서브셸로 보낸다.
   # 쿼터(SESSFILE/PREVFILE)는 위에서 이미 동기 기록되었으므로 손실되지 않으며,
   # export 의 지연/블로킹이 Accounting-Response 지연 → NAS 재전송 폭주로 번져
@@ -5616,7 +5460,6 @@ if [ "$STATUS" = "Interim-Update" ]; then
   (
     influx_prepare >/dev/null 2>&1 || true
     influx_write_line "$line" || true
-    central_influx_export_usage || true
   ) >/dev/null 2>&1 &
   # ===== /Influx export =====
 
@@ -5630,7 +5473,7 @@ fi
 # ⚠️ STATUS=Stop 에서만 실행: Start/Accounting-On 등이 흘러들어 STOPMARK 를 세워 그 세션의
 #    이후 interim 이 전부 skip(42) 되는 사고를 방지(현 설정은 Stop/Interim 만 호출하나 방어).
 if [ "$STATUS" = "Stop" ]; then
-lockf -t 10 "$LOCK" sh -c '
+STOP_OUT="$(lockf -t 10 "$LOCK" sh -c '
   USERNAME="$1"
   TIMERANGE="$2"
   SESSIONID="$3"
@@ -5659,16 +5502,34 @@ lockf -t 10 "$LOCK" sh -c '
   # interim 이 한 번도 없던 짧은 세션(PREVFILE 부재)은 전체 CUR 이 이 세션 사용량.
   if [ -f "$PREVFILE" ]; then
     PREV_TOTAL="$(grep -E "^total=" "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd "0-9")"
+    PREV_IN="$(grep -E "^in=" "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd "0-9")"
+    PREV_OUT="$(grep -E "^out=" "$PREVFILE" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -cd "0-9")"
     [ -z "$PREV_TOTAL" ] && PREV_TOTAL=0
+    [ -z "$PREV_IN" ] && PREV_IN=0
+    [ -z "$PREV_OUT" ] && PREV_OUT=0
     if [ "$CUR_TOTAL" -ge "$PREV_TOTAL" ] 2>/dev/null; then
       FINAL_DELTA=$(( CUR_TOTAL - PREV_TOTAL ))
     else
       FINAL_DELTA=$(( CUR_TOTAL ))
     fi
+    if [ "$CUR_IN" -ge "$PREV_IN" ] 2>/dev/null; then
+      FINAL_DELTA_IN=$(( CUR_IN - PREV_IN ))
+    else
+      FINAL_DELTA_IN=$(( CUR_IN ))
+    fi
+    if [ "$CUR_OUT" -ge "$PREV_OUT" ] 2>/dev/null; then
+      FINAL_DELTA_OUT=$(( CUR_OUT - PREV_OUT ))
+    else
+      FINAL_DELTA_OUT=$(( CUR_OUT ))
+    fi
   else
     FINAL_DELTA=$(( CUR_TOTAL ))
+    FINAL_DELTA_IN=$(( CUR_IN ))
+    FINAL_DELTA_OUT=$(( CUR_OUT ))
   fi
   [ "$FINAL_DELTA" -lt 0 ] 2>/dev/null && FINAL_DELTA=0
+  [ "$FINAL_DELTA_IN" -lt 0 ] 2>/dev/null && FINAL_DELTA_IN=0
+  [ "$FINAL_DELTA_OUT" -lt 0 ] 2>/dev/null && FINAL_DELTA_OUT=0
 
   OLD_SESS=$(head -n1 "$SESSFILE" 2>/dev/null | tr -cd "0-9"); [ -z "$OLD_SESS" ] && OLD_SESS=0
   SESS_FINAL=$(( OLD_SESS + FINAL_DELTA ))
@@ -5701,16 +5562,37 @@ lockf -t 10 "$LOCK" sh -c '
 "DATACOUNTER STOP user=$USERNAME range=$TIMERANGE sid=$SESSIONID \
 sess=$((SESS_FINAL/1048576))MB final_delta=$((FINAL_DELTA/1048576))MB accum=$((NEW_USED/1048576))MB" >> "$LOGFILE" 2>/dev/null
 
+  # 마지막 구간 delta 를 메인(락 밖)으로 전달 → fire-and-forget InfluxDB 기록.
+  # 중복 Stop 은 위에서 조기 exit 하므로 이 줄에 도달하지 않음(멱등: 재기록 없음).
+  echo "DCSTOP $FINAL_DELTA_IN $FINAL_DELTA_OUT $FINAL_DELTA"
   exit 0
 ' sh \
 "$USERNAME" "$TIMERANGE" "$SESSIONID" \
 "$CUR_IN" "$CUR_OUT" "$CUR_TOTAL" \
-"$LOGFILE" "$STATE_DIR" "$STOPMARK"
+"$LOGFILE" "$STATE_DIR" "$STOPMARK")"
 
 RC=$?
 
 if [ "$RC" -ne 0 ]; then
   log "DATACOUNTER SCRIPT FAIL user=$USERNAME range=$TIMERANGE sid=$SESSIONID rc=$RC"
+fi
+
+# ---- Stop 세그먼트(마지막 interim → Stop)를 로컬 InfluxDB 에도 기록 ----
+# vessel 로컬 InfluxDB 를 interim+Stop 로 완전하게 만들어 육상 복제본과 수치가 일치하게 한다.
+# 서브셸이 락 안에서 계산해 stdout(DCSTOP in out total)으로 넘긴 값을 interim 과 동일 형식/정밀도
+# (second)로 fire-and-forget 기록한다. total=0 이면 skip(빈 포인트 방지). 중복 Stop 은 DCSTOP 미출력 → skip(멱등).
+STOP_LINE="$(printf '%s\n' "$STOP_OUT" | grep '^DCSTOP ' | tail -n1)"
+if [ -n "$STOP_LINE" ]; then
+  S_IN="$(echo "$STOP_LINE" | awk '{print $2}' | tr -cd '0-9')";    [ -z "$S_IN" ] && S_IN=0
+  S_OUT="$(echo "$STOP_LINE" | awk '{print $3}' | tr -cd '0-9')";   [ -z "$S_OUT" ] && S_OUT=0
+  S_TOTAL="$(echo "$STOP_LINE" | awk '{print $4}' | tr -cd '0-9')"; [ -z "$S_TOTAL" ] && S_TOTAL=0
+  if [ "$S_TOTAL" -gt 0 ] 2>/dev/null; then
+    stopline="datacounter_interim_delta,user=$(esc_tag "$USERNAME"),sid=$(esc_tag "$SESSIONID") in_bytes=${S_IN}i,out_bytes=${S_OUT}i,total_bytes=${S_TOTAL}i,stop_segment=1i ${NOW_TS}"
+    (
+      influx_prepare >/dev/null 2>&1 || true
+      influx_write_line "$stopline" || true
+    ) >/dev/null 2>&1 &
+  fi
 fi
 fi
 

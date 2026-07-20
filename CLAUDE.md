@@ -2216,6 +2216,56 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
 - **패치노트**: `release_note.md` 최신 `2026-07-19 Update` 에 병합(새 버전 안 만듦, 사용자 지시) —
   "One-time user IDs can be seen once depleted." FIXED 1줄.
 
+### 63. wifi_usage 원격 export 제거 → 육상 pull 복제(StreamSets) + Stop 세그먼트/초정밀도 (develop 미커밋)
+- **배경/요구**: 기존엔 각 선박 `datacounter_acct.sh` 가 wifi 사용량 delta 를 **로컬 InfluxDB + 원격 central
+  InfluxDB(10.8.128.1) 양쪽에 push** 했다. 이 원격 push 를 제거하고, 대신 **육상(main server) StreamSets
+  파이프라인이 각 선박 로컬 InfluxDB 를 pull 해 육상 InfluxDB(10.10.10.20:8086)에 적재**하도록 이관.
+  핵심 불변식: **선박 로컬 InfluxDB ≡ 육상 InfluxDB**(per user, per second 집계 기준 정확 일치).
+- **선박측(이 저장소, 2파일 바이트 동일 일괄 배포)** — `datacounter_acct.sh` + `freeradius.inc` 임베디드 nowdoc:
+  - **원격 export 전면 제거**: `CENTRAL_INFLUX_*`/`VESSEL_DB_*`/`mysql_client_bin`/`get_vessel_imo`/
+    `curl_central_influx`/`central_influx_prepare`/`central_influx_write_line`/`central_influx_export_usage`
+    + interim 경로의 `central_influx_export_usage` 호출 삭제. 하드코딩 `10.8.128.1`·MySQL 자격증명(`radius/radius`)도 함께 제거.
+    로컬 write(`influx_write_line`)만 잔존. (검증: nowdoc 재추출 diff=0, `sh -n` 통과.)
+  - **write 정밀도 분→초**(`INFLUX_PRECISION="s"`, interim `ts_m=$((NOW_TS/60))`→`ts_s=$NOW_TS`): 같은 분(分)에
+    떨어진 interim/Stop(또는 두 interim)이 minute precision 에선 point 키 충돌로 last-write-wins 소실 → 초
+    정밀도로 서로 다른 초에 저장해 둘 다 보존. 육상은 이미 `epoch=s`·초 합산이라 무변경으로 정확 일치.
+  - **Stop 세그먼트 write 추가**: 기존 Stop 경로는 FINAL_DELTA 를 used-octets 에만 뱅킹하고 InfluxDB 미기록 →
+    매 세션 "마지막 interim→Stop" 바이트가 로컬/육상 InfluxDB 에서 체계적 누락(짧은 세션일수록 편향). 이제
+    lock 서브셸이 락 안에서 per-direction 최종 delta(FINAL_DELTA_IN/OUT/TOTAL)를 계산해 `echo "DCSTOP in out
+    total"` 로 stdout 전달 → 메인 스크립트가 `STOP_OUT="$(lockf …)"` 캡처 후 **락 밖에서 interim 과 동일
+    형식/정밀도(second)로 fire-and-forget** `datacounter_interim_delta` 기록(`stop_segment=1i` 마커). total=0
+    → skip, 중복 Stop → STOPMARK 조기 exit 라 DCSTOP 미출력 → skip(멱등). (헬퍼는 서브셸 밖에서만 가용하므로
+    이 stdout 핸드오프 구조가 필수. `RC=$?` 는 `$(…)` 뒤에서도 lockf 종료코드 정확 포착 — 테스트 확인.)
+  - **주의**: 캡티브포털 per-user 사용량 차트(`captiveportal.inc`, `non_negative_derivative(mean(total_bytes))`)가
+    같은 measurement 를 읽음 → 초 정밀도는 버킷 평균의 포인트 밀도만 바꿔 사실상 무해(오버라이트 없어 더 정확),
+    Stop 세그먼트가 로그아웃 지점에 값 하나 더해질 뿐.
+- **육상측(이 저장소 밖 — Downloads 의 StreamSets 3.18 파이프라인 JSON 2개, 저장소 미포함)**:
+  - **Composer**(`GroovyEvaluator_02`+`JDBCLookup_01`): JDBC SELECT 에 `wifi_lastupdatetimestamp` 추가,
+    `gapWifi = clamp(now−wifi_lastupdatetimestamp, 10, histDays*1440)분` 계산, 선박 로컬 질의 URL
+    `…:8086/query?db=wifiusage&epoch=s&q=select in_bytes,out_bytes,total_bytes from datacounter_interim_delta
+    where time > now()-${gapWifi}m group by *` emit. **게이지(satstatus/traffic/position)와 독립된 별도
+    워터마크**. clamp 도달 시 `sdc.log.warn("wifi backfill CLAMPED …")` 관측성 로그(옵션 A).
+  - **Fetcher**(`GroovyEvaluator_04`): 게이지 경로 앞에 자체 try/catch 로 독립 wifi 블록. raw 포인트를
+    **(user, 초) 단위로 sid 합산**(카디널리티 위해 sid 태그 drop, 동시세션 동일-분 충돌은 SUM 으로 무손실) →
+    line protocol `wifi_usage,vessel_imo=IMO,user=U in_bytes=Ni,… <epoch_s>` 를 육상
+    `10.10.10.20:8086/write?db=wifiusage&precision=s`(measurement `wifi_usage`, 2000줄 청크, 204/200=성공)에
+    **멱등** 적재. 성공 시 별도 커넥션으로 `wifi_lastupdatetimestamp` UPDATE(게이지 트랜잭션과 독립).
+    **워터마크 성공-게이팅**: parse 실패/비-Map/빈 results/`results[0].error` → 미전진(백필). shoreDbEnsured 는
+    CREATE 성공 시에만 true. wifi read timeout 60s.
+- **적대적 감사 2회(멀티모델)**: ① 광범위 감사(27 에이전트) → 13 CONFIRMED, 핵심 = 워터마크 오전진(파싱실패/
+  200-내장에러) 데이터 손실(수정됨) + 첫 실행 thundering herd. ② 등가성 집중 감사(17 에이전트, 실행형 e2e 시뮬)
+  → **정상 운영에서 shore==vessel 정확 일치 HOLDS**(12 시나리오 중 11, 동일초 충돌도 shore==vessel 유지 —
+  둘 다 survivor 를 봄). 유일 발산 = **`>histDays` 장기 단절 백필**(clamp 가 오래된 미복제 포인트 고아화) —
+  skew-robust 한 상대 `now()−Xm` 창의 의도된 트레이드오프. **옵션 A 수용**: clamp WARN 로그 + 워터마크 프리필
+  + histDays 사이징(문서화). 근본 재설계(watermark=실복제 최대 epoch + 절대 slice 페이지네이션)는 후속 후보.
+- **배포**: ① MariaDB `ALTER TABLE vesselinfo ADD COLUMN wifi_lastupdatetimestamp DATETIME NULL`(완료 확인됨) →
+  ② 첫 실행 전 `UPDATE vesselinfo SET wifi_lastupdatetimestamp=NOW() WHERE … IS NULL`(thundering herd 방지) →
+  ③ **선박 2파일 일괄 배포**(datacounter_acct.sh + freeradius.inc, 같은 리비전) → ④ 육상 파이프라인 2 JSON import →
+  1척 Preview → 함대. **파이프라인 JSON 은 이 저장소 밖**(StreamSets 시스템) — 이 커밋엔 선박측만 포함.
+- **검증**: `sh -n`(양쪽) / nowdoc 바이트 동일 / DCSTOP 파싱·중복 skip·`RC=$?` / e2e 등가 시뮬(vessel=used-octets=shore,
+  정상/동시세션/같은분/같은초/리셋/백필겹침/재로그인/zero/중복Stop/분→초전환/staggered 전부 일치) / composer·fetcher
+  괄호 밸런스(문자열·주석 인식) 0 / 육상 아티팩트 라운드트립.
+
 ## 다음 작업 대기 중
 
 - [ ] **#59 미해결(진단만 완료, 코드 수정 없음)**: 선상 PHP fatal "Cannot declare class
