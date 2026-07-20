@@ -49,6 +49,23 @@ function cp_gmt_history_sql_str($s) {
 	return str_replace(array('\\', "'"), array('\\\\', "\\'"), (string)$s);
 }
 
+/**
+ * 변경 당시 로그인 관리자 ID (변경주체). pfSense 세션의 실제 webConfigurator 계정명
+ * (get_config_user()) 우선 — $adminlogin(common_ui.inc) 은 role 카테고리일 뿐이라
+ * "누구"인지 특정 못 함. 세션 없으면 $_SESSION['Username'] → '' 폴백
+ * (cp_terminal_history_actor #57 와 동일 규약). 크론/API 컨텍스트에선 '' 가 정상.
+ */
+function cp_gmt_history_actor() {
+	if (function_exists('get_config_user')) {
+		$u = trim((string)get_config_user());
+		if ($u !== '') { return $u; }
+	}
+	if (!empty($_SESSION['Username'])) {
+		return trim(str_replace(array("\r", "\n", "\t"), ' ', (string)$_SESSION['Username']));
+	}
+	return '';
+}
+
 /* 테이블 생성 DDL (CREATE TABLE IF NOT EXISTS — record/fetch 배치 앞에 항상 포함).
  * 컬럼 마이그레이션 없음: #48 배포 전까지 이 테이블이 존재하는 박스가 없어(사용자 확인)
  * 6컬럼 스키마로 바로 생성하면 됨. */
@@ -187,8 +204,11 @@ function cp_gmt_history_exec_sql($sql, $flags = '', &$out = null) {
  *
  * @param string $timefrom    변경 전 오프셋 (미설정이면 '')
  * @param string $timeto      변경 후 오프셋
- * @param string $source      로그 가시화용 출처 태그 (manual-web/auto-gps/api-push)
- * @param string $description 세부 내용 ("Manual change from 1.2.3.4" 등, 255자 클램프)
+ * @param string $source      변경주체 태그 (manual-web/auto-gps/api-push). 시스템 로그
+ *                            가시화 + description 앞에 "[source] " 로 저장(스키마 무변경
+ *                            으로 이력 뷰어의 Description 컬럼에서 변경주체 구분 가능).
+ * @param string $description 세부 내용 ("Manual change by admin (1.2.3.4)" 등). source
+ *                            태그가 앞에 붙은 뒤 255자 클램프.
  * @param string $gps         당시 GPS "lat,lon" — '' 이면 influx 에서 자동 취득(최대
  *                            ~4초, LAN), 미수신이면 'N/A'. 호출측이 이미 알면 전달(크론).
  * @return bool 성공 여부 (실패는 log_error 만 — 호출측 흐름에 영향 없음)
@@ -197,7 +217,14 @@ function cp_gmt_history_record($timefrom, $timeto, $source = '', $description = 
 	// VARCHAR 클램프 + 공백 정리
 	$from = substr(trim((string)$timefrom), 0, 10);
 	$to   = substr(trim((string)$timeto), 0, 10);
-	$desc = substr(trim((string)$description), 0, 255);
+	// 변경주체 태그를 description 앞에 "[source] " 로 저장(스키마 무변경으로 뷰어에서
+	// manual-web/auto-gps/api-push 구분). 이미 '[' 로 시작하면 중복 태깅하지 않음.
+	$desc = trim((string)$description);
+	$src  = trim((string)$source);
+	if ($src !== '' && strncmp($desc, '[', 1) !== 0) {
+		$desc = '[' . $src . '] ' . $desc;
+	}
+	$desc = substr($desc, 0, 255);
 	$gps  = trim((string)$gps);
 	if ($gps === '') { $gps = cp_gmt_history_current_gps(); }
 	$gps  = substr($gps, 0, 32);

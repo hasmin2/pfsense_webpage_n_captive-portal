@@ -109,7 +109,9 @@ function print_css_n_head(){
     $rtnstr .= '<link href="css/common.css" rel="stylesheet" type="text/css">';
     $rtnstr .= '<link href="css/components.css" rel="stylesheet" type="text/css">';
     $rtnstr .= '<link href="css/style.css" rel="stylesheet" type="text/css">';
-    $rtnstr .= '<!-- dark mode override (html.dark 스코프, 항상 로드) -->';
+    $rtnstr .= '<!-- theme: 디자인 토큰 + 모던 컴포넌트 리스킨 (라이트 기본값) -->';
+    $rtnstr .= '<link href="css/theme.css" rel="stylesheet" type="text/css">';
+    $rtnstr .= '<!-- dark mode override (html.dark 스코프에서 위 토큰만 재정의, 항상 로드) -->';
     $rtnstr .= '<link href="css/dark.css" rel="stylesheet" type="text/css">';
     $rtnstr .= '<!-- jquery -->';
     $rtnstr .= '<script src="js/jquery.min.js"></script>';

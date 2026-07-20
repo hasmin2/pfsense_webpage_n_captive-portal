@@ -557,6 +557,7 @@ function return_gateways_status($byname = false, $gways = false) {
             }
             $srcip = find_interface_ip($realif);
         } else {
+            $realif = $gwitem['interface'];   // (#opt-B) 누락 복원: 이 분기에서 $realif 미설정 → srcip 오산출/로그파일명 불일치
             $tgtip = $gwitem['monitor'];
             $srcip = find_interface_ip($realif);
         }
@@ -584,7 +585,7 @@ function return_gateways_status($byname = false, $gways = false) {
             $status[$target]['substatus'] = "none";
         }
         foreach($config['gateways']['gateway_item'] as $item) {
-            if ($item['name'] === $gwname) {
+            if ($item['name'] === $gwitem['name']) {   // (#opt-B) 버그 수정: 이전 루프의 stale $gwname → $gwitem['name']. monitor_disable 게이트웨이에 check_method/destinationip/check_timeout 정확히 복사
                 if ($item['terminal_type']) {
                     $status[$target]['terminal_type'] = $item['terminal_type'];
                 } else {

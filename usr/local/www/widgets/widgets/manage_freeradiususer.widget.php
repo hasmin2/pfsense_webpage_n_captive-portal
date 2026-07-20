@@ -44,8 +44,9 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
 			$radiususers = &$config['installedpackages']['freeradius']['config'];
 			foreach ($radiususers as $eachuser) {
                 $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
+                // one-time(forever) 계정도 할당량 초과 상태로 항상 표시(기존 숨김 조건 제거).
+                // 초과 one-time 삭제는 crew_monthlyusage_reset_check.php(매월 1일)가 독립 수행.
                 if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername'])){
-                    if($used_quota <= $eachuser['varusersmaxtotaloctets'] || strtolower($eachuser['varuserspointoftime'])!=='forever'){
                         $rtnstr .= "<tr>";
                         $rtnstr .= "<td><center><input type=checkbox class=userlist id={$eachuser['varusersusername']} name=userlist[] value={$eachuser['varusersusername']} /></center></td>";
                         if(strlen($eachuser['varusersusername'])>10){
@@ -82,7 +83,6 @@ if (!function_exists('compose_manage_freeradiususer_contents')) {
                             $rtnstr .= "</td>";
                         }
                         $widgetkey_html = htmlspecialchars($widgetkey);
-                    }
                 }
 			}
 		}
@@ -351,11 +351,9 @@ $widgetkey_nodash = str_replace("-", "", $widgetkey);
         var pwlist = "<?php
             $passwordlist = array();
             foreach ($config['installedpackages']['freeradius']['config'] as $eachuser) {
-                $used_quota=check_quota($eachuser['varusersusername'], $eachuser['varusersmaxtotaloctetstimerange']);
                 if(preg_match("/[a-z]*[0-9]{5}/", $eachuser['varusersusername'])) {
-                    if ($used_quota <= $eachuser['varusersmaxtotaloctets'] || strtolower($eachuser['varuserspointoftime']) !== 'forever') {
-                        array_push($passwordlist, $eachuser['varuserspassword']);
-                    }
+                    // one-time(forever) 계정 비밀번호도 초과 여부와 무관하게 항상 포함(숨김 제거).
+                    array_push($passwordlist, $eachuser['varuserspassword']);
                 }
             }
             echo implode("|||", $passwordlist);

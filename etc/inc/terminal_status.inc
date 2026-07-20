@@ -365,6 +365,74 @@ function set_routing($radiobutton, $routeduration){
     }
 }
 
+/*
+ * terminal.php "Terminal Setting" 팝업의 Data Cutoff 섹션 저장 처리.
+ * system_gateways_edit.php 의 "Monthly Data Allowance"/"Cutoff enable when allowance
+ * exceeded" 두 필드와 동일한 값(allowance/cutoff_enable)을 게이트웨이(안테나)마다 갱신해
+ * 동일한 효과(network_usage_timeperiod_check.php 크론이 이 두 값을 읽어 초과 시 shutdown)
+ * 를 낸다. save_gateway() 는 폼 전체($_POST) 기준으로 게이트웨이 항목을 통째로
+ * 재구성하므로 allowance/cutoff_enable 만 있는 이 폼을 그대로 넘기면 interface/monitor
+ * 등 나머지 필드가 날아간다 — 대신 lock+parse_config(true) 로 최신본을 다시 읽어 해당
+ * 게이트웨이 항목에 두 필드만 병합 갱신한다(#10/#22/#30/#47 과 동일한 lost-update 패턴).
+ * $allowance_map/$cutoff_map 은 게이트웨이 이름을 키로 하는 배열(체크되지 않은 체크박스는
+ * HTML 폼 특성상 POST 에 아예 빠지므로 $cutoff_map 에 키가 없으면 off 로 취급).
+ *
+ * $changeLog 는 선택적 out-param(참조) — 실제로 값이 바뀐 게이트웨이마다 "GWNAME: allowance
+ * 'old'->'new'; cutoff old->new" 형태의 사람이 읽는 문자열을 채워 넣는다(변경 이력 기록용,
+ * #57). 값이 그대로면 아무것도 추가하지 않아 무의미한 이력이 쌓이지 않는다.
+ */
+function cp_apply_gateway_cutoff_settings($allowance_map, $cutoff_map, &$changeLog = null) {
+    global $config;
+    if (!is_array($allowance_map) || empty($allowance_map)) {
+        return false;
+    }
+    if (!is_array($cutoff_map)) {
+        $cutoff_map = array();
+    }
+
+    $cnf_lock = lock('freeradius_user_config', LOCK_EX);
+    try {
+        $config = parse_config(true);
+        init_config_arr(array('gateways', 'gateway_item'));
+        $changed = false;
+        foreach ($config['gateways']['gateway_item'] as &$item) {
+            $gname = $item['name'];
+            if (!array_key_exists($gname, $allowance_map)) {
+                continue;
+            }
+            $rawAllowance = trim(strval($allowance_map[$gname]));
+            $newAllowance = ($rawAllowance === '' || !is_numeric($rawAllowance)) ? '' : $rawAllowance;
+            $newCutoff = isset($cutoff_map[$gname]) ? 'yes' : '';
+            $oldAllowance = $item['allowance'] ?? '';
+            $oldCutoff = !empty($item['cutoff_enable']) ? 'yes' : '';
+
+            $rowChanged = array();
+            if ($oldAllowance !== $newAllowance) {
+                $item['allowance'] = $newAllowance;
+                $changed = true;
+                $rowChanged[] = 'allowance ' . ($oldAllowance === '' ? '(unset)' : $oldAllowance)
+                    . ' -> ' . ($newAllowance === '' ? '(unset)' : $newAllowance) . 'GB';
+            }
+            if ($oldCutoff !== $newCutoff) {
+                $item['cutoff_enable'] = $newCutoff;
+                $changed = true;
+                $rowChanged[] = 'cutoff ' . ($oldCutoff === 'yes' ? 'on' : 'off')
+                    . ' -> ' . ($newCutoff === 'yes' ? 'on' : 'off');
+            }
+            if (!empty($rowChanged) && is_array($changeLog)) {
+                $changeLog[] = $gname . ': ' . implode('; ', $rowChanged);
+            }
+        }
+        unset($item);
+        if ($changed) {
+            write_config("Modified gateway allowance/cutoff via Terminal Status");
+        }
+    } finally {
+        unlock($cnf_lock);
+    }
+    return true;
+}
+
 function get_datausage($gateway){
     $filepath = "/etc/inc/";
     if ($gateway['allowance'] && $gateway['allowance'] != '') {//once we have that metered gateway

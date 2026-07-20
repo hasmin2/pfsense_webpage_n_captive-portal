@@ -57,6 +57,8 @@
 | `etc/inc/cp_gmt_history.inc` | GMT time_offset 변경 이력 → MariaDB `radius.gmt_history` 기록 헬퍼 (#48) |
 | `etc/inc/cp_account_history.inc` | crew 계정 변경 이력 → MariaDB `radius.radacct_changehistory` 기록/조회 헬퍼 (#49/#50) |
 | `usr/local/www/crew_account_history_data.php` | per-user 계정 변경 이력 조회 JSON 엔드포인트 (#50) |
+| `etc/inc/cp_terminal_history.inc` | Terminal Status(Manual Override/Data Cutoff) 변경 이력 → MariaDB `radius.terminal_status_history` 기록/조회 헬퍼 (#57) |
+| `usr/local/www/terminal_history_data.php` | Terminal Status 변경 이력 조회 JSON 엔드포인트 (#57) |
 
 > **주의**: `freeradius.inc`의 `freeradius_datacounter_acct_resync()` /
 > `freeradius_datacounter_auth_resync()` 함수가 `datacounter_acct.sh` /
@@ -790,6 +792,10 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   `etc/inc/terminal_status.inc` + `usr/local/www/widgets/widgets/manage_server_module.widget.php`
 - **검증**: php -l 전부 통과 / FBB 이름 매핑 10케이스·satlon 포맷 14케이스·look-angle 5시나리오(반구
   플립 포함) 단위테스트 통과 / 브라우저 하네스(리포 실 CSS)로 4상태·이중니들·로테이션·높이 실측.
+- **후속(2026-07-08, 이 레포 밖 변경)**: acureader(IntellianACUReader.java, **별도 프로젝트** — 이
+  레포에는 코드 없음) 의 GPS 데이터 조회 타임아웃을 60000ms 로 상향해 GPS 데이터가 안정적으로
+  수신되도록 수정 완료(사용자 확인, ACUReader 프로젝트 측 커밋). pfSense 측(이 레포) 코드 변경
+  없음 — release_note.md 2026-07-08 Update 에 FIXED 로만 기록.
 
 ### 28. 항구 미니맵 — WoW 풍 원형 미니맵 + 최근접 3개 항구 방위/거리 화살표 (통합 완료)
 - **요구**: GPS 판넬(Position 타일) 아래 원형 미니맵. 오프라인용 경량 지도 사전 저장, 전세계 주요 항구
@@ -1230,6 +1236,44 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   공인 엔드포인트 금지 — WAN 누수로 healthy 오판).
 - **2026-07-03 후속(ping 대상 교정 + 매분 환원)**: `openvpn_restart_timeperiod_check.php`(`OVWD_PING_HOST`
   10.8.128.1) + `firewall_cronlist`(`minute` `*`) 일괄. 패치노트는 `2026-07-03 Update` 항목에 병합(FIXED).
+- **⚠️ 근본 재설계(2026-07-14, develop 미커밋) — liveness 를 하드코딩 ICMP → dpinger 판정으로 교체**:
+  - **문제(정밀 재검토 결론)**: 워치독 내부 로직(플래그·per-client·fail카운터/쿨다운·싱글톤/reap·플래그정리)
+    자체는 정상이나, **liveness 전체가 단일 하드코딩 IP 로의 `ping -S <virtual_addr> <host>` 한 신호에
+    매달려 있어 양방향 취약**. FreeBSD 는 `-S`(소스)와 무관하게 **목적지 기준 라우팅** → host 가 공인
+    엔드포인트면 WAN 누수로 healthy 오판(→ **무재시작**, 원래 6h+ 증상), 터널 내부 IP(10.8.128.1)면 그
+    IP 의 ICMP 정책/경로 미설치 시 healthy 인데 실패 오판(→ **멀쩡한 터널 상시 재시작 = 끊김 상시화**).
+    즉 7/3 ping 대상 교정이 "무재시작"을 "상시 재시작"으로 뒤집었을 수 있음(선상 미검증이었음).
+  - **재설계(`openvpn_restart_timeperiod_check.php`)**: ICMP 완전 제거. liveness 를 **전제 없는 2신호**로:
+    - **(a) 제어플레인** — OpenVPN management `state` 가 `'up'`(CONNECTED) 이 아니면(reconnecting/down/…)
+      불건전. 업링크 전환 후 서버 도달 불가(흔한 케이스)를 외부 probe 없이 직접 감지.
+    - **(b) 데이터플레인** — `'up'` 이어도 **이 client 의 VPN 게이트웨이를 pfSense dpinger 가 `down` 으로
+      판정**하면 불건전(제어플레인은 붙었는데 데이터 안 흐르는 **wedged** 케이스 = 원래 6h+ 증상의 정체).
+      dpinger 는 게이트웨이 인터페이스에 **바인딩**돼 상시 감시하므로 `-S`/목적지라우팅/ICMP정책 전제가
+      없다(=올바른 ICMP). 우리 코드는 dpinger 의 이미-올바른 판정을 **읽어서** 그 client 만 재시작(과거엔
+      아무도 이 판정으로 client 를 재시작 안 했던 것이 진짜 갭).
+    - **(c) 안전 강등** — dpinger 판정이 `unknown`(게이트웨이 미모니터/미매핑/pending)이면 제어플레인
+      `'up'` 을 신뢰하고 **재시작 안 함** → **오재시작 불가**(하드코딩 ICMP 의 양방향 오판 원천 제거).
+  - **신규 `ovwd_build_vpn_gw_health()`**: `return_gateways_array()`+`return_gateways_status(true)` 로
+    게이트웨이를 순회, `get_real_interface($gw['interface'])`(폴백: interface/friendlyiface 문자열)가
+    `ovpnc{N}` 이면 **vpnid=N** 으로 접어 `vpnid=>'up'|'down'|'unknown'` 맵 생성. status stripos:
+    `online`→up / `down`→down(단 substatus `force_down`=관리자 강제 비활성은 **재시작 대상 아님→unknown**) /
+    그 외(none/pending/unmonitored)→unknown. 같은 vpnid 게이트웨이 다수면 **down 우선**(보수적).
+    `gwlb.inc`/`interfaces.inc` require(+`function_exists` 가드) — 미가용 시 빈 맵→전부 unknown(제어플레인만).
+  - **보존(무변경)**: 강제 재시작 **플래그**(경로전환/관리자, manual_routing "Automatic"·APIStatusOpenVPNRestart)
+    는 그대로 즉시 전 client 재시작. fail카운터/쿨다운(3회·300s)·싱글톤/reap·플래그정리·로그 가시화 동일.
+    제거: `OVWD_PING_HOST`·`$ping_bin`·`$timeout_pfx`·`virtual_addr` 의존·mwexec ping(+매 실패마다의 syslog 노이즈).
+  - **커버리지 한계(정직)**: wedged(up-but-data-dead) 감지는 **VPN 게이트웨이의 dpinger 모니터링에 의존**.
+    게이트웨이가 미모니터면 제어플레인만 사용(reconnecting/down 은 잡되 wedged 는 못 잡음) — 단 **오재시작은
+    절대 없음**. wedged 까지 잡으려면 VPN 게이트웨이 모니터(모니터IP=터널 원격)를 켜거나 OpenVPN
+    keepalive/ping-restart 설정 권장(네이티브 자가치유). 하드코딩 ICMP 보다 **모든 면에서 안전·정확**.
+  - **검증**: php -l 통과 + `ovwd_build_vpn_gw_health()` 스텁 하네스 **9/9**(online→up·down→down·
+    force_down→unknown·무상태→unknown·unmonitored문자열→up·비VPN제외·friendlyiface폴백·다중GW down우선·
+    interface직접ovpnc). **선상 실측 필수**(dpinger 모니터 설정·실제 재시작 동작). 배포 정합성: **코어
+    함수 의존만**(openvpn.inc/gwlb.inc/interfaces.inc) → 단독 배포 가능. `crontab -l | grep openvpn_restart` +
+    `clog /var/log/system.log | grep openvpn-watchdog`(RESTART reason=`gw=down` 확인).
+  - **잔여 후속(별건, 미적용)**: ① `manual_routing_timeperiod_check.php` 자동 만료→auto복귀 시 openvpnrestart
+    플래그 미설정(자동 failover 재바인딩은 liveness 의존). ② `crontab_import`(레거시) 가 `/usr/local/www/…`
+    (잘못된 경로) 참조 — 권위는 `firewall_cronlist`(`/usr/local/cron/…`).
 
 ### 41. 다크모드 — System/GPS(일출일몰)/Light/Dark 토글 (develop `ab95701`·`81c9423`·`e089710`)
 - **요구**: 다크모드 버튼을 전 웹페이지 공통 적용. 이후 시스템 테마 연동(기본) + GPS 일출/일몰 연동으로 확대.
@@ -1431,8 +1475,24 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
     `GMT HISTORY:` 시스템 로그(빈도 낮아 스팸 없음; source 는 로그 가시화용 — 테이블 컬럼 아님).
   - 호출측 3곳 모두 `file_exists`+`function_exists` 가드 → **버전 섞임(inc 미배포) 시 fatal 없이 skip**.
     구 inc(3인자 record)에 신 호출(5인자)이 와도 PHP 는 초과 인자 무시 → **양방향 버전섞임 안전**.
-- **주의(수용)**: `gmtcheck`(수동모드 토글) 자체는 오프셋 변경이 아니라 미기록. DB 접속정보는 코드 상수
-  (기존 influx/mysql 하드코딩 관례 — 보안 후속 항목과 동일 범주).
+- **주의(수용)**: DB 접속정보는 코드 상수(기존 influx/mysql 하드코딩 관례 — 보안 후속 항목과 동일 범주).
+- **#48b 변경주체 명시화 + gmtcheck 토글 기록(develop 미커밋)**: "수동 변경만 기록되는 것으로 보인다"는
+  관측 → **원래부터 3경로(manual-web/auto-gps/api-push) 전부 record 호출**하고 있었음을 확인(버그 아님 —
+  auto-gps 는 실제 타임존 경계 통과 시에만, api-push 는 중앙서버 푸시 시에만 값이 바뀌어 기록되므로
+  정박 중엔 manual 이 유일한 빈발 이벤트라 그렇게 보였을 뿐). 사용자 결정 = **스키마 무변경(description
+  유지)** + gmtcheck 토글도 기록:
+  - **변경주체를 description 앞에 `[source]` 태그로 저장**(`cp_gmt_history_record` 가 자동 prepend,
+    이미 `[` 로 시작하면 중복 태깅 안 함) → 스키마 ALTER 없이 뷰어 Description 컬럼에서 manual-web/
+    auto-gps/api-push 즉시 구분(기존엔 source 가 시스템 로그에만 남고 컬럼 미저장이었음).
+  - **`cp_gmt_history_actor()` 신규**(get_config_user()→$_SESSION['Username']→'' 폴백, #57 규약) →
+    manual 경로 description 을 "Manual change by {계정} ({IP})" 로 변경(변경주체=로그인 관리자 계정+IP).
+  - **gmtcheck(Manual Timezone Enable/Disable) 토글 기록**(index.php): `!empty()` truthy 전환 시에만
+    "[manual-web] Manual timezone mode ENABLED/DISABLED by {계정} ({IP})" 1행(오프셋 값은 안 바뀌므로
+    timefrom=timeto=현재오프셋 → Change 컬럼 무변화, 모드 전환은 description 에). auto-gps/api-push 는
+    prepend 만으로 변경주체 노출(호출 인자 무변경).
+  - **호환**: record() 시그니처·컬럼 불변 → 구버전 호출/뷰어와 완전 호환. 수정 = `cp_gmt_history.inc`
+    (actor 헬퍼 + prepend) + `index.php`(manual 액터 + gmtcheck 훅) **2파일**. 검증: php -l 통과 +
+    태그/클램프/중복태그방지/토글전환 하네스 11/11.
 - **이력 뷰어(사이드바 history 버튼 + 모달)**:
   - **버튼**: 사이드바 "GMT n"(`common_ui.inc print_sidebar` `#gmt-modify`) 옆 소형 `history` 버튼.
     클릭 버블은 JS `stopPropagation` 으로 차단(부모 클릭 = 타임존 설정 팝업 pop-gmt 와 분리).
@@ -1634,9 +1694,685 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   ([:162])도 **역할 게이트 없음**(Reset PW 와 동일) → customer 에서 버튼→AJAX→백엔드 end-to-end 정상.
 - **범위**: crew 전용(prepaid_account.php 는 customer 브랜치·SET RANDOM PW 자체가 없어 무관). `crew_account.php` 단일 파일.
 - **검증**: php -l 통과.
+- **되돌림(develop 미커밋)**: 사용자 지시로 customer 역할의 SET RANDOM PW 버튼을 다시 숨김 —
+  `customer` 브랜치 `$controldisplay` 를 Reset PW 버튼만 남기고 원복(#53 이전 상태로 복귀).
+  **주의**: #53 은 이미 `main`(`d8165bf`)·`prod`(`59b6594`) 까지 병합돼 있어, 이 되돌림을 develop
+  에만 커밋하면 **customer 의 SET RANDOM PW 노출 여부가 develop 과 main/prod 사이에서 달라짐**
+  (develop=숨김, main/prod=노출 유지) — main/prod 도 되돌리려면 별도 명시적 지시 필요.
+
+### 54. Account History 모달 — Login/Logout + Session Usage 탭 추가 (Change | Login | Usage) (develop 미커밋)
+- **요구**: crew_account.php per-user History 모달(#50, `radacct_changehistory` 단일 조회)에
+  ① **로그인/로그아웃 이력**, ② **세션별 데이터 사용량**을 추가로 표시. 최종 모달은
+  **Change / Login / Usage 3탭**, 셋 다 **동일한 기간 선택 UI(30d/7d/1d/All/Custom)** 공유
+  (탭 전환 시 기간 유지, 기간 변경 시 탭 유지). Usage 탭 범위는 사용자 확인 결과 **완료(로그아웃
+  완료)된 세션만**(진행 중 세션의 실시간 사용량은 미포함 — 별도 기능 영역).
+- **시행착오(교훈, 중요)**: 처음엔 Login/Usage 를 위해 `radacct_changehistory`에 `client_ip`/
+  `client_mac`/`session_id`/`session_duration`/`input_octets`/`output_octets` 6컬럼을 새로
+  추가했었다(#48 GMT 이력 테이블처럼 "아직 미배포 박스 前提"로 마이그레이션 없이 CREATE TABLE
+  단계에서 확장). 그런데 실사용 스크린샷으로 **이미 그 5컬럼 구버전 테이블이 배포된 박스가 최소
+  1개 있음**이 확인되어(`CREATE TABLE IF NOT EXISTS`는 테이블이 있으면 무효과라 그대로 두면
+  조용히 실패) `information_schema` 기반 런타임 self-heal(`cp_account_history_ensure_schema()`,
+  MariaDB 5.5 는 `ADD COLUMN IF NOT EXISTS` 미지원이라 필요)을 한 차례 추가했었다. 이어서 사용자가
+  ① Usage(세션 데이터량)는 별도로 기록하지 말고 **기존 표준 FreeRADIUS SQL accounting 테이블
+  `radius.radacct`**를 직접 조회하라고 지시했고, ② 최종적으로 **"ALTER TABLE 자체를 아예 일으키고
+  싶지 않다"**는 지시에 따라 **Login/Logout 도 새 컬럼 없이 원본 5컬럼 스키마(#49)만으로 기록**
+  (IP/MAC/사유를 `change_description` 텍스트에 포함, 다른 change_type 이벤트와 동일한 방식)하도록
+  최종 되돌림. **6컬럼 스키마 확장과 self-heal 함수는 전부 제거되고 현재 남아있지 않다** — 아래는
+  최종 구현만 설명.
+- **최종 구현 — Login/Change 탭 (`radacct_changehistory`, #49 원본 5컬럼 그대로)**:
+  - 스키마 변경 없음(`cp_account_history_create_table_sql()` 은 #49 그대로: id/timestamp/
+    username/change_type/change_description). `change_type` 에 `login`/`logout` 두 값 추가.
+  - login/logout 이벤트도 기존 배치용 `cp_account_history_record($change_type, $description)`
+    를 **그대로 재사용**(전용 함수를 따로 두지 않음) — description 을 다른 이벤트들과 동일하게
+    `"user={username} ..."` 로 시작시켜 기존 `cp_account_history_extract_username()` 파싱에
+    그대로 태움. IP/MAC/사유는 컬럼이 아니라 이 텍스트 안에 포함:
+    `"user={username} logged in from ip={ip} mac={mac} via {authmethod}{tag}"` /
+    `"user={username} logged out from ip={ip} mac={mac} reason={label}{tag}"`.
+  - `captiveportal.inc` 신규 `cp_term_cause_label($code)` — RADIUS term_cause 숫자→사람이 읽는
+    사유(1=LOGOUT/4=IDLE TIMEOUT/5=SESSION TIMEOUT/6=ADMIN RESET/10=QUOTA EXHAUSTED/
+    13=CONCURRENT LOGIN/17=REAUTH FAILED). 코드베이스가 이미 몇몇 호출부(`captiveportal_
+    disconnect_client($sid, "Usage-Exceed")`/`"No-Gateway"`)에서 **문자열을 term_cause 슬롯에
+    그대로 넘기는 기존 관행**이 있어, 숫자가 아니면 그 문자열을 그대로 사유로 채택.
+  - 신규 `cp_log_account_login($username, $ip, $mac, $sessionid, $authmethod)` /
+    `cp_log_account_logout($dbent, $term_cause, $stop_time, $reason=null)` — 둘 다 게스트
+    passthrough(`unauthenticated`)는 계정이 없어 스킵, lazy-require+`function_exists` 가드로
+    버전섞임 안전. **`getVolume()` 호출 없음**(세션 바이트는 Usage 탭에서 radacct 로만 다룸 —
+    이벤트 로그는 로그인/로그아웃 "발생 여부·사유"만 남긴다).
+  - 호출 지점 4곳: ① `portal_allow()`의 **"진짜 신규 세션 생성" 지점**(동시로그인 재사용 경로는
+    `if (!isset($sessionid))` 밖이라 자동 제외)에 로그인 기록. ② `captiveportal_disconnect()` —
+    **모든 개별 세션 종료의 단일 관문**(명시적 로그아웃/idle·session timeout/quota exceeded/
+    no-gateway/동시로그인 킥/데이터리셋 등 전부 경유)이라 여기 한 곳으로 대부분 커버. ③
+    `captiveportal_radius_stop_all()`(대량 `captiveportal_disconnect_all()` 전용 — 개별
+    disconnect()를 안 거치는 별도 경로) foreach 안에도 동일 훅 추가. ④ `captiveportal_prune_old()`
+    의 quota-exceeded 호출부만 이미 만들어진 상세 문자열 `$logout_cause`(예: "QUOTA EXHAUSTED:
+    used=120MB max=100MB")를 `$reason` 인자로 전달해 더 정확한 사유 보존 — 이 한 곳 외 다른
+    `captiveportal_disconnect()` 호출부는 무수정(새 인자는 선택적 5번째 파라미터라 순수 추가).
+  - **의도적으로 손대지 않음**: `captiveportal_disconnect_client()`의 죽은 파라미터
+    `$logoutReason`은 그대로 방치 — 살리려면 term_cause 슬롯 문자열 관행과 우선순위 충돌 위험이
+    있어 리스크 대비 이득이 작음. 결과적으로 `captiveportal_reset_user_usage()`(#14, 데이터리셋)
+    로그아웃은 "DATA RESET" 대신 term_cause=6 매핑값인 **"ADMIN RESET"**으로 다소 뭉뚱그려 표시됨
+    (기능상 문제 없음, 후속 개선 가능).
+  - `cp_account_history_fetch($username,$from,$to,$limit,$tab)` — `$tab='change'`(기본,
+    login/logout 제외) | `'login'`(login+logout). SELECT 는 원본 4컬럼(id/timestamp/change_type/
+    change_description) 그대로.
+- **최종 구현 — Usage 탭 (`radius.radacct`, 표준 FreeRADIUS SQL accounting 테이블 직접 조회)**:
+  - 신규 `cp_account_history_fetch_usage($username,$from,$to,$limit)` (`cp_account_history.inc`)
+    — `radacct` 를 `LOWER(username)` 매칭(대소문자 무시, #6/#17 관례) + **`acctstarttime` 기준
+    기간 필터**(사용자 지시) + `acctstoptime IS NOT NULL`(완료된 세션만) 로 조회.
+    `acctstarttime`/`acctstoptime`/`acctsessiontime`/`acctinputoctets`/`acctoutputoctets`/
+    `framedipaddress`/`callingstationid` — `usr/local/etc/raddb/mods-config/sql/main/mysql/
+    queries.conf` 의 표준 스키마와 동일. 응답 필드명은 모달 JS Usage 탭 렌더 규약(`client_ip`=
+    framedipaddress, `client_mac`=callingstationid, `session_duration`=acctsessiontime,
+    `input_octets`=acctinputoctets, `output_octets`=acctoutputoctets, `id`=radacctid,
+    `timestamp`=acctstoptime)에 맞춰 매핑 — **radacct_changehistory 스키마와는 완전히 무관**
+    (이 테이블은 손대지 않음, ALTER TABLE 불필요).
+  - **주의(선상 전제)**: `radacct` 조회가 유효하려면 **해당 박스에서 FreeRADIUS SQL accounting 이
+    활성화되어 실제로 `radacct` 테이블에 세션이 쌓이고 있어야** 함(`varsqlconfenableaccounting ==
+    'Enable'`, #23 분석 참고). 비활성 박스에서는 Usage 탭이 "완료된 세션 없음"으로 빈 결과 표시
+    (fatal 없음, graceful degrade).
+- **엔드포인트(`crew_account_history_data.php`)**: POST `tab`(change/login/usage, 기본 change).
+  change/login 은 `cp_account_history_fetch()`, usage 만 `cp_account_history_fetch_usage()`로 분기.
+- **모달 UI(`manage_crew_wifi_account.inc` `render_account_history_modal()`)**: 탭바
+  (Change/Login/Usage) 추가, range pill 은 공유(탭 전환 시 `lastRangeParams` 재사용, range 변경
+  시 `curTab` 유지). 탭별 컬럼: **Change=Time/Type chip/Description · Login=Time/Event chip
+  (LOGIN 녹색·LOGOUT 파랑)/Description(IP/MAC/사유는 텍스트에 포함, 별도 컬럼 없음) · Usage=
+  Time/Duration/Data In/Data Out/Total/IP**(위젯 내 self-contained `formatBytes()`/
+  `formatDuration()`, 외부 의존 없음). Export CSV·빈 결과 메시지·하단 안내문 전부 탭별 분기.
+  기존 10개 클라이언트 페이지네이션 패턴 그대로 재사용. 모달 너비 860px→980px.
+- **검증**: php -l 4파일 전부 통과. DB 레이어(`cp_account_history_record`/`fetch`/DDL 원본 5컬럼
+  확인·`fetch_usage` radacct 타깃/컬럼매핑/NULL처리) PHP 스텁 하네스 30/30 + 21/21. captiveportal.inc
+  헬퍼(term_cause 매핑·reason 우선순위 3단계·게스트 스킵·**getVolume 미호출 확인**) 스텁 하네스
+  24/24. 모달 JS(탭 전환 시 기간 유지·Login 탭에 IP/MAC 별도 컬럼 없음 확인·Usage 탭 구조화 컬럼
+  렌더·CSV 헤더 3종·빈결과/실패 메시지) DOM/XHR 스텁 하네스 24/24.
+- **배포 정합성**: `cp_account_history.inc` + `captiveportal.inc` + `crew_account_history_data.php`
+  + `manage_crew_wifi_account.inc` **4파일 일괄**(가드 있어 fatal 없음 — 구버전 섞여도 로그인/
+  로그아웃 기록만 skip, 기존 Change 탭은 영향 없음).
+- **알려진 범위 제한(수용)**: Usage 탭은 완료된 세션만(사용자 확인, 진행 중 세션 실시간 사용량
+  미포함) / 데이터리셋 로그아웃 사유가 "ADMIN RESET"으로 다소 뭉뚱그려짐(위 참고) / crew_account.php
+  전용(#50 과 동일하게 prepaid_account.php 는 History 버튼 자체가 없어 미포함) / `radacct` 조회는
+  해당 박스의 SQL accounting 활성 여부에 종속(위 참고).
+- **Usage 탭 기간 총합 표시(후속 추가)**: range pill 아래에 조회된 **전체 결과(lastRows, 현재
+  페이지 10개가 아니라 필터링된 전체)** 기준 합계 배너 추가 — "Total for this period: **98.0 GB**
+  (44.2 GB in / 53.8 GB out) across 627 sessions". Change/Login 탭이나 결과 없음(빈 배열)일 땐
+  숨김. 탭 전환·range 변경 시 `load()` 시작 지점에서 즉시 숨겼다가(로딩 중 이전 총합 flash 방지)
+  응답 도착 후 `render()`에서 재계산 — `noteEl` 갱신과 동일한 즉시성 패턴. 외부 라이브러리 없이
+  기존 `formatBytes()` 재사용. DOM 하네스 9종(전체 합산·in/out 분리·session count·단복수 문구·
+  탭/range 전환 시 즉시 숨김·빈결과 숨김) 포함 33/33 통과.
+
+### 55. crew_account.php — "Export Credentials CSV" 버튼 (ID/할당량/비밀번호 CSV) (develop 미커밋)
+- **요구**: crew_account.php 상단에 현재 CREW 의 ID/할당량/비밀번호를 CSV 로 뽑는 버튼 추가.
+- **구현**: 기존 "Export CSV"(`export_wifi_csv()`, ID/Description/Type/Update/Used/Quota/Online)
+  버튼 바로 옆에 **"Export Credentials CSV"** 버튼 신설. 신규 `export_wifi_credentials_csv($isPrepaid)`
+  (`manage_crew_wifi_account.inc`) — `build_wifi_rows()` 재사용해 **ID, Quota(MB), Password 3컬럼만**
+  CSV 로 출력(파일명 `{vessel}_credentials_{시각}.csv`, 기존 export 와 접미사로 구분해 오인 방지).
+  `build_wifi_rows()` 행에 `'Password' => $user['varuserspassword']` 1줄 추가(기존 draw_wifi_contents
+  는 명시적 키만 읽어 화면 테이블엔 영향 없음 확인).
+- **비밀번호 노출 근거**: crew wifi 계정 비밀번호는 애초에 `config.xml`(`varuserspassword`,
+  Cleartext-Password)에 평문 저장돼 있어(#10/#23 배경) 이 버튼이 새로운 노출면을 만드는 게
+  아니라 이미 서버에 있는 평문값을 관리자 편의상 다운로드하게 해주는 것 뿐.
+- **접근 제한**: 버튼은 admin/vesseladmin 역할에서만 노출(customer 는 없음, #53 과 동일 원칙).
+  **일반 Export CSV 와 달리 GET 핸들러 자체에도 역할 체크 추가**(`$adminlogin==='admin'||
+  'vesseladmin'`) — 일반 CSV 는 버튼 숨김과 무관하게 `?export=csv` 직접 접근이 항상 가능한
+  기존(무해한) 특성이 있는데, 이건 평문 비밀번호가 포함되므로 URL 직접 접근으로 customer 가
+  우회하지 못하도록 명시적으로 막음.
+- **검증**: php -l 2파일 통과. CSV 출력 하네스(`build_wifi_rows` 스텁 대체) 6/6 — BOM/헤더 정확히
+  3컬럼/따옴표 포함 비밀번호 CSV escape/Description·Used 등 다른 필드 미포함 확인.
+- **배포 정합성**: `crew_account.php` + `manage_crew_wifi_account.inc` 2파일 일괄.
+- **후속 수정 — 버튼 겹침 + 아이콘 구분(develop 미커밋)**: 버튼이 6개→7개로 늘면서 좁은 화면
+  (`.list-top .btn-area` 가 `position:fixed` 로 전환되는 `@media (max-width:1440px)` 구간,
+  `components.css`/`common.css` 공용 규칙)에서 버튼이 찌그러들며 텍스트가 옆 버튼과 겹치는 현상
+  발생(스크린샷으로 확인). **crew_account.php 전용 인라인 `<style>`** (공유 CSS 파일은 다른 페이지도
+  쓰므로 미수정)에 `.list-top .btn-area{overflow-x:auto}` + `.btn-area .btn{flex:0 0 auto;
+  white-space:nowrap}` 추가 — 버튼이 축소/줄바꿈되지 않고 필요 시 가로 스크롤로 대체(겹침 원천 차단).
+  또한 Export CSV/Export Credentials CSV 아이콘이 Reset PW 등과 동일한 `ic-reset` 이라 전부 같아
+  보이던 것을, 신규 `.ic-doc`(서류 모양, 인라인 SVG data URI — 새 PNG 애셋 불필요) 로 교체해 두
+  CSV 버튼만 시각적으로 구분(Reset PW/SET RANDOM PW/Reset Data 는 기존 `ic-reset` 유지, 요청
+  범위 밖). SVG 2개(gray/disabled) DOMDocument 로 유효 XML 확인.
+  **선상 확인 완료(사용자 스크린샷)**: 버튼 겹침 해소 + 서류 아이콘 정상 표시.
+- **후속 수정 2 — 검색창 밀림 → 2줄 분리 → 드롭다운 통합으로 최종 정리(develop 미커밋)**: 버튼
+  겹침 수정(`flex:0 0 auto` 로 버튼 shrink 금지) 부작용으로, 같은 줄을 공유하던 검색창이 늘어난
+  버튼 그룹에 밀려 폭 0에 가깝게 찌그러짐(스크린샷 확인). **1차**: 검색창/버튼 툴바를 별도 줄로
+  분리(`.list-top`을 `flex-direction:column`)했으나, 사용자가 "원래는 한 줄이었다"며 한 줄 유지를
+  요청 → **최종**: 관련 액션을 드롭다운으로 묶어 **버튼 개수 자체를 7개→5개로 축소**하고 다시
+  한 줄 레이아웃(`.list-top` row, `search-area flex:0 0 auto` 로 검색창 폭 고정 + `btn-area
+  flex:1 1 auto; min-width:0` 로 남은 공간을 버튼 그룹이 차지, 필요 시 위 겹침수정의 가로 스크롤이
+  안전망)으로 복귀.
+  - **Export 드롭다운**: 트리거 버튼 "Export ▾"(서류 아이콘) 아래 Export CSV / Export Credentials
+    CSV 2개 메뉴.
+  - **Manage PW 드롭다운**: 트리거 버튼 "Manage PW ▾"(reset 아이콘) 아래 **Reset Random PW**(기존
+    SET RANDOM PW, `confirm_setRandomPw()`) / **Reset Initial PW**(기존 Reset PW="1111"로 리셋,
+    `confirm_resetPw()`) 2개 메뉴로 재명명.
+  - Reset Data / Check PW / Delete 는 기존대로 단독 버튼 유지(병합 대상 아님).
+  - 구현: 프레임워크 의존 없는 **순수 CSS/JS 드롭다운**(`.btn-dd`/`.btn-dd-menu`, `toggleBtnDd()` +
+    바깥 클릭 시 전체 닫힘 `document` 클릭 리스너) — pfSense 스톡 UI(Bootstrap `dropdown-toggle`)
+    와 무관한 이 페이지 전용 미니멀 버튼 프레임워크에 맞춤.
+  - **주의**: 이 세션엔 브라우저 렌더링 확인이 불가(로컬 프리뷰 서버 없음, pfSense 박스 필요) —
+    배포 후 한 줄 배치·드롭다운 열림/닫힘·각 메뉴 항목 클릭 시 기존 동작(AJAX/네비게이션) 정상
+    확인 필요.
+  - **버그 발견·수정(선상 확인)**: 드롭다운 메뉴 클릭해도 안 뜨는 문제 발생 — 원인은 이전 겹침
+    수정(`49e5607`)에서 `.list-top .btn-area` 에 넣은 `overflow-x:auto; overflow-y:hidden;` 이
+    범인. `.btn-dd-menu` 가 `position:absolute; top:100%` 로 버튼 아래로 펼쳐지는데, 조상인
+    `.btn-area` 의 `overflow-y:hidden` 이 이를 잘라서 안 보이게 만듦(CSS 스펙상 `overflow-x` 를
+    `visible` 아닌 값으로 두면 `overflow-y` 도 자동으로 `visible` 을 벗어나 `auto`/`hidden` 취급되는
+    것도 한몫). **수정**: 그 규칙 제거(`.list-top .btn-area .btn{flex:0 0 auto;white-space:nowrap;}`
+    만 유지) — 드롭다운 통합으로 버튼이 5슬롯으로 줄어 가로 스크롤 안전망 자체가 더 이상 필요 없음.
+
+### 56. terminal.php — 안테나별 Cutoff 체크박스 + Allowance 입력 (system_gateways_edit.php 와 동일 효과) (develop 반영)
+- **요구**: `system_gateways_edit.php`(게이트웨이 편집)의 "Monthly Data Allowance"/"Cutoff enable
+  when allowance exceeded" 두 필드를 `terminal.php`(Terminal Status) 에서도 안테나(게이트웨이)마다
+  설정할 수 있게 해달라는 요청. 이 두 필드는 `network_usage_timeperiod_check.php` 크론이 주기적으로
+  읽어 월 사용량이 allowance 를 넘고 cutoff_enable 이 켜져 있으면 해당 게이트웨이를
+  `cp_shutdown_gateways` 에 등재해 전면 차단한다(#19/#20 배경) — Gateways 편집 화면 접근 없이도
+  terminal.php 에서 같은 효과를 낼 수 있어야 함.
+- **수정 (`etc/inc/terminal_status.inc`)**: 신규 `cp_apply_gateway_cutoff_settings($allowance_map,
+  $cutoff_map)` — 게이트웨이 이름을 키로 하는 allowance/cutoff_enable 맵을 받아 해당 게이트웨이
+  항목에만 병합 갱신. `save_gateway()` 는 폼 전체($_POST) 기준으로 게이트웨이 배열을 통째로
+  재구성하므로 allowance/cutoff_enable 두 필드만 있는 이 폼을 그대로 넘기면 interface/monitor 등
+  나머지 필드가 날아간다 — 대신 `lock('freeradius_user_config')` + `parse_config(true)` 로 최신본을
+  다시 읽어 델타만 재적용하는 기존 lost-update 패턴(#10/#22/#30/#47)을 그대로 재사용. 체크되지 않은
+  체크박스는 HTML 폼 특성상 POST 자체에서 빠지므로, `$cutoff_map` 에 키가 없으면 off 로 취급.
+- **수정 (`usr/local/www/terminal.php`)**: **UI 반복 4단계** — ① "Terminal Setting" 팝업 안에 넣음 →
+  ② 사용자 피드백("이 변경 창에 넣지 말고 밖에서 바로 세팅되게")에 따라 팝업 밖, 상태 테이블 아래
+  별도 테이블로 분리 → ③ 사용자 요청("한 테이블로 합쳐서 구현 가능?")에 따라 기존 안테나 상태
+  테이블(Name/Info/GW/Net/Ext-Net)에 Monthly Allowance (GB)/Cutoff 두 컬럼을 별도 컬럼으로 추가해
+  한 테이블로 병합(+컬럼 폭 축소, Cutoff 라벨 "Cutoff when exceeded"→"Enabled" 로 줄바꿈 수정) →
+  ④ 사용자 지적("Info 의 usage/allowanceGB 와 Monthly Allowance 컬럼 내용이 중복")에 따라 **Monthly
+  Allowance 컬럼을 아예 없애고 Info 컬럼 안에 "usage / [입력창] GB" 형태로 합침**(최종, 6컬럼:
+  Name/Info/GW/Net/Ext-Net/Cutoff). Info 컬럼 폭을 30% 로 확장해 인라인 입력이 들어갈 공간 확보 +
+  이 페이지 전용 `<style>` 로 `input[name^="allowance"]` 를 전역 `input[type=text]{width:100%}`
+  대신 소형 인라인 박스(80px)로 오버라이드(전역 style.css 무수정).
+  - VPN 이 아닌 게이트웨이마다 한 행에 상태 5컬럼(Name 포함) + Info 안의 Allowance 입력 + Cutoff
+    체크박스(`.check.v1`)가 모두 존재, 테이블 하단 APPLY 버튼(`#cutoff_form`, `/terminal.php` 로
+    POST). Setting 버튼/팝업 없이 페이지 진입 즉시 보이고 바로 편집 가능.
+  - **핵심 문제(10초 AJAX 폴링과 입력 중인 값의 충돌)**: 기존 `#all_terminal_status` tbody 는 10초
+    마다 서버가 만든 HTML 문자열로 **통째로 교체**됐다. Allowance/Cutoff 를 같은 tbody 행에 합치면
+    관리자가 값을 입력하거나 체크하는 도중 폴링이 오면 그 입력이 사라진다.
+  - **해결 = "상태만 부분 갱신"으로 폴링 방식 자체를 재설계**: 서버(`data_update` POST 핸들러)가
+    더 이상 HTML 문자열을 반환하지 않고, 게이트웨이 이름을 키로 하는 **구조화 JSON**
+    (`{rows: {GWNAME: {row_on, usage_text, gw_html, net_class, net_text, extnet_class, extnet_text}}}`)
+    을 반환. 클라이언트(`refreshValue()`)는 `tr[data-gw='GWNAME']` 로 행을 찾아 `.cell-info-usage`
+    (Info 안의 usage 숫자만, `input` 은 별개 형제 요소)/`.cell-gw`/`.cell-net p`/`.cell-extnet p`
+    만 `.text()`/`.html()`/`.attr('class')` 로 갱신하고 **Name/Allowance 입력/Cutoff 체크박스는
+    아예 건드리지 않는다** — usage 숫자를 Info 안으로 합친 뒤에도 입력 중 포커스·값·체크 상태가
+    폴링에 영향받지 않도록 usage 표시(`<span class="cell-info-usage">`)와 입력(`<input>`)을 같은
+    `<td>` 안에서 별도 요소로 분리해 둔 것이 핵심. PHP 측도 초기 렌더와 AJAX 응답이 **같은
+    `$rowData` 배열**에서 나오므로 최초 로드와 이후 갱신이 항상 일관.
+  - 폼 제출 시 `$_POST['allowance']` 존재 여부로 게이트웨이 편집(#22 lost-update 회피)과 Manual
+    Override 팝업의 라우팅 라디오버튼 변경(`set_routing()`)을 독립적으로 처리 — 한쪽만 제출해도
+    다른 쪽에 영향 없음. Allowance 는 system_gateways_edit.php 와 동일하게 공란(=무제한)/숫자만 허용.
+  - **usage 표시 조건 수정(사용자 지적으로 후속 변경)**: 최초 병합 시엔 옛 Info 로직(allowance 공란/
+    "0" 이거나 terminal_type 이 `vsat_sec` 면 `get_datausage_from_db()` 자체를 호출하지 않고 완전히
+    숨김)을 그대로 보존했으나, 사용자가 스크린샷(FX_CREW=vsat_sec 행에 usage 숫자가 안 보임)으로
+    지적 → 코드 대조 결과 **`usr/local/www/index.php`(Main Panel)의 동일 로직은 애초에 usage 를
+    숨기지 않음**(allowance 없으면 "/allowance" 접미사만 생략하고 usage 숫자는 항상 표시)이 드러나,
+    terminal.php 쪽이 Main Panel과 어긋난 구현이었던 것으로 판단 — **usage 는 allowance 설정 여부·
+    terminal_type(vsat_sec 포함)과 무관하게 항상 표시**하도록 수정(Main Panel과 정책 통일).
+    `get_datausage_from_db()` 실패(InfluxDB 타임아웃 등) 시 `false` 반환 → `strval()` 로 빈 문자열
+    표시(fatal 없음, 기존과 동일한 degrade).
+  - **게이트웨이 이름을 jQuery 선택자 문자열에 그대로 이어붙임(`tr[data-gw='" + gwname + "']`)**:
+    pfSense 게이트웨이명은 `is_validaliasname()` 로 영문/숫자/언더스코어만 허용되어 따옴표 등
+    선택자를 깨는 문자가 들어올 수 없음을 전제로 함(다른 경로로 이례적 이름이 생겼다면 위험 —
+    현재 코드베이스 다른 곳(라디오버튼 id 등)도 동일 전제로 이스케이프 없이 써 왔음).
+- **F5 재제출 경고 제거(Post/Redirect/Get)**: APPLY 로 폼을 제출하면 마지막 브라우저 히스토리
+  항목이 POST 응답이 되어, 그 상태에서 F5 를 누르면 "양식 다시 제출 확인" 경고가 뜬다(사용자 스크린샷
+  으로 재현 확인). 수정: `routing_radiobutton`/`allowance` 처리 후 302 없이 `<script>
+  location.replace("processing.php?to=terminal.php");</script>` 를 출력하고 `exit`
+  — **`processing.php`(기존 파일, `network_control.php` 가 이미 쓰는 관례)** 를 그대로 재사용한
+  스플래시 경유 리다이렉트. `location.replace` 는 현재 히스토리 항목을 **대체**(추가 아님)하므로
+  POST 응답 자체가 히스토리에서 사라지고, processing.php 도 자신의 `location.replace` 로 다시
+  대체 → 최종적으로 히스토리 맨 위는 GET terminal.php 뿐이라 F5 시 경고가 뜨지 않는다. `data_update`
+  (10초 AJAX 폴링)는 별도 POST 라 이 분기와 무관(정상 동작 유지).
+- **적용 효과**: 저장 즉시 `cp_shutdown_gateways` 를 건드리지 않음(system_gateways_edit.php 저장과
+  동일) — 다음 `network_usage_timeperiod_check.php` 크론 주기에 새 allowance/cutoff_enable 값을
+  읽어 자동 반영. 별도 filter_configure/재시작 불필요.
+- **검증**: php -l 통과(terminal.php, terminal_status.inc). 브라우저 실측 불가(로컬 프리뷰 서버
+  없음) — 선상 확인 필요.
+- **배포 정합성**: `terminal.php` + `terminal_status.inc` **같은 리비전 일괄 배포**(가드 없음 —
+  terminal_status.inc 미배포 시 `cp_apply_gateway_cutoff_settings` undefined fatal).
+- **후속 수정 — HISTORY/APPLY 버튼 수직 적체(#58 스크린샷으로 발견)**: 카드 하단
+  `<div class="btn-area mt20" style="text-align: right;">` 가 `.list-top .btn-area`(다른
+  페이지의 flex 레이아웃)와 이름만 같을 뿐 그 셀렉터 대상이 아니었음 — `.btn` 자체가
+  `display:flex`(components.css, 블록 레벨)라 부모가 플렉스 컨테이너가 아니면 각 버튼이
+  자기 줄을 차지하며 세로로 쌓인다(`text-align:right` 는 블록 자식엔 무효). 수정: 인라인
+  스타일을 `display:flex; justify-content:space-between; align-items:center;` 로 교체해
+  HISTORY 는 왼쪽 끝, APPLY 는 오른쪽 끝에 배치.
+
+### 57. terminal.php 변경 이력 → MariaDB `radius.terminal_status_history` 기록 + HISTORY 버튼 (develop 반영)
+- **요구**: Terminal Status(#56, Manual Override 라우팅 변경 + Data Cutoff allowance/cutoff 변경)
+  에 대한 변경사항을 **이전에 DB 에 저장하던 형식**(#48 GMT 이력, #49 계정 이력과 동일한 mariadb://
+  192.168.209.210:3306, radius/radius)으로 기록. 테이블은 `id`(auto increment) / `timestamp` /
+  변경 당시의 ID / IP / 변경내역을 모두 기록. APPLY 옆에 HISTORY 버튼을 추가해 조회 가능하게.
+- **신규 `etc/inc/cp_terminal_history.inc`**: 테이블 `radius.terminal_status_history`
+  (`id` INT AUTO_INCREMENT PK / `timestamp` DATETIME / `admin_id` VARCHAR(64) / `client_ip`
+  VARCHAR(45) / `description` VARCHAR(1024)) — 없으면 자동 생성(#48/#49 와 동일 멱등 패턴).
+  **실행부는 `cp_gmt_history.inc`(#48)의 mysql CLI 헬퍼(`cp_gmt_history_exec_sql`/`_sql_str`)를
+  재사용**(#49 가 이미 쓰는 관례) — 동일 DB/자격증명, defaults-extra-file(비번 argv 미노출) +
+  connect-timeout + timeout 바운드, self-contained. `cp_terminal_history_record($description)` /
+  `cp_terminal_history_fetch($from,$to,$limit)`. 실패해도 throw 없이 false + log_error(터미널
+  설정 저장 흐름 불가침).
+  - **"변경 당시의 ID"**: `$adminlogin`(common_ui.inc) 은 role 카테고리(admin/customer/
+    vesseladmin)일 뿐 "누구"인지 특정 못 함 — 대신 pfSense 세션의 실제 webConfigurator 계정명
+    `get_config_user()` 를 사용(세션 없으면 `$_SESSION['Username']` → 빈 문자열 폴백).
+  - **IP**: `$_SERVER['REMOTE_ADDR']`.
+- **호출처(`usr/local/www/terminal.php`)**: POST 처리 블록에서 실제로 뭔가 바뀐 경우에만 1행 기록.
+  - Manual Override: `set_routing()` 호출 시 "Manual Override: routing set to {게이트웨이명}
+    (duration={분}m)" 또는 "...set to Automatic".
+  - Data Cutoff: `cp_apply_gateway_cutoff_settings()` 에 새 3번째 참조 인자 `&$changeLog` 추가
+    (`etc/inc/terminal_status.inc`) — 실제로 값이 바뀐 게이트웨이만 "GWNAME: allowance
+    (unset)->100GB; cutoff off->on" 형태로 채워 넣음(변경 없는 게이트웨이는 로그에 안 남아
+    노이즈 없음). 두 소스의 설명을 합쳐 `cp_terminal_history_record()` 1회 호출.
+  - PRG 리다이렉트(#56 F5 경고 수정) 직전에 기록 — `exit` 이후에는 실행되지 않으므로 반드시
+    `echo '<script>location.replace(...)'` 보다 먼저 호출.
+- **HISTORY 버튼 + 모달**: APPLY 버튼 옆에 `HISTORY`(다크 버튼) 추가. 모달은 GMT 변경 이력 모달
+  (common_ui.inc, `gmthist-*`)과 동일 계열 스타일(다크 카드 + pill 버튼 + 10개 클라이언트
+  페이지네이션 + Export CSV)이나 **`termhist-*` 네임스페이스로 완전 격리**(같은 페이지에
+  `gmthist-*` 가 없어 충돌 소지는 없지만 관례상 접두사 분리). 컬럼 = Time (UTC) / ID / IP /
+  Description(4컬럼, GMT 이력의 GPS 컬럼 대신 ID+IP). 범위 1d(기본)/7d/30d/Custom. CSRF 토큰은
+  이 페이지의 `#cutoff_form` 에 자동 주입된 `__csrf_magic` hidden 을 재사용(별도 hidden form
+  불필요, GMT 모달의 `#gmtForm` 재사용과 동일 관례).
+- **신규 엔드포인트 `usr/local/www/terminal_history_data.php`**: `gmt_history_data.php` 와 동일
+  구조(guiconfig.inc 인증 경유 JSON, `mode=days&days=N` 또는 `mode=custom&from/to`).
+- **검증**: php -l 4파일 전부 통과. `cp_terminal_history.inc` 스텁 하네스(실제 mysql 없이
+  `cp_gmt_history_exec_sql`/`_sql_str` 스텁으로 SQL 캡처) 21/21 — CREATE TABLE/INSERT 구조,
+  1024자 클램프, 개행/탭 제거, 따옴표 escape, 빈 설명 시 미전송, fetch 파싱·잘못된 날짜 거부·
+  limit 5000 클램프. `cp_apply_gateway_cutoff_settings()` changeLog 스텁 하네스(가짜 config +
+  lock/write_config 스텁) 12/12 — 실제 변경분만 로그, no-op 시 write_config 미호출, cutoff
+  off 케이스, changeLog 인자 생략 시 무해. node --check 로 3개 `<script>` 블록(PRG 리다이렉트/
+  refreshValue/HISTORY 모달) 문법 검증 통과.
+- **배포 정합성**: `cp_terminal_history.inc` + `terminal_status.inc` + `terminal.php` +
+  `terminal_history_data.php` **4파일 일괄**(가드 있어 fatal 없음 — cp_terminal_history.inc
+  미배포 시 기록만 skip, terminal_history_data.php 없으면 HISTORY 모달이 "unavailable" 표시).
+
+### 58. 전 관리 콘솔 라이트/다크 테마 리디자인 — CSS 변수 토큰 시스템 도입 (develop 반영)
+- **요구**: "usr/local/www 내의 전반적으로 모든 CSS 가 촌스럽다, 최신 트렌드를 반영해서
+  LIGHT/DARK 두 가지의 테마를 반영해보라" → 승인 과정: ① `terminal.php` 하나로 프로토타입
+  (Artifact 로 라이트/다크 토글 가능한 정적 목업 제작·시각 검토) → ② "좋다 모두 적용하라.
+  필요시에는 가용한 자원 모두 사용해서라도 최상의 결과를 도출하라. 온라인에서 데이터를
+  가져오는 CSS/FONT/STYLE 등은 배제" → 승인 후 9개 커스텀 콘솔 페이지 전체 롤아웃.
+- **핵심 설계 결정 = CSS 커스텀 프로퍼티(변수) 토큰화**: 기존 6개 CSS 파일(1,536줄)은 색이
+  전부 하드코딩 헥스라, #41 다크모드 도입 때 `dark.css` 가 **셀렉터마다** 색을 일일이
+  재지정해야 했다(108줄, 유지보수 포인트 分散). 이번에 `:root` 에 `--ink`/`--surface-*`/
+  `--accent`/`--info`/`--ok`/`--warn`/`--crit`/`--radius-*`/`--shadow-*`/`--nav-*` 등 디자인
+  토큰을 정의하고, 모든 컴포넌트 규칙이 `var(--x)` 를 참조하도록 새로 작성 → **다크모드는
+  `html.dark { --x: 다른값; }` 로 변수만 재정의**하면 그 위의 모든 컴포넌트 규칙이 자동으로
+  다크에 맞춰짐(유지보수 포인트가 여러 셀렉터에서 변수 한 곳으로 축소, 향후 테마 조정이 훨씬
+  쉬워짐 — CLAUDE.md #41 항목이 남긴 "색이 CSS 변수로 안 되어 있어" 라는 근본 페인포인트를
+  이번에 해소).
+- **팔레트(브랜드 유지, 재정의 아님)**: "촌스럽다"는 지적이었지 브랜드를 바꾸라는 요청이
+  아니었으므로, 기존에 섞여 쓰이던 두 민트(버튼 `#12B886` / 사이드바 `#38D9A9`)를 **하나의
+  시그널 틸 액센트**(`--accent`)로 통일하고, 순수 회색 대신 브랜드 틸 쪽으로 살짝 치우친
+  쿨톤 뉴트럴(라이트=블루그레이 `#EEF3F6`, 다크=네이비 `#0A131C`)을 새로 정의. 보조 액센트로
+  "딥씨 블루"(`--info`, 기존 이력 모달들이 이미 쓰던 `#1976d2` 계열과 결이 맞음)를 추가하고,
+  상태색(ok/warn/crit)은 액센트와 별개 축으로 분리(디자인 스킬 가이드 원칙 — semantic color
+  는 accent 로 세면 안 됨). 사이드바는 브랜드 앵커라 **라이트/다크 무관 고정 네이비**(원래도
+  그랬음, #41 원칙 유지). 폰트는 기존 셀프호스팅 Pretendard 그대로(교체 불필요 — 이미
+  한국어 시장 대상 SaaS 에 적절한 선택이었음).
+- **"온라인 리소스 배제" 요구 충족**: 새로 추가한 CSS/폰트/아이콘 전부 로컬 — 외부 CDN
+  `@import`/`url()`/웹폰트 링크 **0건**. 체크박스 체크마크만 인라인 data-URI SVG(로컬 인코딩
+  문자열, 네트워크 요청 없음)로 그리고, 나머지는 기존 로컬 PNG 아이콘 재사용 또는 CSS 로만
+  드로잉(라디오/체크박스/스위치 — 아래 참고).
+- **신규 `usr/local/www/css/theme.css`**: `:root` 토큰 정의 + 공통 컴포넌트 모던 리스킨.
+  `style.css`/`components.css`/`common.css`/`reset.css`/`utility.css` **는 건드리지 않고**,
+  그 위에 얹는 오버라이드 레이어로 구현(기존 셀렉터와 동일하거나 더 높은 명시도를 그대로
+  써서 뒤에 로드되는 이점으로 이김 — 레이아웃/구조 리스크 최소화, 순수 시각 속성만 교체).
+  다룬 범위: 사이드바(브랜드/메뉴/GMT/다크토글 버튼) · 헤드라인 바 · 타일 카드
+  (Private Internet Control 등) · 팝업/모달 공통(팝업 헤더를 사이드바와 통일된 네이비로) ·
+  버튼(fill-mint/fill-dark/line-*) · **`.list-wrap.v1` 테이블**(헤더를 진회색 바→연한
+  대문자 라벨로, 선택행을 진한 단색 채움→은은한 액센트 틴트로) · **상태 텍스트를 필(pill)
+  뱃지로 전환**(`.txt-online/.txt-offline/.txt-warning/.txt-noconn/.txt-na` — 배경 PNG
+  아이콘 대신 색 점 + 필 배경, `terminal_status.inc` 의 `get_net_status()`/`get_extnet_status()`
+  가 만드는 클래스라 **모든 페이지에 자동 적용**) · 섹션 라벨(대문자 트래킹 이버로우 스타일)
+  · 폼 요소(입력창에 **포커스 링 신규 추가** — 기존엔 focus 상태 자체가 없었음) ·
+  **라디오/체크박스를 PNG 아이콘 대신 CSS 로 직접 드로잉**(그래야 테마 전환에 자동 대응 —
+  래스터 아이콘은 색을 못 바꿈) · 스위치/스피너. `prefers-reduced-motion` 가드 안에서만
+  전환 애니메이션 적용(접근성 기본 원칙 준수).
+- **`dark.css` 전면 재작성**: 108줄의 셀렉터별 재지정 → **48줄의 변수 재정의**로 축소.
+  `html.dark { --ink: ...; --surface-1: ...; ... }` 한 블록이면 theme.css 의 모든 컴포넌트
+  규칙이 자동으로 다크 팔레트를 따라간다. 예외 1건만 셀렉터 오버라이드 유지: `index.php`
+  의 `.daily-usage-btn` 이 **페이지 자체 인라인 `<style>`** 에서 라이트 색을 완전히
+  재정의(동일 명시도, 더 늦게 로드 — theme.css 의 라이트 규칙은 이 버튼에 한해 무력화됨,
+  의도된 것으로 확인·주석 처리)하므로, 다크에서 되돌리려면 `html.dark .daily-usage-btn`
+  (더 높은 명시도)가 여전히 필요.
+  - **회귀 방지 전수 대조**: 새 dark.css 작성 전 **구 dark.css 의 모든 규칙 24개 항목을
+    하나씩 새 구현과 대조**하여 색상 커버리지 누락이 없는지 확인. 이 과정에서 실제 버그
+    1건 발견·수정 — `.theme-toggle`/`.theme-toggle-li`/`.theme-toggle .tt-ic` 는 구
+    dark.css 가 **유일하게** display/size/padding 등 레이아웃 전체를 전담하던 곳이었는데
+    (다른 어느 공유 CSS 파일에도 정의 없음), 처음 이관 시 색상만 옮기고 레이아웃
+    프로퍼티(`display:flex` 등)를 빠뜨려 버튼이 찌그러질 뻔한 것을 코드 대조로 발견해
+    수정. 이 사례가 "전수 대조" 검증 단계의 필요성을 보여줌.
+  - **의도된 동작 변경 1건**: 헤드라인 바의 모바일 전용 `box-shadow`(`0px 4px 4px #00000026`,
+    구 dark.css 는 다크에서만 제거)를 신 theme.css 에서는 **라이트/다크·모바일/데스크톱
+    무관하게 전부 제거**하고 대신 `border-bottom` 로 대체 — 얇은 경계선이 새 "부드러운
+    elevation" 디자인 언어와 일관되므로 의도적으로 통일(회귀 아님, 결정 사항).
+- **`etc/inc/common_ui.inc` `print_css_n_head()`**: `<link href="css/style.css">` 와
+  `<link href="css/dark.css">` 사이에 `<link href="css/theme.css">` 삽입(로드 순서:
+  reset→fonts→utility→common→components→style→**theme**→dark — theme 이 style 위에 얹히고,
+  dark 가 theme 의 변수를 재정의).
+- **적용 범위/한계(의도적 제외)**: `print_css_n_head`+`print_sidebar` 를 쓰는 9개 페이지의
+  **공유 컴포넌트**(사이드바/헤드라인/테이블/버튼/폼/팝업)만 대상. 페이지별 인라인
+  `<style>` 블록(예: index.php 의 3D 스카이돔·커버리지맵·일별사용량 차트·항구 미니맵,
+  crew_account.php/prepaid_account.php 의 스케줄러 팝업·Export/Manage PW 드롭다운,
+  release_note.php 의 버전 카드, terminal.php/GMT/계정 이력 모달들)는 **이미 자체
+  완결된 배색**(대부분 이미 다크 고정 또는 라이트/다크 대응 완료)이라 **손대지 않음** —
+  필요시 후속으로 이 팔레트에 맞춰 개별 조정 가능. stock pfSense·캡티브포털 페이지도
+  기존 #41 원칙과 동일하게 범위 밖.
+- **검증**: 이 개발 환경에 pfSense 런타임이 없어 **실제 브라우저 렌더링 확인은 불가** —
+  대신 ① 새 CSS 파일 2개 중괄호/주석 짝 검증(균형 확인) ② `.check.v1` 체크 상태
+  `background` 축약형이 `background-image`/`repeat`/`position` 을 초기화해버리는 실수를
+  발견해 롱핸드로 수정 ③ 9개 페이지 전수 grep 으로 각 셀렉터(`.tile-area`/`.daily-usage-btn`/
+  `.select.v1`/`.btn-login` 등)의 실사용처와 명시도 충돌 여부 확인(인라인 `<style>` 블록과의
+  프로퍼티 중복 여부까지) ④ 구 dark.css 24개 규칙 전수 대조. `php -l` 로 `common_ui.inc`
+  통과. **선상/스테이징 박스에서 실제 렌더링 확인 필수**(특히: 사이드바 메뉴 hover/active,
+  헤드라인 바, 상태 필 뱃지, 라디오/체크박스 CSS 드로잉, 팝업 헤더 네이비 통일, 다크토글
+  전환 애니메이션, 포커스 링).
+- **배포 정합성**: `theme.css`(신규) + `dark.css`(전면 재작성) + `common_ui.inc` **3파일
+  일괄 배포 필수** — `common_ui.inc` 만 배포되고 `theme.css` 가 없으면 404(그래도 다른 CSS
+  는 정상 로드되어 fatal 없음, 단 새 디자인 미적용) / `theme.css` 만 배포되고 `common_ui.inc`
+  미갱신이면 `<link>` 자체가 없어 새 파일이 로드 안 됨.
+- **선상 리포트(미해결, 후속 세션 확인 필요)**: 배포 후 다크모드로 Main Panel(index.php) 확인 시
+  사용자가 스크린샷으로 "배경 색이 이상하다" 보고 — 사이드바·Satellite/Position/Internet usage/
+  LAN usage 4개 카드는 다크로 정상 렌더되는데, `.contents` 바깥 배경과 하단 **Server Status**
+  테이블(`.list-wrap.v1`, 헤더 "CORE/VERSION | NOC | ...")이 라이트 모드 색(연한 배경)처럼
+  보임. 코드 검토로는 `html.dark` 토글 스크립트(common_ui.inc, 이번 세션 무수정)·CSS 명시도
+  모두 정상으로 보여 **브라우저 캐시(Ctrl+F5 미실시)가 원인일 가능성이 가장 높다고 판단**
+  — 이 세션 종료 시점까지 사용자가 강제 새로고침 재확인 결과를 주지 않아 **미해결 상태로 남음**.
+  후속 세션 확인 순서: ① Ctrl+F5 후에도 재현되면 실제 CSS 버그로 보고 재조사(4개 카드는
+  index.php 자체 인라인 `<style>` 의 다크 고정 배색이라 `html.dark` 여부와 무관하게 항상
+  다크로 보임 — 이것이 "다른 요소는 다크인데 배경만 안 됨"처럼 보이는 착시일 수 있음에 유의)
+  ② `document.documentElement.className` 콘솔 출력으로 `dark` 클래스 실제 존재 여부 확인
+  ③ Network 탭에서 `theme.css`/`dark.css` 실제 로드 여부·내용(304 캐시 재사용 포함) 확인.
+
+### 59. PHP ERROR "Cannot declare class APIRoutingGatewayDetailRead" — 진단(코드 수정 없음, 미해결)
+- **증상(선상 로그, 수 시간 간격 반복)**: `PHP ERROR: Type: 64, File:
+  /etc/inc/api/endpoints/APIRoutingGatewayDetailRead.inc, Line: 19, Message: Cannot declare
+  class APIRoutingGatewayDetailRead, because the name is already in use` — 하루 사이 3회 재현
+  (06:16/08:23/08:49), E_COMPILE_ERROR(fatal, 파일 파싱 단계에서 발생).
+- **진단(리포 전수 검색으로 확인)**: 이 **리포에는 원인 파일이 존재하지 않는다**.
+  - `etc/inc/api/models/APIRoutingGatewayDetailRead.inc` (모델, `class APIRoutingGatewayDetailRead
+    extends APIModel`, Jared Hendrickson 저작권 — pfSense-API 패키지 스톡 코드)만 리포에 있고,
+    `etc/inc/api/endpoints/APIRoutingGatewayDetailRead.inc`(에러가 가리키는 파일)는 리포에 **없음**.
+  - 우리 웹루트 로더 `usr/local/www/api/v1/routing/gateway/detail/index.php`(2026-06-18 커밋,
+    이후 무변경)가 실제 요구하는 엔드포인트 파일명은 `APIRoutingGatewayDetail.inc`(**"Read" 없음**)
+    — 에러가 가리키는 파일명과 **다르다**. 이 파일도 리포엔 없음(박스에만 존재하는 것으로 추정).
+  - 리포 전체 grep 결과 `APIRoutingGatewayDetailRead` 클래스는 위 모델 파일 자기 자신 안에서만
+    선언·참조됨 — 리포 코드 안에 이 클래스를 이중으로 include 하는 경로가 전혀 없음.
+  - **결론**: 이 리포에 커밋된 코드 자체에는 문제가 없다. 박스 파일시스템에 "Read" 접미사가 붙은
+    엔드포인트 파일이 (pfSense-API 패키지 재설치 잔재 또는 과거 수동 작업의 고아 파일로 추정)
+    남아있고, 그 파일의 클래스명이 우리 모델 파일과 우연히 동일해서, 같은 요청 내에서 프레임워크가
+    (아마 모델 클래스명 오토로드 + 엔드포인트 디렉터리 스캔 양쪽 경로로) 두 파일을 모두 로드하며
+    충돌하는 것으로 추정(프레임워크 `api/framework/*` 는 박스 전용이라 이 세션에서 정확한 오토로드
+    메커니즘 확인 불가).
+- **미해결 — 다음 세션에서 아래 3개 커맨드 결과를 받아 정확한 조치 결정 필요** (파일 삭제는
+  되돌리기 어려운 작업이라 내용 확인 없이 삭제를 권하지 않음):
+  ```sh
+  cat /etc/inc/api/endpoints/APIRoutingGatewayDetailRead.inc
+  ls -la /etc/inc/api/endpoints/ | grep -i routinggateway
+  ls -la /etc/inc/api/endpoints/APIRoutingGatewayDetail.inc
+  ```
+  세 번째 명령으로 우리가 실제로 필요로 하는 `APIRoutingGatewayDetail.inc`(Read 없음)가 박스에
+  존재하는지, 존재한다면 정상 동작하는지도 함께 확인 필요(존재하지 않으면 `/api/v1/routing/
+  gateway/detail` 라우트 자체가 별도로 깨져 있다는 뜻이라 그것도 조치 대상).
+- **작업 상태**: 코드 변경 없음. 커밋 없음. 사용자가 이 대화 컨텍스트를 종료할 예정이라 진단
+  내용만 기록.
+
+### 60. used-octets 과소계상(톱니 카운터) 근본 수정 — v2 delta 누적 (develop 미커밋)
+- **발견/확정**: 같은 유저 3저장소 불일치(used-octets 14G / InfluxDB 56G / radacct 15M). 선상 물리
+  WAN(vtnet0 516G)≈InfluxDB(498G) 대조로 **used-octets 가 ~3.8배 과소, InfluxDB 정확** 확정. radacct 는
+  SET-덮어쓰기(latest)라 정산기 아님(정보용). 상세 = `docs/usage_undercount_investigation.md`.
+- **근본(§4b, 로그 대조 확정)**: "리셋"의 정체 = **박스 재부팅**(7월 `Bootup complete` 10회 ≈ first_point 11회,
+  MIGRATE=0·stopstart=interimupdate 로 다른 원인 배제). 재부팅마다 ipfw 카운터 0(stock 동작)인데 세션은
+  preserve(Acct-Stop 없음) → **톱니**. datacounter 가 **high-water(SESSFILE=max(CUR))**라 최고봉 에포크
+  1개(14G)만 남기고 나머지 ~9개 에포크 climb 을 버림. InfluxDB 는 delta 합이라 전부 포착.
+- **수정(v2)**: SESSFILE 을 high-water → **InfluxDB 와 동일한 검증된 delta 누적**으로 전환(재부팅 몇 번이든
+  모든 에포크 보존 → used-octets≈InfluxDB≈WAN). 가드: **E1**(interim/Stop 같은 락 공유 + STOPPED 센티넬로
+  늦은 interim skip + 중복 Stop 멱등 + 낙관적 ts 토큰 SIDPREV_TS) · **E2**(PREVFILE per-USER→per-SID) ·
+  **E8**(SESSFILE 쓰기 성공 시에만 PREV 전진 + InfluxDB export 도 커밋 시에만=lockstep) · **E10**(first_point
+  delta=CUR 유지). **Stop 통합**(zero-stop 흡수, SESSFILE 누적+마지막 구간 delta 은행, 구버전 packet-CUR
+  은행 버그 제거). **배포 전환 마이그레이션**(첫 interim 이 구 per-USER prev 승계 → 활성 세션 28G 스파이크·
+  오탐 락아웃 방지; 재부팅 시엔 tmpfs 소거로 정상 first_point). **`if STATUS=Stop` 방어**(Start 등이 STOPMARK
+  세워 세션 회계 전멸시키는 사고 차단). **E5**: 리셋 크론은 disconnect(Stop) 후 파일삭제·`/var/run` prev 미삭제
+  라 무수정 안전.
+- **파일(동시 배포 필수)**: `usr/local/etc/raddb/scripts/datacounter_acct.sh` +
+  `usr/local/pkg/freeradius.inc` 임베디드 nowdoc(**바이트 동일** 27659, 재추출 diff 0). 셸 단위테스트
+  **16/16**(정상·재부팅·never-stop·STOPPED·중복Stop·재전송·짧은세션·zero·전환·Start no-op) + php -l 통과.
+- **소급 없음**: 배포 시점부터 정확(과거 버려진 에포크 복구 불가). 근원(재부팅 빈도)은 별개 안정화 필요
+  (#24 OOM/ZFS-full·#26·Peplink flapping). **radacct 는 별도 경로(queries.conf)라 이 수정과 무관**(정보용 유지).
+- **선상 게이트**: 한 척 배포 → `usage_reconcile.py` 로 used-octets 가 InfluxDB≈WAN 수렴 + **오탐 락아웃 0**
+  며칠 관찰 → 함대. (`preserveusersdb` 끄기는 대안 레버지만 v2 로 불필요 — v2 는 로그인 유지하며 정산 정확.)
+- **패치노트**: `usr/local/www/release_note.md` 최상단 `2026-07-19 Update` / Beta 1.1.77-Beta · Stable 1.1.5-Stable
+  — "Improved data usage accounting consistency" FIXED 1줄(사용자 비가시라 상세는 생략, 상세는 investigation §8).
+
+### 61. EXT-NET(외부 인터넷) 실검사 실행범위 개선 — dpinger 무관, NET online 이면 실행 (develop 미커밋)
+- **배경/요구**: WAN 게이트웨이 flapping(Peplink↔dpinger, [[project_peplink_dpinger_flapping_rootcause]])을
+  근본적으로 못 막아, 사용자가 게이트웨이별 **"Disable Gateway Monitoring"(`monitor_disable`)** 으로
+  dpinger 를 끄고 status 를 **무조건 online** 으로 고정. 그러자 **직접 만든 EXT-NET(nmap/ping 외부
+  인터넷 도달성) 판정이 안 도는** 증상 → "monitor_disable 무관, NET(status)가 online 이면 무조건 실검사"
+  로 개선(옵션 B).
+- **구조 확인(진단)**:
+  - EXT-NET 실검사를 **실제로 돌리는 유일한 주체 = `APISystemSendPing`**(`/api/v1/system/ping`) — `nmap_check.sh`/
+    `ping_check.sh` 를 `mwexec` 로 백그라운드 실행 → `/etc/inc/{srcip}.log` 에 `online`/`offline` 기록.
+    (레포 전수 grep 으로 다른 writer 없음. 주기 호출은 **외부 메인서버 폴러**에 의존 — 레포 내 크론 없음, 기존과 동일.)
+  - **표시부는 `.log` 를 읽기만** 함: `get_extnet_status()`([terminal_status.inc:247]) ← index.php(EXT-NET 컬럼)·
+    terminal.php·manual_routing.widget.php. 모두 `return_gateways_status(true)`(byname).
+- **근본 버그(2군데)**:
+  1. **writer 게이트(APISystemSendPing)**: `if(!isset($gw["monitor_disable"]))` 로 monitor_disable 게이트웨이를
+     **통째로 skip**(pingresult="online" 만 세팅, `$gw_metrics` 에도 미포함) → 강제 online 을 만든 그 플래그가
+     실검사를 꺼버리는 딜레마. `.log` 영영 미갱신 → 표시부는 stale/`Init`.
+  2. **gwlb.inc tack-on 루프**(monitor_disable 게이트웨이를 status 배열에 얹는 부분, `return_gateways_status`):
+     - `if ($item['name'] === $gwname)` 의 **`$gwname` 이 직전 메인루프의 stale 값** → monitor_disable
+       게이트웨이에 `check_method`/`destinationip`/`check_timeout` 가 **엉뚱하게 복사되거나(전부 disable 이면
+       아예 미복사)**. 전 게이트웨이 모니터링을 끈 사용자 시나리오에서 특히 치명(실검사에 필요한 필드 공백).
+     - 커스텀 monitor IP 분기에서 **`$realif` 미설정** → `srcip` 오산출 → `.log` 파일명 writer/reader 불일치 소지.
+- **수정(옵션 B)**:
+  - `etc/inc/api/models/APISystemSendPing.inc`: **monitor_disable 게이트 제거** → `status === "online"` 이면
+    `check_method`(nmap/ping/none)에 따라 실검사. **방어**: `check_method` 없으면 `'none'`, `check_timeout`
+    없으면 `"10"`(빈 값이면 셸 인자수 부족으로 조용히 실패하던 것 방지), `destinationip` isset 가드.
+    → monitor_disable 게이트웨이도 이제 응답 배열 포함(예전엔 제외 — **추가만** 됨, 외부 소비자 확인 권장).
+  - `etc/inc/gwlb.inc`: tack-on 루프 `$gwname` → `$gwitem['name']`([:588]) + else 분기 `$realif = $gwitem['interface']`
+    복원([:560], stock pfSense 동작). → monitor_disable 게이트웨이의 `check_method`/`srcip`/`destinationip`/
+    `check_timeout` 가 status 배열에 정확히 실림(writer·reader 공통 이득). tack-on 은 monitor_disable
+    게이트웨이만 처리하므로 **모니터링 켜진 게이트웨이·failover/default-gw 선택엔 영향 0**.
+- **판정 규약 확정(사용자 합의)**: **monitor_disable 무관, NET(status)가 online 이면 실검사 / down 이면 안 함.**
+  dpinger status 는 [gwlb.inc:405~440] 상 **정확히 `"online"`/`"down"` 둘뿐**(loss/latency 열화는 status 는
+  online 유지, substatus 에만 표시)이라 writer(`=== "online"`)·reader/NET컬럼(`stristr(...,"online")`)·
+  `get_net_status` 가 **완전 동일 조건**에서 동작(불일치 없음). action_disable 링크 열화도 status=online 유지 →
+  실검사 계속. monitor_disable 게이트웨이는 status 가 **항상** online → 사실상 무조건 실행.
+- **전제(중요)**: "무조건 online" 이 실제로 status=online 을 만들어야 함 = pfSense **"Disable Gateway
+  Monitoring"(monitor_disable)** 체크로 꺼야 tack-on 이 online 강제. dpinger 를 다른 방식(데몬 정지 등)으로
+  끄고 플래그 미설정 시엔 status 가 online 이 아니라(pending/none) 규약상 실검사 안 함(정상).
+- **검증**: php -l 2파일 통과 / 결정로직 하네스 7/7(모니터링on·**monitor_disable+online+nmap=실검사**·
+  timeout 기본값·check_method 누락→none·ping·status none→up=offline·down=offline) / 소비자 8곳 byname=true 일관 확인.
+- **배포 정합성**: `etc/inc/gwlb.inc` + `etc/inc/api/models/APISystemSendPing.inc` **같은 리비전 일괄 배포**
+  (표시부 terminal_status.inc/index.php/terminal.php/widget 은 무수정 — `.log` 를 이미 읽음). 외부 폴러가
+  `/api/v1/system/ping` 을 계속 호출해야 검사가 주기 실행됨(기존과 동일).
+- **선상 검증**: dpinger 끈 게이트웨이에서 `ls -l /etc/inc/*.log` 갱신 여부 / EXT-NET 컬럼이 실제 인터넷 상태
+  추종 / `/api/v1/system/ping` 응답에 해당 게이트웨이가 실 `pingresult` 로 포함 / 그 게이트웨이 status 가
+  실제로 online 으로 뜨는지(전제 ①).
+
+### 62. one-time(forever) 계정 할당량 초과 시 표시 숨김 제거 (develop 미커밋)
+- **요구**: crew account 에서 one-time 계정의 데이터 사용량이 할당량보다 커지면 화면에서 숨기던 조건을
+  없애고 항상 보이게. one-time 은 원래대로 월말에 일괄 삭제되어야 하며 그 삭제 로직이 잘 작동해야 함.
+- **숨김 로직 위치(전수조사 = 3곳, 전부 옵션 B 로 제거)**:
+  1. `etc/inc/manage_crew_wifi_account.inc` `build_wifi_rows()` — `if ($used_quota > $maxtotal &&
+     $pointoftime === 'forever') continue;` 제거(+ 미사용된 `$pointoftime` 변수 제거). 이 함수는
+     crew_account.php 표(`draw_wifi_contents`) + Export CSV + Export Credentials CSV **3곳 공용**.
+  2. `usr/local/www/widgets/widgets/manage_freeradiususer.widget.php` 위젯 표 — 내부 게이트
+     `if($used_quota <= max || pointoftime !== 'forever')` 제거(여는 조건+닫는 중괄호).
+  3. 같은 파일 `confirm_checkPw()` pwlist — 동일 게이트 제거 + 이제 dead 된 `check_quota()` 호출 제거
+     (불필요 디스크 읽기 제거).
+  - → 초과 one-time 이 이제 monthly/weekly/daily 와 동일하게 항상 노출. **부수 이득**: 체크박스로
+    선택 가능해져 관리자가 GUI 에서 수동 리셋/삭제도 가능(전엔 숨겨져 불가).
+- **월말 삭제 로직 검증(무수정, 독립·정상)**: 사용자가 말한 `datareset.php` 는 **레포에 없음**. 실제
+  삭제 주체 = `usr/local/cron/crew_monthlyusage_reset_check.php`(매월 1일 00:09,00:10). 조건
+  `forever && ($isOlderThan365Days || ($maxTotalOctets>0 && $usedQuota>=$maxTotalOctets))` → used-octets
+  glob 삭제 + config unset + write_config + freeradius_users_resync. **이 크론은 display 필터와 다른
+  파일에서 `check_quota()` 를 자체 재계산**하므로 숨김 제거와 완전 독립 → 삭제 동작 변화 0.
+  삭제는 "무조건 일괄"이 아니라 **조건부**(365일 초과 또는 할당량 초과)이며, 지금 숨기던 대상(used>max)이
+  곧 `$isQuotaExceeded` 대상과 같아 원래 "곧 삭제될 초과 계정"을 숨겼던 것.
+- **엣지(코드 변경 불필요)**: `varusersmaxtotaloctets=0` 인 forever 계정은 이제 표시되나, 삭제 크론이
+  `max>0` 요구라 quota 기준 삭제 안 됨(365일 기준으로만). 실무상 one-time 은 quota>0 이라 드묾.
+- **검증**: php -l 2파일 통과 + 브레이스 균형 확인.
+- **배포 정합성**: `manage_crew_wifi_account.inc` + `manage_freeradiususer.widget.php` 2파일 일괄.
+- **패치노트**: `release_note.md` 최신 `2026-07-19 Update` 에 병합(새 버전 안 만듦, 사용자 지시) —
+  "One-time user IDs can be seen once depleted." FIXED 1줄.
+
+### 63. wifi_usage 원격 export 제거 → 육상 pull 복제(StreamSets) + Stop 세그먼트/초정밀도 (develop 미커밋)
+- **배경/요구**: 기존엔 각 선박 `datacounter_acct.sh` 가 wifi 사용량 delta 를 **로컬 InfluxDB + 원격 central
+  InfluxDB(10.8.128.1) 양쪽에 push** 했다. 이 원격 push 를 제거하고, 대신 **육상(main server) StreamSets
+  파이프라인이 각 선박 로컬 InfluxDB 를 pull 해 육상 InfluxDB(10.10.10.20:8086)에 적재**하도록 이관.
+  핵심 불변식: **선박 로컬 InfluxDB ≡ 육상 InfluxDB**(per user, per second 집계 기준 정확 일치).
+- **선박측(이 저장소, 2파일 바이트 동일 일괄 배포)** — `datacounter_acct.sh` + `freeradius.inc` 임베디드 nowdoc:
+  - **원격 export 전면 제거**: `CENTRAL_INFLUX_*`/`VESSEL_DB_*`/`mysql_client_bin`/`get_vessel_imo`/
+    `curl_central_influx`/`central_influx_prepare`/`central_influx_write_line`/`central_influx_export_usage`
+    + interim 경로의 `central_influx_export_usage` 호출 삭제. 하드코딩 `10.8.128.1`·MySQL 자격증명(`radius/radius`)도 함께 제거.
+    로컬 write(`influx_write_line`)만 잔존. (검증: nowdoc 재추출 diff=0, `sh -n` 통과.)
+  - **write 정밀도 분→초**(`INFLUX_PRECISION="s"`, interim `ts_m=$((NOW_TS/60))`→`ts_s=$NOW_TS`): 같은 분(分)에
+    떨어진 interim/Stop(또는 두 interim)이 minute precision 에선 point 키 충돌로 last-write-wins 소실 → 초
+    정밀도로 서로 다른 초에 저장해 둘 다 보존. 육상은 이미 `epoch=s`·초 합산이라 무변경으로 정확 일치.
+  - **Stop 세그먼트 write 추가**: 기존 Stop 경로는 FINAL_DELTA 를 used-octets 에만 뱅킹하고 InfluxDB 미기록 →
+    매 세션 "마지막 interim→Stop" 바이트가 로컬/육상 InfluxDB 에서 체계적 누락(짧은 세션일수록 편향). 이제
+    lock 서브셸이 락 안에서 per-direction 최종 delta(FINAL_DELTA_IN/OUT/TOTAL)를 계산해 `echo "DCSTOP in out
+    total"` 로 stdout 전달 → 메인 스크립트가 `STOP_OUT="$(lockf …)"` 캡처 후 **락 밖에서 interim 과 동일
+    형식/정밀도(second)로 fire-and-forget** `datacounter_interim_delta` 기록(`stop_segment=1i` 마커). total=0
+    → skip, 중복 Stop → STOPMARK 조기 exit 라 DCSTOP 미출력 → skip(멱등). (헬퍼는 서브셸 밖에서만 가용하므로
+    이 stdout 핸드오프 구조가 필수. `RC=$?` 는 `$(…)` 뒤에서도 lockf 종료코드 정확 포착 — 테스트 확인.)
+  - **주의**: 캡티브포털 per-user 사용량 차트(`captiveportal.inc`, `non_negative_derivative(mean(total_bytes))`)가
+    같은 measurement 를 읽음 → 초 정밀도는 버킷 평균의 포인트 밀도만 바꿔 사실상 무해(오버라이트 없어 더 정확),
+    Stop 세그먼트가 로그아웃 지점에 값 하나 더해질 뿐.
+- **육상측(이 저장소 밖 — Downloads 의 StreamSets 3.18 파이프라인 JSON 2개, 저장소 미포함)**:
+  - **Composer**(`GroovyEvaluator_02`+`JDBCLookup_01`): JDBC SELECT 에 `wifi_lastupdatetimestamp` 추가,
+    `gapWifi = clamp(now−wifi_lastupdatetimestamp, 10, histDays*1440)분` 계산, 선박 로컬 질의 URL
+    `…:8086/query?db=wifiusage&epoch=s&q=select in_bytes,out_bytes,total_bytes from datacounter_interim_delta
+    where time > now()-${gapWifi}m group by *` emit. **게이지(satstatus/traffic/position)와 독립된 별도
+    워터마크**. clamp 도달 시 `sdc.log.warn("wifi backfill CLAMPED …")` 관측성 로그(옵션 A).
+  - **Fetcher**(`GroovyEvaluator_04`): 게이지 경로 앞에 자체 try/catch 로 독립 wifi 블록. raw 포인트를
+    **(user, 초) 단위로 sid 합산**(카디널리티 위해 sid 태그 drop, 동시세션 동일-분 충돌은 SUM 으로 무손실) →
+    line protocol `wifi_usage,vessel_imo=IMO,user=U in_bytes=Ni,… <epoch_s>` 를 육상
+    `10.10.10.20:8086/write?db=wifiusage&precision=s`(measurement `wifi_usage`, 2000줄 청크, 204/200=성공)에
+    **멱등** 적재. 성공 시 별도 커넥션으로 `wifi_lastupdatetimestamp` UPDATE(게이지 트랜잭션과 독립).
+    **워터마크 성공-게이팅**: parse 실패/비-Map/빈 results/`results[0].error` → 미전진(백필). shoreDbEnsured 는
+    CREATE 성공 시에만 true. wifi read timeout 60s.
+- **적대적 감사 2회(멀티모델)**: ① 광범위 감사(27 에이전트) → 13 CONFIRMED, 핵심 = 워터마크 오전진(파싱실패/
+  200-내장에러) 데이터 손실(수정됨) + 첫 실행 thundering herd. ② 등가성 집중 감사(17 에이전트, 실행형 e2e 시뮬)
+  → **정상 운영에서 shore==vessel 정확 일치 HOLDS**(12 시나리오 중 11, 동일초 충돌도 shore==vessel 유지 —
+  둘 다 survivor 를 봄). 유일 발산 = **`>histDays` 장기 단절 백필**(clamp 가 오래된 미복제 포인트 고아화) —
+  skew-robust 한 상대 `now()−Xm` 창의 의도된 트레이드오프. **옵션 A 수용**: clamp WARN 로그 + 워터마크 프리필
+  + histDays 사이징(문서화). 근본 재설계(watermark=실복제 최대 epoch + 절대 slice 페이지네이션)는 후속 후보.
+- **배포**: ① MariaDB `ALTER TABLE vesselinfo ADD COLUMN wifi_lastupdatetimestamp DATETIME NULL`(완료 확인됨) →
+  ② 첫 실행 전 `UPDATE vesselinfo SET wifi_lastupdatetimestamp=NOW() WHERE … IS NULL`(thundering herd 방지) →
+  ③ **선박 2파일 일괄 배포**(datacounter_acct.sh + freeradius.inc, 같은 리비전) → ④ 육상 파이프라인 2 JSON import →
+  1척 Preview → 함대. **파이프라인 JSON 은 이 저장소 밖**(StreamSets 시스템) — 이 커밋엔 선박측만 포함.
+- **검증**: `sh -n`(양쪽) / nowdoc 바이트 동일 / DCSTOP 파싱·중복 skip·`RC=$?` / e2e 등가 시뮬(vessel=used-octets=shore,
+  정상/동시세션/같은분/같은초/리셋/백필겹침/재로그인/zero/중복Stop/분→초전환/staggered 전부 일치) / composer·fetcher
+  괄호 밸런스(문자열·주석 인식) 0 / 육상 아티팩트 라운드트립.
 
 ## 다음 작업 대기 중
 
+- [ ] **#59 미해결(진단만 완료, 코드 수정 없음)**: 선상 PHP fatal "Cannot declare class
+  APIRoutingGatewayDetailRead" 반복 발생 — 리포 코드엔 원인 없음(박스 전용 고아 파일로 추정).
+  다음 세션에서 `cat /etc/inc/api/endpoints/APIRoutingGatewayDetailRead.inc` 등 3개 명령 결과를
+  받아 정확한 조치(파일 삭제/이름변경 등) 결정 필요. 상세는 #59 항목 참고.
+- [ ] **#58 미해결 리포트**: 다크모드에서 Main Panel 배경/Server Status 테이블이 라이트 모드
+  색으로 보인다는 사용자 스크린샷 — 브라우저 캐시(Ctrl+F5 미실시)가 원인일 가능성이 높다고
+  판단했으나 재확인 결과를 받지 못한 채 세션 종료. 다음 세션에서 강제 새로고침 후에도 재현되는지
+  확인 필요. 상세는 #58 "선상 리포트(미해결)" 참고.
+- [ ] **#58 커밋 완료(develop)**: 전 관리 콘솔(9페이지) 라이트/다크 테마 리디자인 —
+  `theme.css`(신규, CSS 변수 토큰) + `dark.css`(전면 재작성, 108줄→48줄) + `common_ui.inc`
+  (`<link>` 1줄 추가). 온라인 리소스 0건(폰트/아이콘 전부 로컬). (main/prod 미반영)
+- [ ] #58 검증(선상, **브라우저 실측 필수** — 이 세션은 코드 대조만 가능): 9페이지
+  (index/crew_account/prepaid_account/network_control/terminal/lan_svrstatus/crew_status/
+  download_center/release_note) 전부에서 사이드바(고정 네이비, 메뉴 hover/active 그라디언트)·
+  헤드라인 바·팝업(네이비 헤더)·`.list-wrap.v1` 테이블(연한 헤더+선택행 틴트)·상태 필 뱃지
+  (Online/Offline/등)·버튼(fill-mint/line-*)·입력창 포커스 링·라디오/체크박스(CSS 드로잉,
+  체크마크 SVG 표시 확인)·스위치(Private Internet Control)가 라이트/다크 양쪽에서 정상
+  렌더링되는지 / 사이드바 "Dark mode" 토글 4단계(System/GPS/Light/Dark) 전환 시 깨짐 없는지
+  / index.php 의 3D 돔·커버리지맵·일별사용량·항구 미니맵과 crew_account.php 의 스케줄러
+  팝업·드롭다운이 새 팔레트와 과하게 부딪히지 않는지(의도적으로 무수정 — 이미 자체 배색) /
+  **배포 정합성: theme.css + dark.css + common_ui.inc 3파일 일괄**.
+- [ ] **#57 커밋 완료(develop)**: terminal.php 변경 이력 → MariaDB `radius.terminal_status_history`
+  기록(신규 `cp_terminal_history.inc`, #48 실행부 재사용) + APPLY 옆 HISTORY 버튼/모달 +
+  `terminal_history_data.php` 조회 엔드포인트. (main/prod 미반영)
+- [ ] #57 검증(선상): Manual Override 라우팅 변경 → HISTORY 모달에 "Manual Override: routing set
+  to {게이트웨이} (duration=Nm)" 행 생성(ID=로그인 관리자 계정명, IP=요청자 IP) / Data Cutoff
+  Allowance·Cutoff 저장 → 실제로 바뀐 게이트웨이만 "GWNAME: allowance ...; cutoff ..." 행 생성
+  (값이 그대로면 기록 안 됨, no-op 확인) / `SELECT * FROM radius.terminal_status_history ORDER BY
+  id DESC LIMIT 20;` 로 DB 직접 확인 / HISTORY 버튼 클릭 → 1d/7d/30d/Custom 조회·Export CSV·
+  10개 페이지네이션 정상(GMT 이력 모달과 동일 UX) / DB 불통 시에도 Terminal Status 저장 자체는
+  정상 동작(fatal 없음) + `clog /var/log/system.log | grep "TERMINAL HISTORY"` / **배포 정합성:
+  cp_terminal_history.inc + terminal_status.inc + terminal.php + terminal_history_data.php
+  4파일 일괄**.
+- [ ] **#56 커밋 완료(develop)**: terminal.php Cutoff 체크박스 + Allowance 입력 (system_gateways_edit.php
+  와 동일 효과) — **최종적으로 Monthly Allowance 를 별도 컬럼이 아니라 Info 컬럼 안에 "usage /
+  [입력창] GB" 형태로 합침**(중복 표시 제거, 사용자 지적 반영), Cutoff 는 별도 컬럼 유지 —
+  Name/Info/GW/Net/Ext-Net/Cutoff **6컬럼 한 테이블**(팝업 아님, Setting 버튼 클릭 불필요). 10초
+  AJAX 폴링을 tbody 전체 교체 방식에서 게이트웨이별 상태 셀만 부분 갱신하는 구조화 JSON 방식으로
+  재설계(입력 중인 Allowance/Cutoff 값이 폴링에 의해 리셋되지 않도록 — Info 안에서도 usage 표시와
+  입력을 별개 요소로 분리). 패치노트 기록 완료(`2026-07-08 Update`). (main/prod 미반영)
+- [ ] #56 검증(선상): Terminal Status 페이지 진입 시 **한 테이블**에 Name/Info/GW/Net/Ext-Net/Cutoff
+  6컬럼이 모두 보이고, Info 컬럼에 "usage / [입력창] GB" 형태로 표시·입력·APPLY 저장 정상 /
+  system_gateways_edit.php 에서 수정 후 terminal.php 재방문 시 최신값 표시(반대 방향도 동일) / 저장
+  후 다음 `network_usage_timeperiod_check.php` 크론 주기에 새 값으로 shutdown 판정 반영 / Manual
+  Override(Setting 팝업의 라우팅) 변경과 독립적으로 동작(한쪽만 제출해도 다른 쪽 영향 없음) /
+  **핵심**: Allowance 입력창에 타이핑 중이거나 Cutoff 체크박스를 막 클릭한 상태에서 10초 자동갱신
+  타이밍이 겹쳐도 값이 리셋되지 않는지(Info 안의 usage 숫자·GW/Net/Ext-Net 상태만 갱신되고 나머지는
+  그대로인지) / **allowance 가 공란이거나 terminal_type 이 vsat_sec(예: FX_CREW)인 게이트웨이도
+  usage 숫자가 정상 표시되는지**(Main Panel index.php 와 동일하게 항상 표시로 변경됨) / 이 페이지
+  전용 인라인 `<style>`(allowance 입력 소형화)이 다른 페이지에 영향 없는지 /
+  **APPLY 클릭 후 F5 를 눌러도 "양식 다시 제출 확인" 브라우저 경고가 뜨지 않는지**(processing.php
+  스플래시가 잠깐 보인 후 terminal.php 로 돌아오는지) / Manual Override(라우팅) 를 Apply 한 뒤에도
+  동일하게 F5 경고 없는지 / **배포 정합성: terminal.php + terminal_status.inc 2파일 일괄**
+  (processing.php 는 기존 파일 재사용이라 추가 배포 불필요).
+- [ ] **#55 커밋 대기(미커밋)**: "Export Credentials CSV" 버튼 — ID/Quota(MB)/Password 3컬럼 CSV.
+  develop 커밋 필요(+ push 까지, [[feedback_push_required_for_deploy]]).
+- [ ] #55 검증(선상): admin/vesseladmin 로 crew_account.php 접속 → **Export ▾ 드롭다운**(Export
+  CSV / Export Credentials CSV 2메뉴) · **Manage PW ▾ 드롭다운**(Reset Random PW / Reset Initial
+  PW 2메뉴) 정상 열림·닫힘(다른 드롭다운 열면 이전 것 자동 닫힘, 바깥 클릭 시 닫힘) / 각 메뉴 클릭
+  시 기존 동작(CSV 다운로드, AJAX PW 변경) 그대로 수행되는지 / **Export CSV 다운로드에 ID/Description
+  /Type/Update/Used/Quota/Online, Export Credentials CSV 에 ID/Quota(MB)/Password 만** 있는지 /
+  customer 로그인 시 두 드롭다운 모두 안 보이는지(Reset PW 단독 버튼만 노출) + `crew_account.php
+  ?export=creds` 직접 접근 시도해도 다운로드 안 되는지(역할 체크) / **검색창(왼쪽)+버튼 5슬롯
+  (오른쪽)이 한 줄에 겹침·찌그러짐 없이 배치되는지** / Export 버튼들에 서류 아이콘(`ic-doc`)이
+  Reset 계열과 구분되게 표시되는지 — 이번 세션엔 브라우저 실측이 불가해 코드 리뷰만 마친 상태,
+  선상 확인 필수 / 배포 정합성: `crew_account.php` + `manage_crew_wifi_account.inc` 2파일 일괄.
+- [x] **#54 커밋 완료(develop, origin 에 push 완료 — 최종 커밋이 스키마확장/self-heal 시행착오를
+  되돌린 상태)**: Account History 모달 Change/Login/Usage 3탭. **`radacct_changehistory` 는
+  #49 원본 5컬럼 그대로**(신규 컬럼·self-heal 전부 제거됨, ALTER TABLE 불필요) — login/logout 은
+  IP/MAC/사유를 `change_description` 텍스트에 포함해 기존 `cp_account_history_record()` 재사용
+  (portal_allow/captiveportal_disconnect/captiveportal_radius_stop_all 훅). **Usage 탭은
+  radius.radacct(표준 FreeRADIUS SQL accounting) 직접 조회**(`cp_account_history_fetch_usage()`)
+  — 별도 기록 없음. 패치노트 기록 완료(`2026-07-06 Update`). (main/prod 미반영)
+- [ ] #54 검증(선상): 실제 로그인 → Login 탭에 즉시 행 생성(설명에 IP/MAC/via 포함) / 로그아웃
+  (명시적·idle timeout·session timeout·quota exceeded·동시로그인 킥) → Login 탭에 LOGOUT 행 표시
+  (설명에 reason 포함) / **Usage 탭이 radius.radacct 에서 완료된 세션(acctstoptime IS NOT NULL)을
+  Duration/Data In/Data Out/Total 로 정상 표시하는지**(SQL accounting 이 꺼진 박스에선 빈 결과가
+  정상) / 탭 전환 시 기간 유지·기간 전환 시 탭 유지 / Export CSV 3종(Change/Login/Usage 헤더 상이,
+  Login 은 ip/mac/session_id 컬럼 없이 id/timestamp_utc/username/event/description 만) / 게스트
+  (passthrough `unauthenticated`) 로그인/로그아웃은 기록 안 됨(계정 없음, 의도) / 대량 "Disconnect
+  All" 이후 로그아웃 행도 생성되는지(관리자 저빈도 작업) / **이 박스에 `radacct_changehistory` 가
+  이미 있어도(5컬럼 구버전이든 뭐든) ALTER 없이 그대로 정상 동작해야 함**(스키마 절대 안 건드림이
+  이번 최종 설계의 핵심) / **배포 정합성: cp_account_history.inc + captiveportal.inc +
+  crew_account_history_data.php + manage_crew_wifi_account.inc 4파일 일괄**(가드 있어 fatal 없음,
+  버전 섞이면 로그인/로그아웃 기록만 조용히 skip) / **커밋만으로는 배포 안 됨 — 반드시 `git push
+  origin develop` 까지 해야 Jenkins 등 배포 파이프라인이 원격 develop 을 가져감**(이번 세션에서
+  push 누락으로 실제 재현됨, [[feedback_push_required_for_deploy]]).
+- **#54 Usage 탭 수동 검증용 SQL (`cp_account_history_fetch_usage()` 와 동일 쿼리, 계정명만 교체)**:
+  ```sql
+  SELECT radacctid, acctstoptime, acctsessiontime, acctinputoctets, acctoutputoctets,
+         framedipaddress, callingstationid
+  FROM radacct
+  WHERE LOWER(username) = 'landlineuser00001'
+    AND acctstoptime IS NOT NULL
+    AND acctstarttime >= '2026-06-06 00:00:00'
+    AND acctstarttime <= '2026-07-06 23:59:59'
+  ORDER BY acctstarttime DESC
+  LIMIT 1000;
+  ```
+  결과가 비면 그 계정의 완료 세션이 그 기간에 없거나(정상일 수 있음), 해당 박스에서 FreeRADIUS
+  SQL accounting 자체가 꺼져 있어 `radacct` 가 애초에 안 쌓이는 경우 — `SELECT COUNT(*) FROM
+  radacct;` 로 테이블에 아무 데이터가 있는지부터 확인. 컬럼 매핑: `acctstoptime`→timestamp(표시
+  시각) · `acctsessiontime`→Duration(초) · `acctinputoctets`/`acctoutputoctets`→Data In/Out ·
+  `framedipaddress`/`callingstationid`→IP/MAC. 기간 필터는 `acctstarttime` 기준(표시는
+  `acctstoptime`)이라 세션 시작이 기간 밖이면 종료가 기간 안이어도 안 잡힐 수 있음(의도된 동작).
 - [x] **#51 커밋 완료(develop `a848caa`+`725e53c`)**: FBB 신호 표시 이름매핑 분리 + ACU state -1 →
   Comm. Error + FBB "6"→EMEA(24.9E) 매핑. 패치노트 기록 완료(`2026-07-03 Update`,
   **Beta 1.1.53-Beta · Stable: 1.1.4-Stable**). (main/prod 미반영)
