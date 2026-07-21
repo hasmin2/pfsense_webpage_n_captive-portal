@@ -2266,8 +2266,67 @@ $config['cron']['item']  (config.xml)  ← APIServiceCronWrite.inc + cron_sync_p
   정상/동시세션/같은분/같은초/리셋/백필겹침/재로그인/zero/중복Stop/분→초전환/staggered 전부 일치) / composer·fetcher
   괄호 밸런스(문자열·주석 인식) 0 / 육상 아티팩트 라운드트립.
 
+### 64. Topup API — config.xml quota만 갱신되고 max-octets 파일 미동기화 (develop 반영)
+- **증상**: PREPAID 계정(`crewpay-` prefix)을 `PUT /api/v1/freeradiususer/topup` 으로 증액하면
+  admin UI(crew_account.php/prepaid_account.php "Quota" 컬럼, config.xml `varusersmaxtotaloctets`
+  읽음)엔 새 값(예: 15,000MB)이 뜨는데, 실제 RADIUS 로그인 게이트 `datacounter_auth.sh` 가 읽는
+  `/var/log/radacct/datacounter/{timerange}/max-octets-{username}` 파일은 옛 값(예: 100MB)에 머물러
+  사용량이 그 사이에 있으면 로그인이 거부됨(UI 와 실제 게이트 불일치). 실사례: `crewpay-jjhavia22`
+  UI=15,000MB, 파일=104857600(=100MB), 사용량 9,808MB → 로그인 거부.
+- **원인**: `etc/inc/api/models/APIFreeRadiusUserTopup.inc` 의 `performTopup()`/`action()`이
+  `varusersmaxtotaloctets`(config.xml)만 갱신하고 `write_config()` 할 뿐, 형제 파일
+  `APIFreeRadiusUserUpdate.inc`(`action()` 안에 `freeradius_users_resync()` 호출 + "누락 시 config.xml
+  만 바뀌고 다음 resync 전까지 radiusd 미반영" 이라는 자기 문서화 주석까지 있음)와 달리 max-octets
+  파일을 재생성하는 어떤 함수도 호출하지 않음. 로그인 시점(`captiveportal_authenticate_user()`)도
+  `varusersresetquota` 플래그가 설 때만 **used-octets**(사용량) 파일을 지울 뿐 **max-octets**(한도)
+  파일은 절대 건드리지 않아(#10 accounting 보호 목적 명시 주석 있음) 로그인이 이 stale 파일을 자가
+  치유하지 못함.
+- **수정 방향 선택 — 로그인 시점 재동기화 대신 Topup 시점 직접 파일쓰기**: 처음엔
+  `freeradius_users_resync()`/`freeradius_update_user()` 호출 추가를 고려했으나, 이 함수들은
+  전부 마지막에 `freeradius_reload_or_restart_radiusd(false)`(전체 재시작)를 유발해(#23-A) accounting
+  (1813) 리스너가 순간 닫힘 — quota top-up 정도의 저빈도 이벤트에 굳이 그 비용을 치를 이유가 없음.
+  로그인마다 이걸 돌리는 방안도 검토했으나 로그인은 top-up 보다 훨씬 빈번해 동일 이유로 기각.
+  대신 **`datacounter_auth.sh` 가 max-octets 파일을 매 요청마다 `cat` 으로 그냥 읽을 뿐 rlm_files
+  메모리 상태와 무관**하다는 점(radiusd 재로드 불필요)을 이용 — `performTopup()`에서 delta 적용 직후
+  `freeradius_atomic_write_file()`(freeradius.inc, tempnam+rename 원자적 쓰기, resync 의 max-octets
+  쓰기와 동일 함수)로 파일만 직접 재기록. 재시작/재로드 없이 즉시 반영.
+- **수정 (`APIFreeRadiusUserTopup.inc`)**:
+  - `require_once("freeradius.inc")` 추가(Update.inc 와 동일 사유 — 이 API 컨텍스트엔 자동 로드 안 됨).
+  - quota delta 적용에 **0 하한 clamp** 추가(`max(0, ...)`) — 클램프 없으면 큰 음수 delta 로 쿼터가
+    음수가 될 때 `datacounter_auth.sh` 의 `sed 's/[^0-9]//g'` 가 `-` 부호만 제거해 훨씬 큰 양수로
+    오독되는 손상 경로가 실제로 재현됨(테스트로 확인).
+  - 바이트 환산은 resync 공식과 동일(legacy `varuserstopupoctets` 필드까지 포함 — 이후 전체 resync 가
+    돌 때 값이 어긋나지 않도록). 쿼터가 0이 되면 파일 unlink(=무제한, resync 의 PHP7.4 `!= ''` 비교
+    실제 동작과 동일 — 처음엔 다르다고 오판했다가 로컬 PHP8.2/운영 PHP7.4 의 `0 != ''` 비교규칙이
+    정반대라는 걸 뒤늦게 확인해 정정함).
+  - 새로 파일시스템에 손대는 코드라 사용자명/timerange 문자셋 방어 가드 추가(경로 이탈 방지). 가드에
+    걸려도 config.xml 갱신은 그대로 유지하고 파일 동기화만 skip+로그(데이터 손실 없음).
+  - `function_exists('freeradius_atomic_write_file')` 가드로 버전 섞임 시 fatal 없이 skip.
+- **검증**: 실제 `TopUp` 클래스를 그대로(재구현 아님) 로드해 `performTopup()` 직접 호출 + 프로덕션
+  `datacounter_auth.sh` 로직(경로만 스크래치로 치환한 바이트 동일 사본)으로 버그 재현(stale 100MB→
+  REJECT)과 수정 후(15,000MB→ACCEPT) 양쪽을 실제 판정으로 확인. 음수 클램프의 sign-strip 손상 재현,
+  경로탈출 가드, forever timerange, legacy 필드 포함, 동시 topup(기존 commandId flock 직렬화) 등
+  극한 케이스 검증. `php -l` 통과, PHP8 전용 문법 없음.
+- **부수 발견(미확인, 별건)**: 테스트 중 Windows GNU awk 가 `used-octets-*` 글롭이 매치되는 파일이
+  없을 때 fatal 로 죽어 사용량이 0으로 계산되는 현상 관측 — 단 이 버그 신고 자체가 "쿼터 초과로 실제
+  거부됨" 사례라 운영 중인 FreeBSD `awk`(One True Awk, gawk 아님)는 이 문제가 없을 가능성이 높음.
+  실제 pfSense 박스에서 미확인 상태로 남김(이 수정과 무관, 별도 확인 필요).
+- **배포 정합성**: `APIFreeRadiusUserTopup.inc` 단일 파일(가드 있어 버전 섞임에도 fatal 없음).
+
 ## 다음 작업 대기 중
 
+- [x] **#64 커밋 완료(develop)**: Topup API 가 config.xml quota 만 갱신하고 max-octets 파일을
+  동기화 안 하던 버그 수정 — `performTopup()`에서 delta 적용 즉시 `freeradius_atomic_write_file()`
+  로 직접 파일 재기록(radiusd 재시작/재로드 없음), 음수 delta 0 클램프, 경로탈출 방어 가드.
+  패치노트 기록 완료(`2026-07-19 Update` 에 병합). (main/prod 미반영)
+- [ ] #64 검증(선상): PREPAID 계정 topup(`PUT /api/v1/freeradiususer/topup`, `freeradius_maxtotaloctets`
+  양수 delta) 후 **즉시** 로그인 가능 확인(재시작/재로그인 대기 불필요) / 큰 음수 delta 로 쿼터를
+  0 아래로 내려도 `max-octets-{user}` 파일이 손상된 값 없이 정상 unlink 되는지(`cat max-octets-*`
+  로 확인) / `varuserstopupoctets` 레거시 필드가 있는 계정에서 값이 정상 합산되는지 / 동시에 여러
+  topup 요청이 겹쳐도(commandId 락) 순차 반영되는지 / DB/파일시스템 불통 시에도 config.xml 갱신
+  자체는 정상(fatal 없음) / **부수 발견 확인 필요**: 실제 pfSense/FreeBSD `awk` 가
+  `used-octets-{user}-*` 글롭 미매치 시(세션 파일 없을 때) 사용량을 0 으로 잘못 계산하지 않는지
+  (`datacounter_auth.sh` 를 직접 실행해 로그 확인) — 이 패치와 무관한 별건이나 발견 시 후속 이슈로.
 - [ ] **#59 미해결(진단만 완료, 코드 수정 없음)**: 선상 PHP fatal "Cannot declare class
   APIRoutingGatewayDetailRead" 반복 발생 — 리포 코드엔 원인 없음(박스 전용 고아 파일로 추정).
   다음 세션에서 `cat /etc/inc/api/endpoints/APIRoutingGatewayDetailRead.inc` 등 3개 명령 결과를
