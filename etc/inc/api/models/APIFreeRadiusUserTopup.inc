@@ -16,6 +16,9 @@
 require_once("api/framework/APIModel.inc");
 require_once("api/framework/APIResponse.inc");
 require_once("captiveportal.inc");
+// freeradius_atomic_write_file() 사용을 위해 필요 — APIFreeRadiusUserUpdate.inc 와 동일 사유로
+// (주석: "update 컨텍스트엔 미로드") 이 API 컨텍스트에도 자동 로드되지 않으므로 명시적으로 require.
+require_once("freeradius.inc");
 // #49: 계정 변경 이력 헬퍼 (radius.radacct_changehistory) — 미배포(버전섞임) 시 기록만 skip
 if (file_exists('/etc/inc/cp_account_history.inc')) {
     require_once('/etc/inc/cp_account_history.inc');
@@ -129,9 +132,51 @@ class TopUp extends APIModel {
         $username = $this->config["installedpackages"]["freeradius"]["config"][$index]['varusersusername'];
 
         if (isset($this->initial_data['freeradius_maxtotaloctets']) && (int)$this->initial_data['freeradius_maxtotaloctets'] !== 0) {
-            $this->config["installedpackages"]["freeradius"]["config"][$index]['varusersmaxtotaloctets'] =
+            // 0 하한 clamp: 큰 음수 delta 가 누적값을 음수로 만들면 datacounter_auth.sh 의
+            // `sed 's/[^0-9]//g'` 가 '-' 부호만 제거해 훨씬 큰 양수로 오염되므로(부호 유실 손상) 방지.
+            $new_maxtotal = max(0,
                 (int)$this->config["installedpackages"]["freeradius"]["config"][$index]['varusersmaxtotaloctets']
-                + (int)$this->initial_data['freeradius_maxtotaloctets'];
+                + (int)$this->initial_data['freeradius_maxtotaloctets']
+            );
+            $this->config["installedpackages"]["freeradius"]["config"][$index]['varusersmaxtotaloctets'] = $new_maxtotal;
+
+            // max-octets 파일(=RADIUS 인증 시점 datacounter_auth.sh 가 직접 읽는 쿼터 상한 파일)을
+            // 이 자리에서 즉시 동기화한다. config.xml 만 바뀌고 이 파일이 그대로면 실제 로그인
+            // 게이트는 옛 값을 계속 쓰게 되어 UI 표시값과 실제 쿼터가 어긋난다(#Topup 버그).
+            // freeradius_users_resync()/freeradius_update_user() 는 의도적으로 호출하지 않는다 —
+            // 둘 다 radiusd 전체 재시작을 유발해(#23-A) accounting(1813) 리스너가 순간 닫히므로,
+            // quota top-up 처럼 로그인보다 빈번하지 않은 이벤트라도 굳이 그 비용을 치를 이유가 없다.
+            // datacounter_auth.sh 는 이 파일을 요청마다 그냥 cat 으로 읽으므로 radiusd 재로드 없이도
+            // 파일만 바꾸면 즉시 반영된다(resync 의 max-octets 파일 쓰기와 동일한 방식, freeradius.inc
+            // freeradius_atomic_write_file() 재사용 — 원자적 rename 이라 읽기 도중 파일이 잘려 보이는
+            // torn-read 없음).
+            if (function_exists('freeradius_atomic_write_file')) {
+                $tr = strtolower(trim((string)$this->config["installedpackages"]["freeradius"]["config"][$index]['varusersmaxtotaloctetstimerange']));
+                $un = (string)$this->config["installedpackages"]["freeradius"]["config"][$index]['varusersusername'];
+                // 새로 파일시스템을 건드리는 코드라 방어적으로 문자셋을 제한한다(경로 이탈 방지).
+                // 정상 계정명/timerange 는 create_wifi_user/#32 정규화를 거치므로 항상 이 안에 든다.
+                if ($tr !== '' && $un !== '' && preg_match('/^[a-z]+$/', $tr) && preg_match('/^[A-Za-z0-9_.:-]+$/', $un)) {
+                    // resync 의 바이트 환산 공식과 동일(freeradius.inc:648-650/1006-1010) — 레거시
+                    // varuserstopupoctets 필드까지 포함해야 이후 전체 resync 가 돌 때와 값이 어긋나지 않음.
+                    $topup_legacy_mb = (int)($this->config["installedpackages"]["freeradius"]["config"][$index]['varuserstopupoctets'] ?? 0);
+                    $bytes = ($new_maxtotal + $topup_legacy_mb) * 1024 * 1024;
+
+                    $dir = "/var/log/radacct/datacounter/{$tr}";
+                    if (!is_dir($dir)) {
+                        @mkdir($dir, 0755, true);
+                    }
+                    $max_file = "{$dir}/max-octets-{$un}";
+
+                    if ($bytes > 0) {
+                        freeradius_atomic_write_file($max_file, (string)$bytes);
+                    } else {
+                        // resync 와 동일 취급: 쿼터 0 = 무제한(파일 없음 = datacounter_auth.sh 가 통과).
+                        @unlink($max_file);
+                    }
+                } else {
+                    log_error("APIFreeRadiusUserTopup: unsafe username/timerange, skipped max-octets file sync (username={$un} timerange={$tr})");
+                }
+            }
         }
 
         // freeradius_lastbasedata: MB 단위 delta 가감 → used-octets 베이스 파일에 직접 반영.

@@ -13,6 +13,10 @@ Beta 1.1.77-Beta · Stable: 1.1.5-Stable
   of being skipped for those. The EXT-NET column now reflects the real
   internet test even when dpinger monitoring is disabled.
 - FIXED: One-time user IDs can be seen once depleted.
+- FIXED: Topping up a prepaid account's data quota now takes effect for login
+  immediately. Previously the new quota could show correctly on the account
+  screen while the account was still blocked from logging in using the old,
+  lower amount until some other unrelated action refreshed it.
 
 2026-07-08 Update
 
